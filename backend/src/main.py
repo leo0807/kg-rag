@@ -7,9 +7,10 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    yield
-    # 关闭时执行
-    get_driver().close()
+    try:
+        yield
+    finally:
+        get_driver().close()
 
 class HealthResponse(BaseModel):
     status: str

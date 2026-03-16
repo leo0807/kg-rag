@@ -16,3 +16,4 @@ def init_db():
     )
     _driver.verify_connectivity()
     logger.info("Neo4j Connection Successfull")
+    print(">>> lifespan 启动：数据库连接已建立")
