@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     DASHSCOPE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
 
+    APP_VERSION: str = "1.0.0"
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
