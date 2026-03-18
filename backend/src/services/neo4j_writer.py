@@ -9,7 +9,7 @@ def write_document(doc: DocumentSchema) -> None:
     driver = get_driver()
 
     with driver.session() as session:
-        # 写入 Document 节点
+        # 第一条请求：写入 Document 节点
         session.run(
             """
             MERGE (d: Document {name: $doc_id})
@@ -25,30 +25,29 @@ def write_document(doc: DocumentSchema) -> None:
         )
 
         logger.info("写入 Document 节点 doc_id=%s", doc.doc_id)
-        # 写入 Section 节点并建立关系
-        for section in doc.sections:
-            session.run(
-                """
-                MERGE (s: Section {chunk_id: $chunk_id})
-                SET s.doc_id  = $doc_id,
-                    s.number  = $number,
-                    s.title   = $title,
-                    s.content = $content
-                """,
-            chunk_id=section.chunk_id,
-            doc_id=doc.doc_id,
-            number=section.number,
-            title=section.title,
-            content=section.content,
-            )
+        # 第二条请求：批量写入所有 Section 节点并建立关系
+        sections_data = [
+            {
+                "chunk_id": s.chunk_id,
+                "number":   s.number,
+                "title":    s.title,
+                "content":  s.content,
+            }
+            for s in doc.sections
+        ]
 
-            session.run("""
-                MATCH (d:Document {name: $doc_id})
-                MATCH (s:Section  {chunk_id: $chunk_id})
-                MERGE (d)-[:HAS_SECTION]->(s)
-            """,
-            doc_id=doc.doc_id,
-            chunk_id=section.chunk_id,
-            )
+        session.run("""
+            MATCH (d:Document {name: $doc_id})
+            UNWIND $sections AS s
+            MERGE (sec:Section {chunk_id: s.chunk_id})
+            SET sec.doc_id  = $doc_id,
+                sec.number  = s.number,
+                sec.title   = s.title,
+                sec.content = s.content
+            MERGE (d)-[:HAS_SECTION]->(sec)
+        """,
+        doc_id=doc.doc_id,
+        sections=sections_data,
+        )
 
-        logger.info("写入 %d 个 Section 节点", len(doc.sections))
+    logger.info("写入完成 doc_id=%s sections=%d", doc.doc_id, len(doc.sections))
