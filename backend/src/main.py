@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from .core.config import settings
 from .core.database import init_db, get_driver
 from .services.parser import parse
+from .models.schemas import DocumentSchema
 from contextlib import asynccontextmanager
 
 UPLOAD_DIR = Path("uploads")
@@ -41,7 +42,7 @@ async def stats(driver=Depends(get_driver)):
         record = result.single()
         return {"node_count": record["total"]}
 
-@app.post("/api/preview")
+@app.post("/api/preview", response_model=DocumentSchema)
 async def preview(file: UploadFile = File(...)):
     # 第一步：把上传的文件保存到 uploads/ 目录
     tmp_path = UPLOAD_DIR / file.filename

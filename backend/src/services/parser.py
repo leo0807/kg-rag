@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import pdfplumber
 from pathlib import Path
+from ..models.schemas import DocumentSchema, SectionSchema
 
 SECTION_PATTERN = re.compile(
     r'^(\d{1,2}(?:\.\d{1,2}){0,2})\s+([\u4e00-\u9fff\w\/\-]+)$',
@@ -92,8 +93,11 @@ def parse(pdf_path: Path) -> dict:
 
     # ** 是字典解包，把一个字典的所有键值对展开到另一个字典里：
 
-    return {
-        **meta, # 展开元数据的所有字段
-        "sections": sections,
-        "total_sections": len(sections),
-    }
+    return DocumentSchema(
+        doc_id=meta["doc_id"],
+        version=meta["version"],
+        title=meta["title"],
+        issue_date=meta["issue_date"],
+        total_sections=len(sections),
+        sections=[SectionSchema(**s) for s in sections],
+    )
