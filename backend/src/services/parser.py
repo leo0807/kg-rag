@@ -71,3 +71,16 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
         })
 
     return sections
+
+def parse(pdf_path: Path) -> dict:
+    # 解析整个 PDF，返回元数据 + 所有章节
+    meta = extract_meta(pdf_path)
+    sections = extract_sections(pdf_path, meta["doc_id"])
+
+    # ** 是字典解包，把一个字典的所有键值对展开到另一个字典里：
+
+    return {
+        **meta, # 展开元数据的所有字段
+        "sections": sections,
+        "total_sections": len(sections),
+    }
