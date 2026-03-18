@@ -1,8 +1,14 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, UploadFile, File
+import shutil
+from pathlib import Path
 from pydantic import BaseModel
 from .core.config import settings
 from .core.database import init_db, get_driver
+from .services.parser import parse
 from contextlib import asynccontextmanager
+
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,3 +40,15 @@ async def stats(driver=Depends(get_driver)):
         result = session.run("MATCH (n) RETURN count(n) AS total")
         record = result.single()
         return {"node_count": record["total"]}
+
+@app.post("/api/preview")
+async def preview(file: UploadFile = File(...)):
+    # 第一步：把上传的文件保存到 uploads/ 目录
+    tmp_path = UPLOAD_DIR / file.filename
+    with tmp_path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+    
+    # 第二步：解析 PDF
+    result = parse(tmp_path)
+
+    return result
