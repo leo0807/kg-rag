@@ -11,6 +11,19 @@ SECTION_PATTERN = re.compile(
     re.MULTILINE
 )
 
+def clean_content(text: str) -> str:
+    # 清洗章节内容，去掉页脚声明和页码
+    # 去掉专有信息声明
+    text = re.sub(
+        r'专有信息声明.*?有限责任公司保留本文件一切版权。',
+        '', text, flags=re.DOTALL
+    )
+    # 去掉页眉页码
+    text = re.sub(r'CPS\d+版\s*本:\s*[A-Z]\s*第\d+页\s*共\d+页', '', text)
+    # 去掉多余空行
+    text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    return text
+
 def extract_meta(pdf_path: Path) -> dict:
     with pdfplumber.open(pdf_path) as pdf:
         cover_text = pdf.pages[0].extract_text() or ""
@@ -61,13 +74,13 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
         # 内容到下一章节标题结束，最后一章到文档末尾
         end = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
 
-        content = full_text[start: end].strip()
+        content = clean_content(full_text[start: end])
 
         sections.append({
             "chunk_id": f"{doc_id}_{number}",
             "number": number,
             "title": title,
-            "content": content[:500]# 先截断500字，避免输出太长
+            "content": content,
         })
 
     return sections
