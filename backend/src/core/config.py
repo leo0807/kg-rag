@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     DASHSCOPE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
 
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen2.5:7b"   # 可换成任意本地模型
+    RETRIEVER_TOP_K: int = 5           # 向量召回数量
+
     APP_VERSION: str = "1.0.0"
 
 @lru_cache

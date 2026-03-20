@@ -7,6 +7,8 @@ from .core.database import init_db, get_driver
 from .services.parser import parse
 from .models.schemas import DocumentSchema
 from contextlib import asynccontextmanager
+from .services.neo4j_writer import write_document
+from .routers.query import router as query_router
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -31,6 +33,8 @@ app = FastAPI(
     lifespan=lifespan
     )
 
+app.include_router(query_router)
+
 @app.get("/api/health", response_model=HealthResponse)
 async def health():
     return { "status": "OK", "version": settings.APP_VERSION }
@@ -53,3 +57,22 @@ async def preview(file: UploadFile = File(...)):
     result = parse(tmp_path)
 
     return result
+
+@app.post("/api/ingest")
+async def ingest(file: UploadFile = File(...), driver = Depends(get_driver)):
+    # 保存文件
+    tmp_path = UPLOAD_DIR / file.filename
+    with tmp_path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    # 解析
+    doc = parse(tmp_path)
+
+    # 写入图谱
+    write_document(doc)
+
+    return {
+        "status": "OK",
+        "doc_id": doc.doc_id,
+        "sections": doc.total_sections,
+    }
