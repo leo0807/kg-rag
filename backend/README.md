@@ -99,7 +99,7 @@ uv run uvicorn src.main:app --reload
 ```
 
 ### `POST /api/query`
-知识图谱 RAG 查询，返回 LLM 生成的答案和引用章节。
+知识图谱 RAG 查询，一次性返回完整 JSON。
 
 ```json
 // 请求
@@ -115,12 +115,47 @@ uv run uvicorn src.main:app --reload
 }
 ```
 
+### `POST /api/query/stream`
+同上，但使用 **Server-Sent Events（SSE）** 流式返回答案，适合前端逐字显示。
+
+每帧格式：`data: <JSON>\n\n`，共三种帧类型：
+
+| type | 时机 | 内容 |
+|------|------|------|
+| `token` | LLM 生成过程中 | `{"type":"token","content":"根据"}` |
+| `sources` | LLM 生成完毕后 | `{"type":"sources","sources":[...]}` |
+| `done` | 最后一帧 | `{"type":"done"}` |
+
+**前端接入示例（原生 EventSource 不支持 POST，用 fetch 代替）：**
+
+```js
+const res = await fetch('/api/query/stream', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ question: '...' }),
+});
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  for (const line of decoder.decode(value).split('\n')) {
+    if (!line.startsWith('data:')) continue;
+    const frame = JSON.parse(line.slice(5));
+    if (frame.type === 'token')   appendText(frame.content);
+    if (frame.type === 'sources') showSources(frame.sources);
+    if (frame.type === 'done')    reader.cancel();
+  }
+}
+```
+
 **RAG 流程**
 
 1. 用 bge-m3 将问题向量化
 2. 在 Neo4j 向量索引中召回 top-K 最相关 Section
 3. 通过图遍历获取每个命中节点的父章节（大纲上下文）和相邻章节（防止内容截断）
-4. 将拼装好的上下文发给 Ollama 生成答案
+4. 将拼装好的上下文发给 Ollama，流式返回答案 token
 
 ## 项目结构
 
