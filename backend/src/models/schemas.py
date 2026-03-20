@@ -13,4 +13,5 @@ class DocumentSchema(BaseModel):
     issue_date: str
     total_sections: int
     sections:   list[SectionSchema]
+    refs:       list[str] = []
 

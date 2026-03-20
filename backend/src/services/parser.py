@@ -25,6 +25,15 @@ def clean_content(text: str) -> str:
     text = re.sub(r'\n{3,}', '\n\n', text).strip()
     return text
 
+def extract_refs(sections: list[dict]) -> list[str]:
+    # 从引用文件章节提取被引用的规范编号
+    for section in sections:
+        # 第2章固定是引用文件
+        if section["number"] == "2":
+            refs = re.findall(r"\b(C[PD]S\d+)\b", section["content"])
+            return list(set(refs))
+    return []
+
 def extract_meta(pdf_path: Path) -> dict:
     with pdfplumber.open(pdf_path) as pdf:
         cover_text = pdf.pages[0].extract_text() or ""
@@ -90,6 +99,7 @@ def parse(pdf_path: Path) -> dict:
     # 解析整个 PDF，返回元数据 + 所有章节
     meta = extract_meta(pdf_path)
     sections = extract_sections(pdf_path, meta["doc_id"])
+    refs = extract_refs(sections)
 
     # ** 是字典解包，把一个字典的所有键值对展开到另一个字典里：
 
@@ -100,4 +110,5 @@ def parse(pdf_path: Path) -> dict:
         issue_date=meta["issue_date"],
         total_sections=len(sections),
         sections=[SectionSchema(**s) for s in sections],
+        refs=refs,
     )

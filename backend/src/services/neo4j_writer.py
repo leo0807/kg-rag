@@ -50,4 +50,18 @@ def write_document(doc: DocumentSchema) -> None:
         sections=sections_data,
         )
 
+        # 第三条请求：写入引用关系
+        if doc.refs:
+            session.run(
+                """
+                MATCH (d: Document {name: $doc_id})
+                UNWIND $refs AS ref_id
+                MERGE (ref: Document {name: ref_id})
+                MERGE (d)-[:REFERENCES]->(ref)
+                """,
+                doc_id=doc.doc_id,
+                refs=doc.refs,
+            )
+            logger.info("写入引用关系 %s -> %s", doc.doc_id, doc.refs)
+
     logger.info("写入完成 doc_id=%s sections=%d", doc.doc_id, len(doc.sections))
