@@ -9,10 +9,20 @@ interface QueryResponse {
     sources: { chunk_id: string; section_title: string; content: string }[];
 }
 
+type Strategy = "parallel" | "sequential" | "graph_augmented" | "multi_hop";
+
 export default function QueryPage() {
     const [query, setQuery] = useState("");
     const [loading, setLoading] = useState(false);
     const [answer, setAnswer] = useState<string | null>(null);
+    const [strategy, setStrategy] = useState<Strategy>("parallel");
+
+    const strategies: { value: Strategy; label: string }[] = [
+        { value: "parallel", label: "并行检索" },
+        { value: "sequential", label: "串行检索" },
+        { value: "graph_augmented", label: "图谱增强" },
+        { value: "multi_hop", label: "多跳推理" },
+    ];
 
     async function handleQuery() {
         if (!query.trim()) return;
@@ -23,7 +33,7 @@ export default function QueryPage() {
             const res = await fetch("http:localhost:8000/api/query", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ query, strategy: "parallel" }),
+                body: JSON.stringify({ query, strategy }),
             });
             const data = await res.json() as QueryResponse;
             setAnswer(data.answer);
@@ -46,7 +56,20 @@ export default function QueryPage() {
                    rounded-lg text-gray-200 text-sm resize-none outline-none
                    focus:border-indigo-500 placeholder-gray-600"
             />
-
+            <div className="mt-3 flex gap-2">
+                {strategies.map(({ value, label }) => (
+                    <button
+                        key={value}
+                        onClick={() => setStrategy(value)}
+                        className={`px-3 py-1.5 rounded-md text-xs border transition-colors ${strategy === value
+                            ? "bg-indigo-600 border-indigo-600 text-white"
+                            : "border-gray-700 text-gray-400 hover:border-gray-500"
+                            }`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
             <button
                 onClick={handleQuery}
                 disabled={!query.trim() || loading}
