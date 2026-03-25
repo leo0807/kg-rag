@@ -1,7 +1,7 @@
 import logging
 from ..core.database import get_driver
 from ..models.schemas import DocumentSchema
-from .embedder import embed_texts
+# from .embedder import embed_texts
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def write_document(doc: DocumentSchema) -> None:
         logger.info("写入 Document 节点 doc_id=%s", doc.doc_id)
         # 第二条请求：批量写入所有 Section 节点并建立关系
         texts = [f"{s.title}\n{s.content}" for s in doc.sections]
-        embeddings = embed_texts(texts)
+        # embeddings = embed_texts(texts)
 
         sections_data = [
             {
@@ -36,7 +36,7 @@ def write_document(doc: DocumentSchema) -> None:
                 "number":    s.number,
                 "title":     s.title,
                 "content":   s.content,
-                "embedding": embeddings[i],
+                # "embedding": embeddings[i],
             }
             for i, s in enumerate(doc.sections)
         ]
@@ -45,11 +45,11 @@ def write_document(doc: DocumentSchema) -> None:
             MATCH (d:Document {name: $doc_id})
             UNWIND $sections AS s
             MERGE (sec:Section {chunk_id: s.chunk_id})
-            SET sec.doc_id    = $doc_id,
-                sec.number    = s.number,
-                sec.title     = s.title,
-                sec.content   = s.content,
-                sec.embedding = s.embedding
+            SET sec.doc_id         = $doc_id,
+                sec.number         = s.number,
+                sec.section_number = s.number,
+                sec.title          = s.title,
+                sec.content        = s.content
             MERGE (d)-[:HAS_SECTION]->(sec)
         """,
         doc_id=doc.doc_id,
