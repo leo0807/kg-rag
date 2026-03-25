@@ -4,9 +4,13 @@ import { useState } from "react";
 
 interface QueryResponse {
     answer: string;
-    strategy: string;
-    confidence: number;
-    sources: { chunk_id: string; section_title: string; content: string }[];
+    sources: {
+        chunk_id: string;
+        doc_id: string;
+        number: string;
+        title: string;
+        score: number;
+    }[];
 }
 
 type Strategy = "parallel" | "sequential" | "graph_augmented" | "multi_hop";
@@ -30,10 +34,10 @@ export default function QueryPage() {
         setAnswer(null);
 
         try {
-            const res = await fetch("http:localhost:8000/api/query", {
+            const res = await fetch("/api/query", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ query, strategy }),
+                body: JSON.stringify({ question: query, strategy }),
             });
             const data = await res.json() as QueryResponse;
             setAnswer(data.answer);

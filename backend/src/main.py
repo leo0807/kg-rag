@@ -1,14 +1,17 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, UploadFile, File
+from neo4j import Driver
+from pydantic import BaseModel
 import shutil
 from pathlib import Path
-from pydantic import BaseModel
-from contextlib import asynccontextmanager
-from neo4j import Driver
+
 from .core.config import settings
 from .core.database import init_db, get_driver
 from .services.parser import parse
-from .models.schemas import DocumentSchema
 from .services.neo4j_writer import write_document
+from .routers.documents import router as documents_router
+from .routers.graph import router as graph_router
+from .routers.query import router as query_router
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -22,29 +25,23 @@ async def lifespan(app: FastAPI):
         get_driver().close()
 
 class HealthResponse(BaseModel):
-    status: str
+    status:  str
     version: str
-
-class StatsResponse(BaseModel):
-    node_count: int
 
 app = FastAPI(
     title="航空工艺规范 GraphRAG 知识库",
     lifespan=lifespan,
 )
 
+app.include_router(documents_router)
+app.include_router(graph_router)
+app.include_router(query_router)
+
 @app.get("/api/health", response_model=HealthResponse)
 async def health():
     return {"status": "OK", "version": settings.APP_VERSION}
 
-@app.get("/api/stats", response_model=StatsResponse)
-async def stats(driver=Depends(get_driver)):
-    with driver.session() as session:
-        result = session.run("MATCH (n) RETURN count(n) AS total")
-        record = result.single()
-        return {"node_count": record["total"]}
-
-@app.post("/api/preview", response_model=DocumentSchema)
+@app.post("/api/preview")
 async def preview(file: UploadFile = File(...)):
     tmp_path = UPLOAD_DIR / file.filename
     with tmp_path.open("wb") as f:
@@ -59,46 +56,3 @@ async def ingest(file: UploadFile = File(...)):
     doc = parse(tmp_path)
     write_document(doc)
     return {"status": "OK", "doc_id": doc.doc_id, "sections": doc.total_sections}
-
-@app.get("/api/documents")
-async def list_documents(driver=Depends(get_driver)):
-    with driver.session() as session:
-        result = session.run("""
-            MATCH (d:Document)
-            OPTIONAL MATCH (d)-[:HAS_SECTION]->(s)
-            RETURN d.name        AS doc_id,
-                   d.title       AS title,
-                   d.version     AS version,
-                   d.issue_date  AS issue_date,
-                   count(s)      AS section_count
-            ORDER BY d.name
-        """)
-        return [dict(r) for r in result]
-
-@app.get("/api/graph")
-async def get_graph(driver: Driver = Depends(get_driver)):
-    with driver.session() as session:
-        nodes_result = session.run("""
-            MATCH (n)
-            RETURN elementId(n) AS id,
-                   labels(n)[0] AS label,
-                   coalesce(n.name, n.title, n.chunk_id) AS name
-            LIMIT 100
-        """)
-        nodes = [dict(r) for r in nodes_result]
-        node_ids = {n["id"] for n in nodes}
-
-        edges_result = session.run("""
-            MATCH (a)-[r]->(b)
-            RETURN elementId(a) AS source,
-                   elementId(b) AS target,
-                   type(r)      AS type
-            LIMIT 300
-        """)
-        # 只保留两端节点都在节点列表里的边
-        edges = [
-            dict(r) for r in edges_result
-            if r["source"] in node_ids and r["target"] in node_ids
-        ]
-
-    return {"nodes": nodes, "edges": edges}
