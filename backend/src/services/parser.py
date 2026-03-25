@@ -102,7 +102,9 @@ def parse(pdf_path: Path) -> dict:
     refs = extract_refs(sections)
 
     # ** 是字典解包，把一个字典的所有键值对展开到另一个字典里：
-
+    if not meta["doc_id"]:
+        raise ValueError(f"无法从 PDF 提取文档编号，请检查封面格式: {pdf_path.name}")
+        
     return DocumentSchema(
         doc_id=meta["doc_id"],
         version=meta["version"],

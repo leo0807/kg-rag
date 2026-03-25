@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+from neo4j import Driver
 from .core.config import settings
 from .core.database import init_db, get_driver
 from .services.parser import parse
@@ -73,3 +74,31 @@ async def list_documents(driver=Depends(get_driver)):
             ORDER BY d.name
         """)
         return [dict(r) for r in result]
+
+@app.get("/api/graph")
+async def get_graph(driver: Driver = Depends(get_driver)):
+    with driver.session() as session:
+        nodes_result = session.run("""
+            MATCH (n)
+            RETURN elementId(n) AS id,
+                   labels(n)[0] AS label,
+                   coalesce(n.name, n.title, n.chunk_id) AS name
+            LIMIT 100
+        """)
+        nodes = [dict(r) for r in nodes_result]
+        node_ids = {n["id"] for n in nodes}
+
+        edges_result = session.run("""
+            MATCH (a)-[r]->(b)
+            RETURN elementId(a) AS source,
+                   elementId(b) AS target,
+                   type(r)      AS type
+            LIMIT 300
+        """)
+        # 只保留两端节点都在节点列表里的边
+        edges = [
+            dict(r) for r in edges_result
+            if r["source"] in node_ids and r["target"] in node_ids
+        ]
+
+    return {"nodes": nodes, "edges": edges}
