@@ -20,6 +20,7 @@ export default function QueryPage() {
     const [loading, setLoading] = useState(false);
     const [answer, setAnswer] = useState<string | null>(null);
     const [strategy, setStrategy] = useState<Strategy>("parallel");
+    const [result, setResult] = useState<QueryResponse | null>(null);
 
     const strategies: { value: Strategy; label: string }[] = [
         { value: "parallel", label: "并行检索" },
@@ -40,7 +41,7 @@ export default function QueryPage() {
                 body: JSON.stringify({ question: query, strategy }),
             });
             const data = await res.json() as QueryResponse;
-            setAnswer(data.answer);
+            setResult(data);
         } catch (error) {
             setAnswer("请求失败，检查后段服务");
         } finally {
@@ -83,10 +84,35 @@ export default function QueryPage() {
                 {loading ? "查询中..." : "提交问题"}
             </button>
 
-            {answer && (
+            {result && (
                 <div className="mt-6 p-4 bg-gray-900 rounded-lg border border-gray-800">
                     <div className="text-xs text-gray-500 mb-2">回答</div>
-                    <p className="text-gray-200 text-sm leading-relaxed">{answer}</p>
+                    <p className="text-gray-200 text-sm leading-relaxed">{result.answer}</p>
+                </div>
+            )}
+            {result && result.sources.length > 0 && (
+                <div className="mt-4">
+                    <div className="text-xs text-gray-500 mb-2">
+                        引用来源 · {result.sources.length} 个章节
+                    </div>
+                    <div className="space-y-2">
+                        {result.sources.map((source) => (
+                            <div
+                                key={source.chunk_id}
+                                className="px-4 py-3 bg-gray-900 rounded-lg border border-gray-800"
+                            >
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className="text-xs font-mono text-indigo-400">
+                                        {source.doc_id} §{source.number || source.chunk_id.split("_")[1]}
+                                    </span>
+                                    <span className="text-xs text-gray-600">
+                                        相关度 {(source.score / 10).toFixed(2)}
+                                    </span>
+                                </div>
+                                <div className="text-sm text-gray-300">{source.title}</div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
         </div>
