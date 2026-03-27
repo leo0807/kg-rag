@@ -1,0 +1,155 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────
+# 航空 GraphRAG 本地开发环境
+# 包含：Neo4j · Milvus · etcd · MinIO · Attu
+# 启动：docker compose up -d
+# 停止：docker compose down
+# ─────────────────────────────────────────────
+
+services:
+  # ── Langfuse 依赖：PostgreSQL ─────────────
+  langfuse-db:
+    image: postgres:15
+    container_name: aviation-langfuse-db
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse123
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U langfuse" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Langfuse LLMOps 可观测性平台 ──────────
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: aviation-langfuse
+    ports:
+      - "3001:3000" # 浏览器打开 http://localhost:3001
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse123@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: aviation-langfuse-secret-key
+      NEXTAUTH_URL: http://localhost:3001
+      SALT: aviation-salt-key
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+
+  # ── Redis（Celery 任务队列 + 缓存）────────
+  redis:
+    image: redis:7-alpine
+    container_name: aviation-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Neo4j 图数据库 ────────────────────────
+  neo4j:
+    image: neo4j:5.20-community
+    container_name: aviation-neo4j
+    ports:
+      - "7474:7474" # Neo4j Browser (网页界面)
+      - "7687:7687" # Bolt 协议 (Python 驱动连接这里)
+    environment:
+      NEO4J_AUTH: neo4j/aviation123 # 用户名/密码
+      NEO4J_PLUGINS: '["apoc"]' # 常用扩展插件
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: [ "CMD", "neo4j", "status" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Milvus 依赖：etcd（元数据存储）────────
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.14
+    container_name: aviation-etcd
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+    command: >
+      etcd --advertise-client-urls=http://etcd:2379 --listen-client-urls=http://0.0.0.0:2379 --data-dir=/etcd
+    volumes:
+      - etcd_data:/etcd
+    healthcheck:
+      test: [ "CMD", "etcdctl", "endpoint", "health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Milvus 依赖：MinIO（向量数据文件存储）─
+  minio:
+    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    container_name: aviation-minio
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    command: minio server /minio_data --console-address ":9001"
+    volumes:
+      - minio_data:/minio_data
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ── Milvus 向量数据库 ──────────────────────
+  milvus:
+    image: milvusdb/milvus:v2.4.9
+    container_name: aviation-milvus
+    command: [ "milvus", "run", "standalone" ]
+    ports:
+      - "19530:19530" # gRPC (Python 驱动连接这里)
+      - "9091:9091" # HTTP 管理接口
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - milvus_data:/var/lib/milvus
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9091/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Attu：Milvus 的网页管理界面 ───────────
+  attu:
+    image: zilliz/attu:v2.4
+    container_name: aviation-attu
+    ports:
+      - "8080:3000" # 浏览器打开 http://localhost:8080
+    environment:
+      MILVUS_URL: milvus:19530
+    depends_on:
+      - milvus
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  etcd_data:
+  minio_data:
+  milvus_data:
+  langfuse_db_data:
+  redis_data:
