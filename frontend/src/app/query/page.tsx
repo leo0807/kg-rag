@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchApi, ApiError } from "@/lib/api";
 import { useState, useEffect } from "react";
 
 interface HistoryItem {
@@ -58,21 +59,25 @@ export default function QueryPage() {
         setLoading(true);
         setResult(null);
         try {
-            const res = await fetch("/api/query", {
+            const data = await fetchApi<QueryResponse>("/api/query", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ question: query, strategy }),
             });
-            const data = await res.json() as QueryResponse;
             setResult(data);
             saveHistory(query);
             setHistory(loadHistory());
-        } catch {
-            setResult({ answer: "请求失败，请检查后端服务", sources: [] });
+        } catch (e) {
+            const message = e instanceof ApiError
+                ? e.message
+                : "网络异常，请检查连接";
+            setResult({ answer: message, sources: [] });
         } finally {
             setLoading(false);
         }
     }
+
+
 
     return (
         <div className="flex h-full bg-gray-950">
@@ -113,7 +118,10 @@ export default function QueryPage() {
                             value={query}
                             onChange={e => setQuery(e.target.value)}
                             onKeyDown={e => {
-                                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleQuery();
+                                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                                    e.preventDefault();
+                                    handleQuery();
+                                }
                             }}
                             placeholder="输入问题，例如：液压导管修理需要哪些工具？"
                             className="w-full h-24 px-4 py-3 bg-gray-900 border border-gray-700
@@ -131,8 +139,8 @@ export default function QueryPage() {
                                 onClick={() => setStrategy(s.value)}
                                 title={s.desc}
                                 className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${strategy === s.value
-                                        ? "bg-indigo-600 border-indigo-600 text-white"
-                                        : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-300"
+                                    ? "bg-indigo-600 border-indigo-600 text-white"
+                                    : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-300"
                                     }`}
                             >
                                 {s.label}
