@@ -16,7 +16,7 @@ async function getDocuments(): Promise<Document[]> {
 export default async function LibraryPage() {
     const documents = await getDocuments();
     return (
-        <div className="p-8">
+        <div className="p-8 min-h-screen bg-gray-950">
             <h1 className="text-2xl font-semibold text-white mb-6">
                 文档库
                 <span className="ml-3 text-sm text-gray-400 font-normal">
@@ -37,7 +37,10 @@ export default async function LibraryPage() {
                     {documents.map((doc) => (
                         <tr key={doc.doc_id} className="border-b border-gray-800/50">
                             <td className="py-3 pr-6 font-mono text-indigo-400">
-                                {doc.doc_id}
+                                <a href={`/library/${doc.doc_id}`}
+                                    className="hover:underline">
+                                    {doc.doc_id}
+                                </a>
                             </td>
                             <td className="py-3 pr-6 text-gray-300">
                                 {doc.title ?? "—"}
