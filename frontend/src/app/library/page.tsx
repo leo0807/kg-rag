@@ -1,3 +1,6 @@
+import { Suspense } from "react";
+import SkeletonTable from "@/components/ui/SkeletonTable";
+
 interface Document {
     doc_id: string;
     title: string | null;
@@ -13,7 +16,7 @@ async function getDocuments(): Promise<Document[]> {
     return res.json();
 }
 
-export default async function LibraryPage() {
+async function LibraryTable() {
     const documents = await getDocuments();
     return (
         <div className="p-8 min-h-screen bg-gray-950">
@@ -60,4 +63,12 @@ export default async function LibraryPage() {
             </table>
         </div>
     )
+}
+
+export default function LibraryPage() {
+    return (
+        <Suspense fallback={<SkeletonTable rows={6} />}>
+            <LibraryTable />
+        </Suspense>
+    );
 }
