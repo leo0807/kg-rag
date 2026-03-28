@@ -1,11 +1,13 @@
 import logging
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, Driver
 from .config import settings
 
 logger = logging.getLogger(__name__)
 _driver = None
 
-def get_driver():
+def get_driver() -> Driver:
+    if _driver is None:
+        raise RuntimeError("Neo4j 未初始化，请检查数据库连接")
     return _driver
 
 _SCHEMA_STATEMENTS = [

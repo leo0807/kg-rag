@@ -7,11 +7,12 @@ interface IngestResult {
     doc_id: string;
     sections: number;
     status: string;
+    message?: string;
 }
 
 interface FileItem {
     file: File;
-    status: "pending" | "uploading" | "done" | "error";
+    status: "pending" | "uploading" | "done" | "skipped" | "error";
     result?: IngestResult;
     error?: string;
 }
@@ -32,6 +33,7 @@ export default function IngestPage() {
     async function uploadAll() {
         let doneCount = 0;
         let errorCount = 0;
+        let skippedCount = 0;
         const pendingFiles = files.filter(f => f.status === "pending");
 
         for (let i = 0; i < files.length; i++) {
@@ -50,9 +52,14 @@ export default function IngestPage() {
                 });
 
                 setFiles(prev => prev.map((f, idx) =>
-                    idx === i ? { ...f, status: "done", result: data } : f
+                    idx === i
+                        ? { ...f, status: data.status === "skipped" ? "skipped" : "done", result: data }
+                        : f
                 ));
-                doneCount++;
+
+                if (data.status === "skipped") skippedCount++;
+                else doneCount++;
+
             } catch (e) {
                 const message = e instanceof ApiError ? e.message : "上传失败";
                 setFiles(prev => prev.map((f, idx) =>
@@ -62,7 +69,7 @@ export default function IngestPage() {
             }
         }
 
-        // 用本地计数器判断，不依赖 files 状态
+        // 没有失败才跳转
         if (errorCount === 0 && doneCount > 0) {
             setTimeout(() => {
                 window.location.href = "/library";
@@ -121,8 +128,9 @@ export default function IngestPage() {
 
                             <span className="text-lg">
                                 {item.status === "done" ? "✅" :
-                                    item.status === "error" ? "❌" :
-                                        item.status === "uploading" ? "⏳" : "📄"}
+                                    item.status === "skipped" ? "⏭️" :
+                                        item.status === "error" ? "❌" :
+                                            item.status === "uploading" ? "⏳" : "📄"}
                             </span>
 
                             <div className="flex-1 min-w-0">
@@ -132,11 +140,13 @@ export default function IngestPage() {
                                 <div className="text-xs text-gray-500 mt-0.5">
                                     {item.status === "done" && item.result
                                         ? `${item.result.doc_id} · ${item.result.sections} 个章节`
-                                        : item.status === "error"
-                                            ? item.error
-                                            : item.status === "uploading"
-                                                ? "上传中..."
-                                                : `${(item.file.size / 1024).toFixed(1)} KB`}
+                                        : item.status === "skipped" && item.result
+                                            ? `${item.result.doc_id} · 已入库，跳过`
+                                            : item.status === "error"
+                                                ? item.error
+                                                : item.status === "uploading"
+                                                    ? "上传中..."
+                                                    : `${(item.file.size / 1024).toFixed(1)} KB`}
                                 </div>
                             </div>
 

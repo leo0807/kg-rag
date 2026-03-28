@@ -1,9 +1,12 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from pathlib import Path
+
+_ROOT = Path(__file__).parent.parent.parent.parent
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file="../../.env",
+        env_file=str(_ROOT / ".env"),
         extra="ignore",
     )
 
@@ -25,6 +28,10 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5:7b"   # 可换成任意本地模型
     RETRIEVER_TOP_K: int = 5           # 向量召回数量
+
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_HOST:       str = "http://localhost:3001"
 
     APP_VERSION: str = "1.0.0"
 

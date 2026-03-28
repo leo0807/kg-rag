@@ -1,7 +1,7 @@
 import logging
 from ..core.database import get_driver
 from ..core.config import settings
-from .embedder import embed_texts
+# from .embedder import embed_texts
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +40,13 @@ def retrieve(question: str) -> list[dict]:
     返回一个 list，每个元素对应一个召回片段及其图谱上下文。
     """
     # 问题嵌入：维度与 Section.embedding 一致（1024）
-    embedding = embed_texts([question])[0]
+    # embedding = embed_texts([question])[0]
 
     driver = get_driver()
     with driver.session() as session:
         result = session.run(
             _RETRIEVE_CYPHER,
-            embedding=embedding,
+            # embedding=embedding,
             top_k=settings.RETRIEVER_TOP_K,
         )
         records = [dict(r) for r in result]
