@@ -21,6 +21,8 @@ from .routers.users import router as users_router
 from .db.session import init_tables
 from .services.milvus_store import connect_milvus, get_or_create_collection
 from .core.config import settings
+from .core.logging import setup_logging
+
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -32,6 +34,8 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
+    logger.info("CPS 知识库 v%s 启动中...", settings.APP_VERSION)
     # 启动检查
     logger.info("=" * 50)
     logger.info("CPS 知识库 v%s 启动中...", settings.APP_VERSION)

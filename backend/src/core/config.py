@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     REDIS_URL:         str = "redis://localhost:6379/0"
     QUERY_CACHE_TTL:   int = 3600  # 缓存1小时
 
+    LOG_LEVEL: str = "INFO"
+    DEBUG:     bool = True   # 开发时 True，生产时 False
+
     APP_VERSION: str = "1.0.0"
 
     @field_validator("NEO4J_URI", mode="before")
