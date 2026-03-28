@@ -237,6 +237,28 @@ async def get_profile(
         "created_at": user.created_at.isoformat(),
     }
 
+@router.post("/refresh")
+async def refresh_token(
+    db:   AsyncSession = Depends(get_db),
+    user: User         = Depends(get_current_user),
+):
+    """刷新 token，返回新 token"""
+    new_token = create_access_token(user.id, user.is_admin)
+
+    log = AuditLog(
+        user_id  = user.id,
+        action   = "refresh_token",
+        resource = "auth",
+        detail   = f"用户 {user.username} 刷新了 token",
+    )
+    db.add(log)
+    await db.commit()
+
+    return {
+        "access_token": new_token,
+        "token_type":   "bearer",
+    }
+
 @router.get("/me")
 async def me(db: AsyncSession = Depends(get_db)):
     """临时接口，测试用"""

@@ -17,10 +17,16 @@ export async function fetchApi<T>(
     url: string,
     options?: RequestInit,
 ): Promise<T> {
+
+
     // 自动附加 token
     const token = typeof window !== "undefined"
         ? localStorage.getItem("token")
         : null;
+
+    if (token && shouldRefreshToken(token)) {
+        await refreshToken();
+    }
 
     const headers: Record<string, string> = {
         ...(options?.headers as Record<string, string>),
@@ -55,4 +61,33 @@ export async function fetchApi<T>(
     }
 
     return res.json();
+}
+
+// token 过期前1小时自动刷新
+function shouldRefreshToken(token: string): boolean {
+    try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const exp = payload.exp * 1000;
+        const now = Date.now();
+        // 距离过期不足1小时
+        return exp - now < 60 * 60 * 1000;
+    } catch {
+        return false;
+    }
+}
+
+async function refreshToken(): Promise<void> {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    try {
+        const res = await fetch("/api/auth/refresh", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}` },
+        });
+        if (res.ok) {
+            const data = await res.json();
+            localStorage.setItem("token", data.access_token);
+        }
+    } catch { }
 }
