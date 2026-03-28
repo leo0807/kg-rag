@@ -79,4 +79,14 @@ class TestDocumentsEndpoint:
 
     def test_documents_returns_list(self, client):
         res = client.get("/api/documents")
-        assert isinstance(res.json(), list)
+        data = res.json()
+        assert "data" in data
+        assert isinstance(data["data"], list)
+        
+    def test_documents_returns_pagination_fields(self, client):
+        res = client.get("/api/documents")
+        data = res.json()
+        assert "total"    in data
+        assert "page"     in data
+        assert "per_page" in data
+        assert "pages"    in data
