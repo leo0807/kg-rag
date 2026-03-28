@@ -16,6 +16,8 @@ from .routers.query import router as query_router
 from .routers.sessions import router as sessions_router
 from .routers.auth import router as auth_router
 from .routers.settings import router as settings_router
+from .routers.users import router as users_router
+
 from .db.session import init_tables
 from .services.milvus_store import connect_milvus, get_or_create_collection
 from .core.config import settings
@@ -66,6 +68,7 @@ app.include_router(graph_router)
 app.include_router(query_router)
 app.include_router(auth_router)
 app.include_router(settings_router)
+app.include_router(users_router)
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health():
