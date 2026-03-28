@@ -15,6 +15,7 @@ from .routers.graph import router as graph_router
 from .routers.query import router as query_router
 from .routers.sessions import router as sessions_router
 from .routers.auth import router as auth_router
+from .routers.settings import router as settings_router
 from .db.session import init_tables
 from .services.milvus_store import connect_milvus, get_or_create_collection
 from .core.config import settings
@@ -27,7 +28,6 @@ UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 logger = logging.getLogger(__name__)
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_tables()
@@ -65,6 +65,7 @@ app.include_router(documents_router)
 app.include_router(graph_router)
 app.include_router(query_router)
 app.include_router(auth_router)
+app.include_router(settings_router)
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health():
