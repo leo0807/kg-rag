@@ -177,7 +177,23 @@ services:
       - "3000:3000"
     depends_on:
       - backend
-
+  # ── 应用数据库（用户、配置、审计）────────
+  app-db:
+    image: postgres:15
+    container_name: aviation-app-db
+    environment:
+      POSTGRES_USER: aviation
+      POSTGRES_PASSWORD: aviation123
+      POSTGRES_DB: aviation
+    volumes:
+      - app_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U aviation" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 volumes:
   neo4j_data:
   neo4j_logs:
@@ -186,3 +202,4 @@ volumes:
   milvus_data:
   langfuse_db_data:
   redis_data:
+  app_db_data:

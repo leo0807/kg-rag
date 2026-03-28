@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     LLM_API_KEY:        str = "ollama"
     LLM_MODEL:          str = "qwen2.5:7b"
 
+    DATABASE_URL: str = "postgresql+asyncpg://aviation:aviation123@localhost:5432/aviation"
+
+    JWT_SECRET:       str = "aviation-jwt-secret-change-in-production"
+    JWT_EXPIRE_HOURS: int = 24
+
     APP_VERSION: str = "1.0.0"
 
 @lru_cache
