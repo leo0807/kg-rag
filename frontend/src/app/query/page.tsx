@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Download, Plus, Trash2 } from "lucide-react";
 import { fetchApi, ApiError } from "@/lib/api";
 import Link from "next/link";
+import SkeletonCard from "@/components/SkeletonCard";
 
 interface SourceSection {
     chunk_id: string;
@@ -253,8 +254,9 @@ export default function QueryPage() {
                             导出 MD
                         </button>
                     </div>
+                    {loading && <SkeletonCard />}
 
-                    {result && (
+                    {!loading && result && (
                         <>
                             <div className="p-5 bg-gray-900 rounded-xl border border-gray-800 mb-4">
                                 <div className="text-xs text-gray-500 mb-3 uppercase tracking-wider">
