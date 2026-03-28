@@ -110,9 +110,31 @@ async def query(
         except Exception as e:
             logger.warning("向量检索失败，降级到全文检索: %s", e)
 
-# ── RRF 融合 ──────────────────────────────
-    if req.strategy in ("parallel", "graph_augmented") and vector_ids:
+# ── RRF 融合 / 策略分发 ───────────────────
+    if req.strategy == "parallel" and vector_ids:
         fused_ids = rrf_fusion(ft_ids, vector_ids)[:top_k * 2]
+
+    elif req.strategy == "sequential":
+        # 串行：先全文，不够再用向量补充
+        fused_ids = list(ft_ids[:top_k])
+        if len(fused_ids) < top_k:
+            try:
+                from ..services.embedder     import embed_query
+                from ..services.milvus_store import search_sections
+                query_vec   = embed_query(req.question)
+                vec_results = search_sections(query_vec, top_k=top_k)
+                seen = set(fused_ids)
+                for r in vec_results:
+                    if r["chunk_id"] not in seen and len(fused_ids) < top_k:
+                        fused_ids.append(r["chunk_id"])
+                        seen.add(r["chunk_id"])
+                logger.info("串行检索补充至 %d 条", len(fused_ids))
+            except Exception as e:
+                logger.warning("串行向量补充失败: %s", e)
+
+    elif req.strategy == "graph_augmented" and vector_ids:
+        fused_ids = rrf_fusion(ft_ids, vector_ids)[:top_k * 2]
+
     else:
         fused_ids = ft_ids[:top_k * 2]
 
