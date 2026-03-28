@@ -32,9 +32,19 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_tables()
+    # 启动检查
+    logger.info("=" * 50)
+    logger.info("CPS 知识库 v%s 启动中...", settings.APP_VERSION)
+    logger.info("NEO4J_URI:  %s", settings.NEO4J_URI)
+    logger.info("MILVUS:     %s:%s", settings.MILVUS_HOST, settings.MILVUS_PORT)
+    logger.info("LLM_MODE:   %s / %s", settings.LLM_MODE, settings.LLM_MODEL)
+    logger.info("=" * 50)
+
     # 初始化 Neo4j
     init_db()
+
+    await init_tables()
+
     # 初始化 Milvus
     try:
         connect_milvus(

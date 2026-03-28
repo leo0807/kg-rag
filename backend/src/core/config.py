@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 from pathlib import Path
@@ -70,6 +71,24 @@ class Settings(BaseSettings):
 
     APP_VERSION: str = "1.0.0"
 
+    @field_validator("NEO4J_URI", mode="before")
+    @classmethod
+    def check_neo4j_uri(cls, v: str) -> str:
+        if not v.startswith(("bolt://", "neo4j://")):
+            raise ValueError("NEO4J_URI 必须以 bolt:// 或 neo4j:// 开头")
+        return v
+
+    @field_validator("JWT_SECRET", mode="before")
+    @classmethod
+    def check_jwt_secret(cls, v: str) -> str:
+        if v == "aviation-jwt-secret-change-in-production":
+            import logging
+            logging.getLogger(__name__).warning(
+                "⚠️  JWT_SECRET 使用默认值，生产环境请修改！"
+            )
+        if len(v) < 16:
+            raise ValueError("JWT_SECRET 至少需要16个字符")
+        return v
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
