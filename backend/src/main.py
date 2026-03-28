@@ -12,6 +12,8 @@ from .services.neo4j_writer import write_document
 from .routers.documents import router as documents_router
 from .routers.graph import router as graph_router
 from .routers.query import router as query_router
+from .routers.sessions import router as sessions_router
+
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -40,6 +42,7 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+app.include_router(sessions_router)
 app.include_router(documents_router)
 app.include_router(graph_router)
 app.include_router(query_router)

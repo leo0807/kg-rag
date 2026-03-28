@@ -34,23 +34,27 @@ const strategies: { value: Strategy; label: string; desc: string }[] = [
     { value: "multi_hop", label: "多跳推理", desc: "复杂因果分析" },
 ];
 
-function loadSessions(): Session[] {
+async function fetchSessions(): Promise<Session[]> {
     try {
-        return JSON.parse(localStorage.getItem("query_sessions") ?? "[]");
+        const res = await fetch("/api/sessions");
+        const data = await res.json();
+        return data.map((s: any) => ({
+            ...s,
+            sources: typeof s.sources === "string" ? JSON.parse(s.sources) : (s.sources ?? []),
+        }));
     } catch { return []; }
 }
 
-function saveSession(session: Session) {
-    const sessions = loadSessions();
-    localStorage.setItem(
-        "query_sessions",
-        JSON.stringify([session, ...sessions].slice(0, 20))
-    );
+async function createSession(session: Session): Promise<void> {
+    await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(session),
+    });
 }
 
-function deleteSession(id: string) {
-    const sessions = loadSessions().filter(s => s.id !== id);
-    localStorage.setItem("query_sessions", JSON.stringify(sessions));
+async function removeSession(id: string): Promise<void> {
+    await fetch(`/api/sessions/${id}`, { method: "DELETE" });
 }
 
 function exportResult(result: QueryResponse, question: string) {
@@ -91,7 +95,9 @@ export default function QueryPage() {
     const [sessions, setSessions] = useState<Session[]>([]);
     const [activeSession, setActiveSession] = useState<string | null>(null);
 
-    useEffect(() => { setSessions(loadSessions()); }, []);
+    useEffect(() => {
+        fetchSessions().then(setSessions);
+    }, []);
 
     async function handleQuery() {
         if (!query.trim()) return;
@@ -113,9 +119,9 @@ export default function QueryPage() {
             };
 
             setResult(data);
-            saveSession(session);
+            await createSession(session);
             setActiveSession(session.id);
-            setSessions(loadSessions());
+            fetchSessions().then(setSessions);
         } catch (e) {
             const message = e instanceof ApiError ? e.message : "网络异常，请检查连接";
             setResult({ answer: message, sources: [] });
@@ -171,10 +177,10 @@ export default function QueryPage() {
                                     {session.question}
                                 </span>
                                 <button
-                                    onClick={e => {
+                                    onClick={async e => {
                                         e.stopPropagation();
-                                        deleteSession(session.id);
-                                        setSessions(loadSessions());
+                                        await removeSession(session.id);
+                                        fetchSessions().then(setSessions);
                                         if (activeSession === session.id) {
                                             setResult(null);
                                             setActiveSession(null);
