@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_HOST:       str = "http://localhost:3001"
 
+    MILVUS_HOST: str = "localhost"
+    MILVUS_PORT: int = 19530
+
     APP_VERSION: str = "1.0.0"
 
 @lru_cache

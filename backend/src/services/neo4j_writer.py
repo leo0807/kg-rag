@@ -1,7 +1,8 @@
 import logging
 from ..core.database import get_driver
 from ..models.schemas import DocumentSchema
-# from .embedder import embed_texts
+from .embedder import embed_texts
+from .milvus_store import upsert_sections
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,21 @@ def write_document(doc: DocumentSchema) -> None:
 
         logger.info("写入 Document 节点 doc_id=%s", doc.doc_id)
         # 第二条请求：批量写入所有 Section 节点并建立关系
+        # 写入向量到 Milvus
         texts = [f"{s.title}\n{s.content}" for s in doc.sections]
-        # embeddings = embed_texts(texts)
+        embeddings = embed_texts(texts)
+
+        milvus_data = [
+            {
+                "chunk_id":  s.chunk_id,
+                "doc_id":    doc.doc_id,
+                "text":      f"{s.title}\n{s.content}",
+                "embedding": embeddings[i],
+            }
+            for i, s in enumerate(doc.sections)
+        ]
+        upsert_sections(milvus_data)
+        logger.info("写入 Milvus 向量 doc_id=%s sections=%d", doc.doc_id, len(doc.sections))
 
         sections_data = [
             {
