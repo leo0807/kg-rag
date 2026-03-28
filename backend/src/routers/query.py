@@ -132,9 +132,17 @@ async def query(
     else:
         context = "\n\n".join(
             f"[{s['doc_id']} §{s['number']}] {s['title']}\n{s['content']}"
-            for s in sections[:3]
+            for s in sections
         )
-        answer = f"根据工艺规范知识库，检索到 {len(sections)} 个相关章节：\n\n{context[:2000]}"
+        try:
+            from ..services.llm import generate_answer
+            answer = generate_answer(
+                question = req.question,
+                context  = context,
+            )
+        except Exception as e:
+            logger.warning("LLM 生成失败，降级返回检索结果: %s", e)
+            answer = f"根据工艺规范知识库，检索到 {len(sections)} 个相关章节：\n\n{context[:2000]}"
 
     sources = [
         SourceSection(

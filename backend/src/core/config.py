@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     JWT_SECRET:       str = "aviation-jwt-secret-change-in-production"
     JWT_EXPIRE_HOURS: int = 24
 
+    # LLM 配置
+    LLM_MODE:    str = "openai"                        # openai | anthropic
+    LLM_API_URL: str = "http://localhost:11434/v1"     # Ollama 默认地址
+    LLM_API_KEY: str = "ollama"                        # Ollama 不需要真实 key
+    LLM_MODEL:   str = "qwen2.5:7b"                   # 默认模型
+
     APP_VERSION: str = "1.0.0"
 
 @lru_cache
