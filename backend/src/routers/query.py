@@ -110,11 +110,41 @@ async def query(
         except Exception as e:
             logger.warning("向量检索失败，降级到全文检索: %s", e)
 
-    # ── RRF 融合 ──────────────────────────────
-    if req.strategy == "parallel" and vector_ids:
-        fused_ids = rrf_fusion(ft_ids, vector_ids)[:top_k]
+# ── RRF 融合 ──────────────────────────────
+    if req.strategy in ("parallel", "graph_augmented") and vector_ids:
+        fused_ids = rrf_fusion(ft_ids, vector_ids)[:top_k * 2]
     else:
-        fused_ids = ft_ids[:top_k]
+        fused_ids = ft_ids[:top_k * 2]
+
+    # ── 图谱增强：从种子节点扩展邻居 ──────────
+    if req.strategy == "graph_augmented" and fused_ids:
+        try:
+            with driver.session() as session:
+                result = session.run("""
+                    UNWIND $chunk_ids AS cid
+                    MATCH (s:Section {chunk_id: cid})
+                    OPTIONAL MATCH (s)-[:HAS_SUBSECTION|NEXT_SECTION]-(neighbor:Section)
+                    OPTIONAL MATCH (parent:Section)-[:HAS_SUBSECTION]->(s)
+                    WITH collect(DISTINCT s.chunk_id) +
+                         collect(DISTINCT neighbor.chunk_id) +
+                         collect(DISTINCT parent.chunk_id) AS all_ids
+                    UNWIND all_ids AS id
+                    WITH id WHERE id IS NOT NULL
+                    RETURN collect(DISTINCT id) AS expanded_ids
+                """, chunk_ids=fused_ids[:5])
+                record       = result.single()
+                expanded_ids = record["expanded_ids"] if record else []
+                seen = set(fused_ids)
+                for eid in expanded_ids:
+                    if eid not in seen:
+                        fused_ids.append(eid)
+                        seen.add(eid)
+                logger.info("图谱增强：扩展到 %d 个候选章节", len(fused_ids))
+        except Exception as e:
+            logger.warning("图谱增强失败: %s", e)
+
+    # 最终截取 top_k
+    fused_ids = fused_ids[:top_k * 2]
 
     # ── 获取章节详情 ──────────────────────────
     sections = get_section_details(driver, fused_ids)
