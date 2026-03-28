@@ -1,5 +1,6 @@
 "use client";
 
+import ThemeToggle from "@/components/ThemeToggle";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -37,6 +38,10 @@ export default function Sidebar() {
                     )
                 })}
             </nav>
+            <div className="px-4 py-3 border-t border-gray-800 flex items-center justify-between">
+                <div className="text-xs text-gray-600">v1.0.0</div>
+                <ThemeToggle />
+            </div>
         </aside >
     );
 }
