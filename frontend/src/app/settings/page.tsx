@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-type Tab = "profile" | "password" | "model" | "admin";
+type Tab = "profile" | "password" | "model" | "admin" | "audit";
 
 interface UserInfo {
     username: string;
@@ -33,6 +33,16 @@ interface UserRow {
     created_at: string;
 }
 
+interface AuditRow {
+    id: number;
+    username: string;
+    full_name: string;
+    action: string;
+    resource: string;
+    detail: string;
+    created_at: string;
+}
+
 function getToken() {
     return localStorage.getItem("token") ?? "";
 }
@@ -45,6 +55,9 @@ export default function SettingsPage() {
     const [msg, setMsg] = useState("");
     const [error, setError] = useState("");
     const [isAdmin, setIsAdmin] = useState(false);
+    const [auditLogs, setAuditLogs] = useState<AuditRow[]>([]);
+    const [auditTotal, setAuditTotal] = useState(0);
+    const [auditPage, setAuditPage] = useState(1);
 
     const [pwForm, setPwForm] = useState({
         old_password: "",
@@ -53,15 +66,29 @@ export default function SettingsPage() {
     });
 
     useEffect(() => {
+
         const stored = localStorage.getItem("user");
         if (stored) {
             const u = JSON.parse(stored);
             setIsAdmin(u.is_admin ?? false);
-            if (u.is_admin) loadUsers();
+            if (u.is_admin) {
+                loadUsers();
+                loadAuditLogs();
+            }
         }
         loadProfile();
         loadSettings();
     }, []);
+
+    async function loadAuditLogs(page = 1) {
+        const res = await fetch(`/api/users/audit-logs?page=${page}&per_page=15`, {
+            headers: { "Authorization": `Bearer ${getToken()}` },
+        });
+        const data = await res.json();
+        setAuditLogs(data.data);
+        setAuditTotal(data.total);
+        setAuditPage(page);
+    }
 
     async function loadProfile() {
         const res = await fetch("/api/auth/profile", {
@@ -78,7 +105,7 @@ export default function SettingsPage() {
     }
 
     async function loadUsers() {
-        const res = await fetch("/api/auth/users", {
+        const res = await fetch("/api/users", {
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
         setUsers(await res.json());
@@ -146,7 +173,7 @@ export default function SettingsPage() {
     }
 
     async function toggleUser(userId: string) {
-        const res = await fetch(`/api/auth/users/${userId}/toggle`, {
+        const res = await fetch(`/api/users/${userId}/toggle`, {
             method: "PUT",
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
@@ -155,7 +182,7 @@ export default function SettingsPage() {
     }
 
     async function toggleAdmin(userId: string) {
-        const res = await fetch(`/api/auth/users/${userId}/admin`, {
+        const res = await fetch(`/api/users/${userId}/admin`, {
             method: "PUT",
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
@@ -167,7 +194,10 @@ export default function SettingsPage() {
         { key: "profile", label: "个人资料" },
         { key: "password", label: "修改密码" },
         { key: "model", label: "模型设置" },
-        ...(isAdmin ? [{ key: "admin" as Tab, label: "用户管理" }] : []),
+        ...(isAdmin ? [
+            { key: "admin" as Tab, label: "用户管理" },
+            { key: "audit" as Tab, label: "审计日志" },
+        ] : []),
     ];
 
     return (
@@ -383,6 +413,69 @@ export default function SettingsPage() {
                             ))}
                         </tbody>
                     </table>
+                </div>
+            )}
+
+            {/* 审计 */}
+            {tab === "audit" && (
+                <div>
+                    <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mb-4">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-gray-800 text-gray-400 text-left">
+                                    <th className="px-4 py-3">时间</th>
+                                    <th className="px-4 py-3">用户</th>
+                                    <th className="px-4 py-3">操作</th>
+                                    <th className="px-4 py-3">详情</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {auditLogs.map(log => (
+                                    <tr key={log.id} className="border-b border-gray-800/50">
+                                        <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                                            {new Date(log.created_at).toLocaleString("zh-CN")}
+                                        </td>
+                                        <td className="px-4 py-2.5 text-xs text-gray-300">
+                                            {log.full_name || log.username}
+                                        </td>
+                                        <td className="px-4 py-2.5">
+                                            <span className={`px-2 py-0.5 rounded text-xs ${log.action === "login" ? "bg-green-500/20 text-green-400" :
+                                                    log.action === "register" ? "bg-indigo-500/20 text-indigo-400" :
+                                                        log.action.includes("delete") ? "bg-red-500/20 text-red-400" :
+                                                            "bg-gray-700 text-gray-400"
+                                                }`}>
+                                                {log.action}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-2.5 text-xs text-gray-400">{log.detail}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* 分页 */}
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => loadAuditLogs(auditPage - 1)}
+                            disabled={auditPage === 1}
+                            className="px-3 py-1.5 bg-gray-900 border border-gray-700 rounded
+                   text-xs text-gray-400 disabled:opacity-40"
+                        >
+                            上一页
+                        </button>
+                        <span className="text-xs text-gray-500">
+                            共 {auditTotal} 条
+                        </span>
+                        <button
+                            onClick={() => loadAuditLogs(auditPage + 1)}
+                            disabled={auditLogs.length < 15}
+                            className="px-3 py-1.5 bg-gray-900 border border-gray-700 rounded
+                   text-xs text-gray-400 disabled:opacity-40"
+                        >
+                            下一页
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
