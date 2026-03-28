@@ -29,6 +29,9 @@ def mock_driver(mock_session):
 def client(mock_driver):
     driver, _ = mock_driver
     with patch("src.main.init_db"), \
+         patch("src.main.init_tables"), \
+         patch("src.main.connect_milvus"), \
+         patch("src.main.get_or_create_collection"), \
          patch("src.core.database.get_driver", return_value=driver), \
          patch("src.core.database._driver", driver):
         with TestClient(app, raise_server_exceptions=True) as c:
@@ -82,7 +85,7 @@ class TestDocumentsEndpoint:
         data = res.json()
         assert "data" in data
         assert isinstance(data["data"], list)
-        
+
     def test_documents_returns_pagination_fields(self, client):
         res = client.get("/api/documents")
         data = res.json()
