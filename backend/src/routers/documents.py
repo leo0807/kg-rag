@@ -10,9 +10,19 @@ router = APIRouter(prefix="/api", tags=["documents"])
 @router.get("/stats")
 async def stats(driver: Driver = Depends(get_driver)):
     with driver.session() as session:
-        result = session.run("MATCH (n) RETURN count(n) AS total")
+        result = session.run("""
+            MATCH (n)
+            RETURN 
+                count(n) AS total,
+                sum(CASE WHEN n:Document AND n.title IS NOT NULL THEN 1 ELSE 0 END) AS documents,
+                sum(CASE WHEN n:Section THEN 1 ELSE 0 END) AS sections
+        """)
         record = result.single()
-        return {"node_count": record["total"]}
+        return {
+            "total":     record["total"],
+            "documents": record["documents"],
+            "sections":  record["sections"],
+        }
 
 @router.get("/documents")
 async def list_documents(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { fetchApi, ApiError } from "@/lib/api";
 
 interface IngestResult {
@@ -8,6 +8,12 @@ interface IngestResult {
     sections: number;
     status: string;
     message?: string;
+}
+
+interface Stats {
+    total: number;
+    documents: number;
+    sections: number;
 }
 
 interface FileItem {
@@ -20,7 +26,15 @@ interface FileItem {
 export default function IngestPage() {
     const [files, setFiles] = useState<FileItem[]>([]);
     const [dragging, setDragging] = useState(false);
+    const [stats, setStats] = useState<Stats | null>(null);
+
     const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        fetch("/api/stats")
+            .then(r => r.json())
+            .then(setStats);
+    }, []);
 
     function addFiles(newFiles: FileList | null) {
         if (!newFiles) return;
@@ -75,13 +89,37 @@ export default function IngestPage() {
                 window.location.href = "/library";
             }, 2000);
         }
+
+        // 刷新统计
+        fetch("/api/stats").then(r => r.json()).then(setStats);
     }
     const pendingCount = files.filter(f => f.status === "pending").length;
 
     return (
         <div className="p-8 min-h-screen bg-gray-950">
             <h1 className="text-2xl font-semibold text-white mb-6">导入文件</h1>
-
+            {stats && (
+                <div className="flex gap-3 mb-6">
+                    <div className="px-4 py-3 bg-gray-900 border border-gray-800 rounded-lg flex-1">
+                        <div className="text-xs text-gray-500 mb-1">已入库文档</div>
+                        <div className="text-2xl font-semibold text-white">
+                            {stats.documents}
+                        </div>
+                    </div>
+                    <div className="px-4 py-3 bg-gray-900 border border-gray-800 rounded-lg flex-1">
+                        <div className="text-xs text-gray-500 mb-1">章节总数</div>
+                        <div className="text-2xl font-semibold text-white">
+                            {stats.sections}
+                        </div>
+                    </div>
+                    <div className="px-4 py-3 bg-gray-900 border border-gray-800 rounded-lg flex-1">
+                        <div className="text-xs text-gray-500 mb-1">图谱节点</div>
+                        <div className="text-2xl font-semibold text-white">
+                            {stats.total}
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* 拖拽区域 */}
             <div
                 onDragOver={e => { e.preventDefault(); setDragging(true); }}
