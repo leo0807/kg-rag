@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Download, Plus, Trash2 } from "lucide-react";
 import { fetchApi, ApiError } from "@/lib/api";
+import Link from "next/link";
 
 interface SourceSection {
     chunk_id: string;
@@ -220,8 +221,8 @@ export default function QueryPage() {
                                 onClick={() => setStrategy(s.value)}
                                 title={s.desc}
                                 className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${strategy === s.value
-                                        ? "bg-indigo-600 border-indigo-600 text-white"
-                                        : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-300"
+                                    ? "bg-indigo-600 border-indigo-600 text-white"
+                                    : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-300"
                                     }`}
                             >
                                 {s.label}
@@ -271,11 +272,12 @@ export default function QueryPage() {
                                     </div>
                                     <div className="space-y-2">
                                         {result.sources.map(source => (
-                                            <div
+                                            <Link
                                                 key={source.chunk_id}
+                                                href={`/library/${source.doc_id}`}
                                                 className="flex items-center justify-between px-4 py-3
-                                   bg-gray-900 rounded-lg border border-gray-800
-                                   hover:border-gray-700 transition-colors"
+               bg-gray-900 rounded-lg border border-gray-800
+               hover:border-indigo-500 transition-colors cursor-pointer"
                                             >
                                                 <div>
                                                     <span className="text-xs font-mono text-indigo-400 mr-2">
@@ -286,7 +288,7 @@ export default function QueryPage() {
                                                 <span className="text-xs text-gray-600 flex-shrink-0 ml-4">
                                                     {(source.score / 10).toFixed(2)}
                                                 </span>
-                                            </div>
+                                            </Link>
                                         ))}
                                     </div>
                                 </div>
