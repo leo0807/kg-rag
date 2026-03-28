@@ -118,7 +118,13 @@ async def query(
 
     # ── 获取章节详情 ──────────────────────────
     sections = get_section_details(driver, fused_ids)
-
+    # ── Reranker 重排序 ───────────────────────────
+    if sections and req.strategy in ("parallel", "graph_augmented"):
+        try:
+            from ..services.reranker import rerank
+            sections = rerank(req.question, sections, top_k=top_k)
+        except Exception as e:
+            logger.warning("Reranker 失败，跳过重排序: %s", e)
     latency_ms = int((time.time() - start) * 1000)
 
     if not sections:
@@ -136,7 +142,7 @@ async def query(
             doc_id   = s["doc_id"],
             number   = s["number"] or "",
             title    = s["title"]  or "",
-            score    = round(ft_score_map.get(s["chunk_id"], 0.0), 4),
+            score    = round(s.get("rerank_score") or ft_score_map.get(s["chunk_id"], 0.0), 4),
         )
         for s in sections
     ]
