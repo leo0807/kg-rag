@@ -38,20 +38,32 @@ def extract_meta(pdf_path: Path) -> dict:
     with pdfplumber.open(pdf_path) as pdf:
         cover_text = pdf.pages[0].extract_text() or ""
 
-    # 提取规范编号和版本
-    doc_match = re.search(r'(CPS\d+)版本[:：]([A-Z])', cover_text)
-    doc_id  = doc_match.group(1) if doc_match else ""
-    version = doc_match.group(2) if doc_match else ""
+    # 更宽松：支持 "CPS0215版本:A" 和 "CPS0215 版本: A" 两种格式
+    doc_match = re.search(r'(CPS\d+)\s*版本[:：]\s*([A-Z])', cover_text)
+    
+    # 如果封面没有编号，从文件名提取
+    if not doc_match:
+        name_match = re.search(r'(CPS\d+)', pdf_path.stem)
+        doc_id  = name_match.group(1) if name_match else ""
+        version = ""
+    else:
+        doc_id  = doc_match.group(1)
+        version = doc_match.group(2)
 
-    # 提取标题（在"规范"和发布日期之间的那行）
+    # 支持"规范"和"文件"两种类型
     title_match = re.search(
-        r'中国商用飞机有限责任公司规范\n(.*?)\n',
+        r'中国商用飞机有限责任公司(?:规范|文件)\n(.*?)\n',
         cover_text
     )
-    title = title_match.group(1).strip() if title_match else ""
+    # 如果还是找不到，取第二行非空文字作为标题
+    if not title_match:
+        lines = [l.strip() for l in cover_text.split('\n') if l.strip()]
+        title = lines[1] if len(lines) > 1 else ""
+    else:
+        title = title_match.group(1).strip()
 
-    # 提取发布日期
-    date_match = re.search(r'(\d{4}-\d{2}-\d{2})发布', cover_text)
+    # 日期：取第一个出现的日期
+    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', cover_text)
     issue_date = date_match.group(1) if date_match else ""
 
     return {
@@ -60,7 +72,6 @@ def extract_meta(pdf_path: Path) -> dict:
         "title":      title,
         "issue_date": issue_date,
     }
-
 def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
     # 提取所有章节，每个章节包含章节号、标题、正文内容
     # 第一步：把所有页的文字合并成一个字符串
@@ -103,8 +114,10 @@ def parse(pdf_path: Path) -> dict:
 
     # ** 是字典解包，把一个字典的所有键值对展开到另一个字典里：
     if not meta["doc_id"]:
-        raise ValueError(f"无法从 PDF 提取文档编号，请检查封面格式: {pdf_path.name}")
-        
+        raise ValueError(
+            f"无法提取文档编号（封面和文件名均无法识别）: {pdf_path.name}"
+        )
+
     return DocumentSchema(
         doc_id=meta["doc_id"],
         version=meta["version"],
