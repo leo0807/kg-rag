@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, UploadFile, File, Request
+from fastapi.middleware.cors import CORSMiddleware
 from neo4j import Driver
 from pydantic import BaseModel
 import shutil
@@ -93,6 +94,18 @@ app = FastAPI(
     version     = "1.0.0",
     docs_url    = "/docs",
     redoc_url   = "/redoc",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",      # 本地开发
+        "http://127.0.0.1:3000",
+        settings.FRONTEND_URL,        # 生产环境
+    ],
+    allow_credentials = True,
+    allow_methods     = ["*"],
+    allow_headers     = ["*"],
 )
 
 app.state.limiter = limiter
