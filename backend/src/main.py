@@ -55,8 +55,30 @@ class HealthResponse(BaseModel):
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
-    title="航空工艺规范 GraphRAG 知识库",
-    lifespan=lifespan,
+    title       = "CPS 知识库 API",
+    description = """
+## 航空工艺规范 GraphRAG 智能问答系统
+
+### 功能模块
+- **认证** `/api/auth` — 用户注册、登录、密码修改
+- **文档** `/api/documents` — 文档库查询、章节详情
+- **查询** `/api/query` — 四策略 GraphRAG 智能问答
+- **图谱** `/api/graph` — 知识图谱数据
+- **会话** `/api/sessions` — 查询历史管理
+- **设置** `/api/settings` — 用户模型配置
+- **用户** `/api/users` — 管理员用户管理
+
+### 检索策略
+| 策略 | 说明 |
+|------|------|
+| parallel | 全文+向量并行，RRF融合 |
+| sequential | 全文优先，不足时向量补充 |
+| graph_augmented | 并行+图谱邻居扩展 |
+| multi_hop | 多跳推理（开发中）|
+    """,
+    version     = "1.0.0",
+    docs_url    = "/docs",
+    redoc_url   = "/redoc",
 )
 
 app.state.limiter = limiter
