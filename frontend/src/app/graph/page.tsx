@@ -104,10 +104,19 @@ function drawGraph(data: GraphData, svgEl: SVGSVGElement, tooltipEl: HTMLDivElem
             })
         );
 
+    node.on("click", (event: MouseEvent, d: SimNode) => {
+        if (d.label === "Document" && d.name) {
+            // 阻止拖拽事件
+            if (event.defaultPrevented) return;
+            window.location.href = `/library/${d.name}`;
+        }
+    });
+
     // 节点圆形
     node.append("circle")
         .attr("r", d => nodeRadius(d))
-        .attr("fill", d => color[d.label] ?? "#6b7280");
+        .attr("fill", d => color[d.label] ?? "#6b7280")
+        .attr("cursor", d => d.label === "Document" ? "pointer" : "grab");
 
     // hover tooltip — 浏览器原生，鼠标悬停自动显示完整名称
     node
