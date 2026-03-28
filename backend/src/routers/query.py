@@ -5,7 +5,11 @@ from neo4j import Driver
 from pydantic import BaseModel
 from ..core.database import get_driver
 from ..core.observability import send_trace
+from fastapi import APIRouter, Depends, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+limiter = Limiter(key_func=get_remote_address)
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["query"])
 
@@ -27,9 +31,10 @@ class QueryResponse(BaseModel):
     answer:  str
     sources: list[SourceSection]
 
-
 @router.post("/query", response_model=QueryResponse)
-async def query(req: QueryRequest, driver: Driver = Depends(get_driver)):
+@limiter.limit("30/minute")
+# 限流后函数签名必须包含 request: Request 参数，slowapi 需要它来获取客户端 IP
+async def query(request: Request, req: QueryRequest, driver: Driver = Depends(get_driver)):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question 不能为空")
 
