@@ -1,8 +1,10 @@
 import logging
+import time
 from fastapi import APIRouter, Depends, HTTPException
 from neo4j import Driver
 from pydantic import BaseModel
 from ..core.database import get_driver
+from ..core.observability import send_trace
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["query"])
@@ -32,6 +34,7 @@ async def query(req: QueryRequest, driver: Driver = Depends(get_driver)):
         raise HTTPException(status_code=400, detail="question 不能为空")
 
     top_k = req.top_k or 5
+    start = time.time()
 
     with driver.session() as session:
         result = session.run("""
@@ -49,18 +52,16 @@ async def query(req: QueryRequest, driver: Driver = Depends(get_driver)):
         """, question=req.question, top_k=top_k)
         records = [dict(r) for r in result]
 
-    if not records:
-        return QueryResponse(
-            answer="在知识库中未找到相关章节，请确认文件已入库。",
-            sources=[],
-        )
+    latency_ms = int((time.time() - start) * 1000)
 
-    # 拼接上下文
-    context = "\n\n".join(
-        f"[{r['doc_id']} §{r['number']}] {r['title']}\n{r['content']}"
-        for r in records[:3]
-    )
-    answer = f"根据工艺规范知识库，检索到 {len(records)} 个相关章节：\n\n{context[:1000]}"
+    if not records:
+        answer = "在知识库中未找到相关章节，请确认文件已入库。"
+    else:
+        context = "\n\n".join(
+            f"[{r['doc_id']} §{r['number']}] {r['title']}\n{r['content']}"
+            for r in records[:3]
+        )
+        answer = f"根据工艺规范知识库，检索到 {len(records)} 个相关章节：\n\n{context[:1000]}"
 
     sources = [
         SourceSection(
@@ -72,5 +73,18 @@ async def query(req: QueryRequest, driver: Driver = Depends(get_driver)):
         )
         for r in records
     ]
+
+    # Langfuse 追踪
+    send_trace(
+        name="graphrag-query",
+        input=req.question,
+        output=answer,
+        metadata={
+            "strategy":     "graph_fulltext",
+            "latency_ms":   latency_ms,
+            "chunks_found": len(records),
+            "sources":      [s.chunk_id for s in sources],
+        },
+    )
 
     return QueryResponse(answer=answer, sources=sources)
