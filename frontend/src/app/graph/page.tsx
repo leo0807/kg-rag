@@ -57,7 +57,8 @@ function drawGraph(data: GraphData, svgEl: SVGSVGElement, tooltipEl: HTMLDivElem
             container.attr("transform", event.transform);
             onScaleChange(event.transform.k) // k 是当前缩放值
         });
-    svg.call(zoom);
+    // 重置缩放状态
+    svg.call(zoom.transform, d3.zoomIdentity);
 
     const color: Record<string, string> = {
         Document: "#6366f1",
@@ -66,15 +67,28 @@ function drawGraph(data: GraphData, svgEl: SVGSVGElement, tooltipEl: HTMLDivElem
 
     const nodeRadius = (d: SimNode) => d.label === "Document" ? 36 : 22;
 
+    const nodeCount = data.nodes.length;
+    const chargeStrength = nodeCount > 50 ? -150 : -500;
+    const linkDistance = nodeCount > 50 ? 60 : 140;
+
+    (data.nodes as SimNode[]).forEach(node => {
+        if (node.x === undefined) {
+            node.x = width / 2 + (Math.random() - 0.5) * 100;
+            node.y = height / 2 + (Math.random() - 0.5) * 100;
+        }
+    });
+
     const simulation = d3.forceSimulation(data.nodes as SimNode[])
         .force("link", d3.forceLink(data.edges)
             .id((d: any) => d.id)
-            .distance(140))
-        .force("charge", d3.forceManyBody().strength(-500))
+            .distance(linkDistance))
+        .force("charge", d3.forceManyBody().strength(chargeStrength))
         .force("center", d3.forceCenter(width / 2, height / 2))
         .force("collide", d3.forceCollide<SimNode>()
-            .radius(d => nodeRadius(d) + 10)  // 节点半径 + 10px 间距
-            .strength(1));                     // 强度 1 = 完全防重叠
+            .radius(d => nodeRadius(d) + 8)
+            .strength(0.8))
+        .alphaDecay(0.03)
+        .velocityDecay(0.4);
 
     // 画边
     const link = container.append("g")
@@ -164,6 +178,8 @@ export default function GraphPage() {
     const tooltipRef = useRef<HTMLDivElement>(null);
     const [data, setData] = useState<GraphData | null>(null);
     const [scale, setScale] = useState(1);
+    const [nodeFilter, setNodeFilter] = useState<"全部" | "Document" | "Section">("全部");
+    const [edgeFilter, setEdgeFilter] = useState<"全部关系" | "HAS_SECTION" | "REFERENCES" | "HAS_SUBSECTION">("全部关系");
 
     const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
 
@@ -181,11 +197,66 @@ export default function GraphPage() {
     // 第二步：数据准备好后开始画图
     useEffect(() => {
         if (!data || !svgRef.current || !tooltipRef.current) return;
-        zoomRef.current = drawGraph(data, svgRef.current, tooltipRef.current, setScale,);
-    }, [data]);
+
+        // 深拷贝节点，避免修改原始数据
+        const filteredNodes = data.nodes
+            .filter(n => nodeFilter === "全部" || n.label === nodeFilter)
+            .map(n => ({ ...n, x: undefined, y: undefined }));  // 重置位置
+
+        const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+        const filteredEdges = data.edges
+            .filter(e =>
+                (edgeFilter === "全部关系" || e.type === edgeFilter) &&
+                filteredNodeIds.has(e.source as string) &&
+                filteredNodeIds.has(e.target as string)
+            )
+            .map(e => ({ ...e }));  // 深拷贝边
+
+        zoomRef.current = drawGraph(
+            { nodes: filteredNodes, edges: filteredEdges },
+            svgRef.current,
+            tooltipRef.current,
+            setScale,
+        );
+    }, [data, nodeFilter, edgeFilter]);
 
     return (
-        <div className="w-full h-full bg-gray-950">
+        <div className="relative w-full h-full bg-gray-950">
+            {/* 过滤控制栏 */}
+            <div className="absolute top-4 left-4 z-10 flex gap-2 flex-wrap">
+                {/* 节点类型过滤 */}
+                <div className="flex gap-1 bg-gray-900 border border-gray-700 rounded-lg p-1">
+                    {(["全部", "Document", "Section"] as const).map(type => (
+                        <button
+                            key={type}
+                            onClick={() => {
+                                setNodeFilter(type);
+                            }}
+                            className={`px-2.5 py-1 rounded text-xs transition-colors ${nodeFilter === type
+                                ? "bg-indigo-600 text-white"
+                                : "text-gray-400 hover:text-white"
+                                }`}
+                        >
+                            {type}
+                        </button>
+                    ))}
+                </div>
+                {/* 关系类型过滤 */}
+                <div className="flex gap-1 bg-gray-900 border border-gray-700 rounded-lg p-1">
+                    {(["全部关系", "HAS_SECTION", "REFERENCES", "HAS_SUBSECTION"] as const).map(type => (
+                        <button
+                            key={type}
+                            onClick={() => setEdgeFilter(type)}
+                            className={`px-2.5 py-1 rounded text-xs transition-colors ${edgeFilter === type
+                                ? "bg-indigo-600 text-white"
+                                : "text-gray-400 hover:text-white"
+                                }`}
+                        >
+                            {type}
+                        </button>
+                    ))}
+                </div>
+            </div>
             <svg ref={svgRef} className="w-full h-full" />
             {/* 滚轮提示 */}
             <div className="absolute bottom-4 right-4 flex items-center gap-2">
@@ -197,12 +268,16 @@ export default function GraphPage() {
              hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed
              flex items-center justify-center"
                 >−</button>
-
                 <button
-                    onClick={zoomReset}
+                    onClick={() => {
+                        zoomReset();
+                        setNodeFilter("全部");
+                        setEdgeFilter("全部关系");
+                    }}
                     className="px-2 h-7 rounded bg-gray-800 text-xs text-gray-300 hover:bg-gray-700"
-                >重置</button>
-
+                >
+                    重置
+                </button>
                 <button
                     onClick={zoomIn}
                     disabled={scale >= MAX_SCALE}
