@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { fetchApi, ApiError } from "@/lib/api";
 
 interface IngestResult {
     doc_id: string;
@@ -29,10 +30,13 @@ export default function IngestPage() {
     }
 
     async function uploadAll() {
+        let doneCount = 0;
+        let errorCount = 0;
+        const pendingFiles = files.filter(f => f.status === "pending");
+
         for (let i = 0; i < files.length; i++) {
             if (files[i].status !== "pending") continue;
 
-            // 更新状态为上传中
             setFiles(prev => prev.map((f, idx) =>
                 idx === i ? { ...f, status: "uploading" } : f
             ));
@@ -40,20 +44,31 @@ export default function IngestPage() {
             try {
                 const fd = new FormData();
                 fd.append("file", files[i].file);
-                const res = await fetch("/api/ingest", { method: "POST", body: fd });
-                const data = await res.json() as IngestResult;
+                const data = await fetchApi<IngestResult>("/api/ingest", {
+                    method: "POST",
+                    body: fd,
+                });
 
                 setFiles(prev => prev.map((f, idx) =>
                     idx === i ? { ...f, status: "done", result: data } : f
                 ));
+                doneCount++;
             } catch (e) {
+                const message = e instanceof ApiError ? e.message : "上传失败";
                 setFiles(prev => prev.map((f, idx) =>
-                    idx === i ? { ...f, status: "error", error: "上传失败" } : f
+                    idx === i ? { ...f, status: "error", error: message } : f
                 ));
+                errorCount++;
             }
         }
-    }
 
+        // 用本地计数器判断，不依赖 files 状态
+        if (errorCount === 0 && doneCount > 0) {
+            setTimeout(() => {
+                window.location.href = "/library";
+            }, 2000);
+        }
+    }
     const pendingCount = files.filter(f => f.status === "pending").length;
 
     return (
