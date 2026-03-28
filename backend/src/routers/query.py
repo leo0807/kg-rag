@@ -7,6 +7,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from ..core.database import get_driver
 from ..core.observability import send_trace
+from ..services.cache import get_cached_result, set_cached_result
 
 logger   = logging.getLogger(__name__)
 router   = APIRouter(prefix="/api", tags=["query"])
@@ -82,6 +83,12 @@ async def query(
         raise HTTPException(status_code=400, detail="question 不能为空")
 
     top_k = req.top_k or 5
+
+    # ── 缓存检查 ──────────────────────────────
+    cached = get_cached_result(req.question, req.strategy, top_k)
+    if cached:
+        return QueryResponse(**cached)
+
     start = time.time()
 
     # ── 全文检索 ──────────────────────────────
@@ -218,6 +225,12 @@ async def query(
             "vec_count":   len(vector_ids),
             "fused_count": len(fused_ids),
         },
+    )
+
+    # ── 写入缓存 ──────────────────────────────
+    set_cached_result(
+        req.question, req.strategy, top_k,
+        {"answer": answer, "sources": [s.model_dump() for s in sources]},
     )
 
     return QueryResponse(answer=answer, sources=sources)

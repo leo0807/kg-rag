@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = "ollama"                        # Ollama 不需要真实 key
     LLM_MODEL:   str = "qwen2.5:7b"                   # 默认模型
 
+    REDIS_URL:         str = "redis://localhost:6379/0"
+    QUERY_CACHE_TTL:   int = 3600  # 缓存1小时
+
     APP_VERSION: str = "1.0.0"
 
 @lru_cache
