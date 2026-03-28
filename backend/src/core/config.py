@@ -36,6 +36,24 @@ class Settings(BaseSettings):
     MILVUS_HOST: str = "localhost"
     MILVUS_PORT: int = 19530
 
+    # Embedding 配置
+    EMBEDDING_MODE:     str = "local"          # local | api
+    EMBEDDING_MODEL:    str = "models/bge-m3"  # 本地路径或模型名
+    EMBEDDING_API_URL:  str = ""               # API 模式时的端点
+    EMBEDDING_API_KEY:  str = ""               # API 模式时的密钥
+
+    # Reranker 配置
+    RERANKER_MODE:      str = "local"
+    RERANKER_MODEL:     str = "models/bge-reranker-v2-m3"
+    RERANKER_API_URL:   str = ""
+    RERANKER_API_KEY:   str = ""
+
+    # LLM 配置（用于答案生成，待接入）
+    LLM_MODE:           str = "api"            # local | api
+    LLM_API_URL:        str = "http://localhost:11434/v1"  # Ollama
+    LLM_API_KEY:        str = "ollama"
+    LLM_MODEL:          str = "qwen2.5:7b"
+
     APP_VERSION: str = "1.0.0"
 
 @lru_cache

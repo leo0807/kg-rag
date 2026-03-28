@@ -32,3 +32,4 @@ ingest_progress.json
 .vscode/
 node_modules/
 models/
+backend/.venv/
