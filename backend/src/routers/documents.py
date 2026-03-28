@@ -24,18 +24,26 @@ async def list_documents(
     skip = (page - 1) * per_page
 
     with driver.session() as session:
-        # 总数
-        count_result = session.run("""
-            MATCH (d:Document)
+        # 搜索条件：匹配 doc_id 或 title
+        where_clause = """
             WHERE d.title IS NOT NULL
+            AND (
+                $q = ''
+                OR toLower(d.name)  CONTAINS toLower($q)
+                OR toLower(d.title) CONTAINS toLower($q)
+            )
+        """
+
+        count_result = session.run(f"""
+            MATCH (d:Document)
+            {where_clause}
             RETURN count(d) AS total
-        """)
+        """, q=q)
         total = count_result.single()["total"]
 
-        # 分页数据
-        result = session.run("""
+        result = session.run(f"""
             MATCH (d:Document)
-            WHERE d.title IS NOT NULL
+            {where_clause}
             OPTIONAL MATCH (d)-[:HAS_SECTION]->(s)
             RETURN d.name        AS doc_id,
                    d.title       AS title,
@@ -45,7 +53,7 @@ async def list_documents(
             ORDER BY d.name
             SKIP $skip
             LIMIT $per_page
-        """, skip=skip, per_page=per_page)
+        """, q=q, skip=skip, per_page=per_page)
 
         documents = [dict(r) for r in result]
 
