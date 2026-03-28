@@ -90,13 +90,20 @@ function drawGraph(data: GraphData, svgEl: SVGSVGElement, tooltipEl: HTMLDivElem
         .alphaDecay(0.03)
         .velocityDecay(0.4);
 
+    const edgeColor: Record<string, string> = {
+        HAS_SECTION: "#4f46e5",  // 靛蓝
+        REFERENCES: "#059669",  // 绿色
+        HAS_SUBSECTION: "#d97706",  // 橙色
+        NEXT_SECTION: "#6b7280",  // 灰色
+    };
     // 画边
     const link = container.append("g")
         .selectAll("line")
         .data(data.edges)
         .join("line")
-        .attr("stroke", "#374151")
-        .attr("stroke-width", 1.5);
+        .attr("stroke", (d: any) => edgeColor[d.type] ?? "#374151")
+        .attr("stroke-width", (d: any) => d.type === "REFERENCES" ? 2 : 1.5)
+        .attr("stroke-opacity", 0.6);
 
     // 画节点
     const node = container.append("g")
@@ -271,15 +278,15 @@ export default function GraphPage() {
                 </div>
                 <div className="mt-1 pt-1.5 border-t border-gray-700 space-y-1">
                     <div className="flex items-center gap-2">
-                        <div className="w-4 h-px bg-gray-500 flex-shrink-0" />
+                        <div className="w-4 h-0.5 bg-indigo-500 flex-shrink-0" />
                         <span className="text-xs text-gray-500">HAS_SECTION</span>
                     </div>
                     <div className="flex items-center gap-2">
-                        <div className="w-4 h-px bg-gray-500 flex-shrink-0" />
+                        <div className="w-4 h-0.5 bg-emerald-500 flex-shrink-0" />
                         <span className="text-xs text-gray-500">REFERENCES</span>
                     </div>
                     <div className="flex items-center gap-2">
-                        <div className="w-4 h-px bg-gray-500 flex-shrink-0" />
+                        <div className="w-4 h-0.5 bg-amber-500 flex-shrink-0" />
                         <span className="text-xs text-gray-500">HAS_SUBSECTION</span>
                     </div>
                 </div>
