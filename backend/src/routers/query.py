@@ -90,6 +90,38 @@ async def query(
         return QueryResponse(**cached)
 
     start = time.time()
+    # ── 多跳推理（独立流程，直接返回）────────
+    if req.strategy == "multi_hop":
+        try:
+            from ..services.multi_hop import multi_hop_query
+            answer, multi_hop_sections = multi_hop_query(
+                req.question, driver, top_k=top_k
+            )
+            sources = [
+                SourceSection(
+                    chunk_id = s["chunk_id"],
+                    doc_id   = s["doc_id"],
+                    number   = s.get("number") or "",
+                    title    = s.get("title")  or "",
+                    score    = round(float(s.get("score", 0)), 4),
+                )
+                for s in multi_hop_sections
+            ]
+            latency_ms = int((time.time() - start) * 1000)
+            send_trace(
+                name     = "graphrag-query",
+                input    = req.question,
+                output   = answer,
+                metadata = {"strategy": "multi_hop", "latency_ms": latency_ms},
+            )
+            set_cached_result(
+                req.question, req.strategy, top_k,
+                {"answer": answer, "sources": [s.model_dump() for s in sources]},
+            )
+            return QueryResponse(answer=answer, sources=sources)
+        except Exception as e:
+            logger.warning("多跳推理失败，降级到并行检索: %s", e)
+            # 失败时继续走并行检索流程
 
     # ── 全文检索 ──────────────────────────────
     with driver.session() as session:

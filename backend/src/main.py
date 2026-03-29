@@ -70,6 +70,7 @@ class HealthResponse(BaseModel):
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
+    lifespan= lifespan,
     title       = "CPS 知识库 API",
     description = """
 ## 航空工艺规范 GraphRAG 智能问答系统
