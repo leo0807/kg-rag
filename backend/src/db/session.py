@@ -25,6 +25,7 @@ async def get_db():
 
 async def init_tables():
     from .base import Base
-    from . import models  # noqa: 确保模型被注册
+    from . import models
+    from ..routers import feedback  # 确保 QueryFeedback 被注册
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
