@@ -21,6 +21,7 @@ interface FileItem {
     status: "pending" | "uploading" | "done" | "skipped" | "error";
     result?: IngestResult;
     error?: string;
+    progress?: string;
 }
 
 export default function IngestPage() {
@@ -48,10 +49,21 @@ export default function IngestPage() {
         let doneCount = 0;
         let errorCount = 0;
         let skippedCount = 0;
-        const pendingFiles = files.filter(f => f.status === "pending");
 
         for (let i = 0; i < files.length; i++) {
             if (files[i].status !== "pending") continue;
+
+            // 为每个文件创建唯一 client_id
+            const clientId = `${Date.now()}_${i}`;
+
+            // 建立 WebSocket 连接监听进度
+            const ws = new WebSocket(`ws://localhost:8000/ws/ingest/${clientId}`);
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                setFiles(prev => prev.map((f, idx) =>
+                    idx === i ? { ...f, progress: data.detail } : f
+                ));
+            };
 
             setFiles(prev => prev.map((f, idx) =>
                 idx === i ? { ...f, status: "uploading" } : f
@@ -60,14 +72,15 @@ export default function IngestPage() {
             try {
                 const fd = new FormData();
                 fd.append("file", files[i].file);
-                const data = await fetchApi<IngestResult>("/api/ingest", {
-                    method: "POST",
-                    body: fd,
-                });
+                const data = await fetchApi<IngestResult>(
+                    `/api/ingest?client_id=${clientId}`,
+                    { method: "POST", body: fd }
+                );
 
+                ws.close();
                 setFiles(prev => prev.map((f, idx) =>
                     idx === i
-                        ? { ...f, status: data.status === "skipped" ? "skipped" : "done", result: data }
+                        ? { ...f, status: data.status === "skipped" ? "skipped" : "done", result: data, progress: "" }
                         : f
                 ));
 
@@ -75,23 +88,19 @@ export default function IngestPage() {
                 else doneCount++;
 
             } catch (e) {
+                ws.close();
                 const message = e instanceof ApiError ? e.message : "上传失败";
                 setFiles(prev => prev.map((f, idx) =>
-                    idx === i ? { ...f, status: "error", error: message } : f
+                    idx === i ? { ...f, status: "error", error: message, progress: "" } : f
                 ));
                 errorCount++;
             }
         }
 
-        // 没有失败才跳转
         if (errorCount === 0 && doneCount > 0) {
-            setTimeout(() => {
-                window.location.href = "/library";
-            }, 2000);
+            fetch("/api/stats").then(r => r.json()).then(setStats);
+            setTimeout(() => { window.location.href = "/library"; }, 2000);
         }
-
-        // 刷新统计
-        fetch("/api/stats").then(r => r.json()).then(setStats);
     }
     const pendingCount = files.filter(f => f.status === "pending").length;
 
@@ -157,9 +166,11 @@ export default function IngestPage() {
             />
 
             {/* 文件列表 */}
+
             {files.length > 0 && (
                 <div className="mt-4 space-y-2">
                     {files.map((item, i) => (
+
                         <div key={i}
                             className="flex items-center gap-3 px-4 py-3 bg-gray-900
                          rounded-lg border border-gray-800">
@@ -182,9 +193,11 @@ export default function IngestPage() {
                                             ? `${item.result.doc_id} · 已入库，跳过`
                                             : item.status === "error"
                                                 ? item.error
-                                                : item.status === "uploading"
-                                                    ? "上传中..."
-                                                    : `${(item.file.size / 1024).toFixed(1)} KB`}
+                                                : item.status === "uploading" && item.progress
+                                                    ? item.progress
+                                                    : item.status === "uploading"
+                                                        ? "上传中..."
+                                                        : `${(item.file.size / 1024).toFixed(1)} KB`}
                                 </div>
                             </div>
 

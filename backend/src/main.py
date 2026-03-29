@@ -6,6 +6,8 @@ from neo4j import Driver
 from pydantic import BaseModel
 import shutil
 from pathlib import Path
+from fastapi import WebSocket
+import asyncio
 
 from .core.config import settings
 from .core.database import init_db, get_driver
@@ -122,6 +124,31 @@ app.include_router(settings_router)
 app.include_router(users_router)
 app.include_router(feedback_router)
 
+# 存储活跃的 WebSocket 连接
+active_connections: dict[str, WebSocket] = {}
+
+@app.websocket("/ws/ingest/{client_id}")
+async def ingest_ws(websocket: WebSocket, client_id: str):
+    await websocket.accept()
+    active_connections[client_id] = websocket
+    try:
+        while True:
+            await websocket.receive_text()
+    except Exception:
+        pass
+    finally:
+        active_connections.pop(client_id, None)
+
+
+async def send_progress(client_id: str, message: dict):
+    """向指定客户端发送进度"""
+    ws = active_connections.get(client_id)
+    if ws:
+        try:
+            await ws.send_json(message)
+        except Exception:
+            pass
+
 @app.get("/api/health", response_model=HealthResponse)
 async def health():
     return {"status": "OK", "version": settings.APP_VERSION}
@@ -136,10 +163,53 @@ async def preview(file: UploadFile = File(...)):
 @app.post("/api/ingest")
 @limiter.limit("10/minute")
 async def ingest(
-    request: Request,
-    file:   UploadFile = File(...),
-    driver: Driver     = Depends(get_driver),
+    request:   Request,
+    file:      UploadFile = File(...),
+    driver:    Driver     = Depends(get_driver),
+    client_id: str        = "",
 ):
+    async def progress(step: str, detail: str = ""):
+        if client_id:
+            await send_progress(client_id, {
+                "step":   step,
+                "detail": detail,
+            })
+
+    tmp_path = UPLOAD_DIR / file.filename
+    with tmp_path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    await progress("parsing", "解析 PDF 中...")
+    doc = parse(tmp_path)
+
+    await progress("checking", f"检查是否已入库...")
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (d:Document {name: $doc_id})
+            WHERE d.title IS NOT NULL
+            RETURN count(d) AS cnt
+        """, doc_id=doc.doc_id)
+        record = result.single()
+        already_exists = record and record["cnt"] > 0
+
+    if already_exists:
+        await progress("done", f"{doc.doc_id} 已入库，跳过")
+        return {
+            "status":   "skipped",
+            "doc_id":   doc.doc_id,
+            "message":  f"{doc.doc_id} 已入库，跳过",
+            "sections": doc.total_sections,
+        }
+
+    await progress("writing", f"写入图谱，共 {doc.total_sections} 个章节...")
+    write_document(doc)
+
+    await progress("done", f"{doc.doc_id} 写入完成")
+    return {
+        "status":   "OK",
+        "doc_id":   doc.doc_id,
+        "sections": doc.total_sections,
+    }
     tmp_path = UPLOAD_DIR / file.filename
     with tmp_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
