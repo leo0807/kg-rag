@@ -1,15 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   output: "standalone",
   async rewrites() {
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:8000/api/:path*"
-      }
-    ]
+        destination: "http://localhost:8000/api/:path*",
+      },
+    ];
+  },
+  // 禁用代理缓冲
+  experimental: {
+    proxyTimeout: 120000,
   },
 };
 
