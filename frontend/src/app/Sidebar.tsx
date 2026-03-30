@@ -9,8 +9,10 @@ import { LogOut } from "lucide-react";
 const navItems = [
     { href: "/ingest", label: "导入文件" },
     { href: "/library", label: "文档库" },
+    { href: "/search", label: "全局搜索" },
     { href: "/query", label: "智能问答" },
     { href: "/graph", label: "图谱可视化" },
+    { href: "/settings", label: "设置" },
 ];
 
 interface UserInfo {
@@ -55,8 +57,8 @@ export default function Sidebar() {
                             key={href}
                             href={href}
                             className={`block px-3 py-2 rounded-md text-sm mb-1 ${isActive
-                                    ? "bg-indigo-600 text-white"
-                                    : "text-gray-400 hover:text-white hover:bg-gray-800"
+                                ? "bg-indigo-600 text-white"
+                                : "text-gray-400 hover:text-white hover:bg-gray-800"
                                 }`}
                         >
                             {label}
