@@ -76,6 +76,8 @@ class Settings(BaseSettings):
 
     ES_URL: str = "http://localhost:9200"
 
+    VLM_MODEL: str = "Qwen/Qwen2.5-VL-32B-Instruct"  # 硅基流动支持的视觉模型
+
     APP_VERSION: str = "1.0.0"
 
     @field_validator("NEO4J_URI", mode="before")
