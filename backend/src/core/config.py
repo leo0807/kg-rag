@@ -74,6 +74,8 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: str = "http://localhost:3000"
 
+    ES_URL: str = "http://localhost:9200"
+
     APP_VERSION: str = "1.0.0"
 
     @field_validator("NEO4J_URI", mode="before")

@@ -3,6 +3,7 @@ from ..core.database import get_driver
 from ..models.schemas import DocumentSchema
 from .embedder import embed_texts
 from .milvus_store import upsert_sections
+from .es_store import index_sections
 
 logger = logging.getLogger(__name__)
 
@@ -125,5 +126,19 @@ def write_document(doc: DocumentSchema) -> None:
                 pairs=next_pairs,
             )
             logger.info("写入顺序关系 %d 条", len(next_pairs))
+
+        # 写入 ES
+        es_data = [
+            {
+                "chunk_id": s.chunk_id,
+                "doc_id":   doc.doc_id,
+                "number":   s.number,
+                "title":    s.title,
+                "content":  s.content,
+            }
+            for s in doc.sections
+        ]
+        index_sections(es_data)
+        logger.info("写入 ES doc_id=%s sections=%d", doc.doc_id, len(doc.sections))
 
     logger.info("写入完成 doc_id=%s sections=%d", doc.doc_id, len(doc.sections))

@@ -63,19 +63,30 @@ def get_section_details(driver: Driver, chunk_ids: list[str]) -> list[dict]:
 
 def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
     """执行检索，返回 (sections, ft_score_map)"""
-    # 全文检索
-    with driver.session() as session:
-        ft_result = session.run("""
-            CALL db.index.fulltext.queryNodes('cps_fulltext_index', $question)
-            YIELD node, score
-            RETURN node.chunk_id AS chunk_id, score
-            ORDER BY score DESC LIMIT $top_k
-        """, question=question, top_k=top_k * 2)
-        ft_records   = [dict(r) for r in ft_result]
-        ft_ids       = [r["chunk_id"] for r in ft_records]
-        ft_score_map = {r["chunk_id"]: r["score"] for r in ft_records}
 
-    # 向量检索
+    # ── ES 全文检索（替代 Neo4j 全文索引）────
+    ft_ids       = []
+    ft_score_map = {}
+    try:
+        from ..services.es_store import search_sections_es
+        es_results   = search_sections_es(question, top_k=top_k * 2)
+        ft_ids       = [r["chunk_id"] for r in es_results]
+        ft_score_map = {r["chunk_id"]: r["score"] for r in es_results}
+        logger.info("ES 检索到 %d 个候选", len(ft_ids))
+    except Exception as e:
+        logger.warning("ES 检索失败，降级到 Neo4j: %s", e)
+        with driver.session() as session:
+            ft_result = session.run("""
+                CALL db.index.fulltext.queryNodes('cps_fulltext_index', $question)
+                YIELD node, score
+                RETURN node.chunk_id AS chunk_id, score
+                ORDER BY score DESC LIMIT $top_k
+            """, question=question, top_k=top_k * 2)
+            ft_records   = [dict(r) for r in ft_result]
+            ft_ids       = [r["chunk_id"] for r in ft_records]
+            ft_score_map = {r["chunk_id"]: r["score"] for r in ft_records}
+
+    # ── 向量检索 ──────────────────────────────
     vector_ids = []
     if strategy in ("parallel", "graph_augmented"):
         try:
@@ -86,12 +97,13 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
         except Exception as e:
             logger.warning("向量检索失败: %s", e)
 
-    # 策略分发
+    # ── 策略分发 ──────────────────────────────
     if strategy == "parallel" and vector_ids:
         fused_ids = rrf_fusion(ft_ids, vector_ids)[:top_k * 2]
+
     elif strategy == "sequential":
         fused_ids = list(ft_ids[:top_k])
-        if len(fused_ids) < top_k and not vector_ids:
+        if len(fused_ids) < top_k:
             try:
                 from ..services.embedder     import embed_query
                 from ..services.milvus_store import search_sections
@@ -101,14 +113,17 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
                     if r["chunk_id"] not in seen and len(fused_ids) < top_k:
                         fused_ids.append(r["chunk_id"])
                         seen.add(r["chunk_id"])
+                logger.info("串行检索补充至 %d 条", len(fused_ids))
             except Exception as e:
                 logger.warning("串行向量补充失败: %s", e)
+
     elif strategy == "graph_augmented" and vector_ids:
         fused_ids = rrf_fusion(ft_ids, vector_ids)[:top_k * 2]
+
     else:
         fused_ids = ft_ids[:top_k * 2]
 
-    # 图谱增强扩展
+    # ── 图谱增强扩展 ──────────────────────────
     if strategy == "graph_augmented" and fused_ids:
         try:
             with driver.session() as session:
@@ -124,20 +139,21 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
                     WITH id WHERE id IS NOT NULL
                     RETURN collect(DISTINCT id) AS expanded_ids
                 """, chunk_ids=fused_ids[:5])
-                record = result.single()
+                record       = result.single()
                 expanded_ids = record["expanded_ids"] if record else []
                 seen = set(fused_ids)
                 for eid in expanded_ids:
                     if eid not in seen:
                         fused_ids.append(eid)
                         seen.add(eid)
+                logger.info("图谱增强：扩展到 %d 个候选章节", len(fused_ids))
         except Exception as e:
             logger.warning("图谱增强失败: %s", e)
 
     fused_ids = fused_ids[:top_k * 2]
     sections  = get_section_details(driver, fused_ids)
 
-    # Reranker
+    # ── Reranker ──────────────────────────────
     if sections and strategy in ("parallel", "graph_augmented"):
         try:
             from ..services.reranker import rerank
@@ -146,7 +162,6 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
             logger.warning("Reranker 失败: %s", e)
 
     return sections, ft_score_map
-
 
 @router.post("/query", response_model=QueryResponse)
 @limiter.limit("30/minute")

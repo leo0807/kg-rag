@@ -26,6 +26,7 @@ from .db.session import init_tables
 from .services.milvus_store import connect_milvus, get_or_create_collection
 from .core.config import settings
 from .core.logging import setup_logging
+from .services.es_store import init_es_index
 
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -61,6 +62,8 @@ async def lifespan(app: FastAPI):
         )
         get_or_create_collection()
         logger.info("Milvus 初始化完成")
+        init_es_index()
+        logger.info("ES 初始化完成")
     except Exception as e:
         logger.warning("Milvus 初始化失败: %s", e)
     print(">>> lifespan 启动：数据库连接已建立")
