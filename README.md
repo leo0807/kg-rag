@@ -121,37 +121,38 @@ python -m pytest tests/ -v
 
 ## 未来计划
 
-- [ ] LangGraph 多跳推理 Agent
+- [x] LangGraph 多跳推理 Agent
 - [ ] 浅色/深色主题切换
 - [ ] 移动端适配
 - [ ] Kubernetes 部署
 
 ## 未来计划（续）
 
-- [ ] 数据飞轮：查询结果评分 → 收集高质量问答对 → 微调 Reranker
-- [ ] Token 刷新机制
-- [ ] CORS 配置
-- [ ] 错误边界组件
-- [ ] 串行/多跳推理策略完整实现
+- [x] 数据飞轮：查询结果评分 → 收集高质量问答对 → 微调 Reranker
+- [x] Token 刷新机制
+- [x] CORS 配置
+- [x] 错误边界组件
+- [x] 串行/多跳推理策略完整实现
 
 ## 长期规划
 
 ### 多模态知识图谱
-- [ ] PDF 图片提取（pdfplumber + pymupdf）
-- [ ] 图片多模态理解（GPT-4V / Qwen-VL）提取图中的工艺步骤、工具、尺寸数据
-- [ ] 图文关联：Section 节点关联 Image 节点，图片描述写入向量库
-- [ ] 多模态查询：用户可以上传图片提问"这个零件怎么修理"
-- [ ] 知识图谱扩展：工具节点、材料节点、工序节点
+- [x] PDF 图片提取（pdfplumber + pymupdf）
+- [x] 图片多模态理解（GPT-4V / Qwen-VL）提取图中的工艺步骤、工具、尺寸数据
+- [x] 图文关联：Section 节点关联 Image 节点，图片描述写入向量库
+- [x] 多模态查询：用户可以上传图片提问（支持粘贴/点击上传，图片随消息持久化）
+- [x] 知识图谱扩展：Tool / Material / Process 节点，LLM 实体提取 + Neo4j 写入
 
 ### 数据飞轮
-- [ ] 查询结果 👍/👎 评分
-- [ ] 点击来源章节记录隐式反馈
-- [ ] 高质量问答对收集 → 微调 Reranker
+- [x] 查询结果 👍/👎 评分
+- [x] 点击来源章节记录隐式反馈（`detail` 字段存储 `clicked_source:<chunk_id>`）
+- [x] 高质量问答对收集 → 微调 Reranker（`/api/feedback/export` + `scripts/export_training_data.py`）
 
 ### 其他
-- [ ] 多跳推理（LangGraph Agent）
-- [ ] 流式输出（SSE）
-- [ ] WebSocket 导入进度推送
-- [ ] 前端单元测试（Vitest）
-- [ ] 全局跨文档搜索
-- [ ] 文档对比功能
+- [x] 多跳推理（LangGraph Agent）
+- [x] 流式输出（SSE）
+- [x] WebSocket 导入进度推送
+- [x] 前端单元测试（Vitest）
+- [x] 全局跨文档搜索
+- [x] 文档对比功能
+- [x] 知识图谱整体拖拽平移（svg.call(zoom) 绑定）
