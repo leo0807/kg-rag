@@ -7,12 +7,13 @@ import ThemeToggle from "@/components/ThemeToggle";
 import { LogOut } from "lucide-react";
 
 const navItems = [
-    { href: "/ingest", label: "导入文件" },
-    { href: "/library", label: "文档库" },
-    { href: "/search", label: "全局搜索" },
-    { href: "/query", label: "智能问答" },
-    { href: "/graph", label: "图谱可视化" },
-    { href: "/settings", label: "设置" },
+    { href: "/ingest", label: "导入文件", shortcut: "" },
+    { href: "/library", label: "文档库", shortcut: "" },
+    { href: "/search", label: "全局搜索", shortcut: "⌘K" },
+    { href: "/query", label: "智能问答", shortcut: "⌘/" },
+    { href: "/graph", label: "图谱可视化", shortcut: "" },
+    { href: "/compare", label: "文档对比", shortcut: "" },
+    { href: "/settings", label: "设置", shortcut: "" },
 ];
 
 interface UserInfo {
@@ -31,7 +32,41 @@ export default function Sidebar() {
         if (stored) {
             try { setUser(JSON.parse(stored)); } catch { }
         }
-    }, []);
+
+        // 全局键盘快捷键
+        function handleKeyDown(e: KeyboardEvent) {
+            const tag = (e.target as HTMLElement).tagName;
+            if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+
+            // ⌘K → 全局搜索
+            if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+                e.preventDefault();
+                router.push("/search");
+            }
+            // ⌘/ → 智能问答
+            if ((e.metaKey || e.ctrlKey) && e.key === "/") {
+                e.preventDefault();
+                router.push("/query");
+            }
+            // ⌘B → 文档库
+            if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+                e.preventDefault();
+                router.push("/library");
+            }
+            // ⌘G → 图谱
+            if ((e.metaKey || e.ctrlKey) && e.key === "g") {
+                e.preventDefault();
+                router.push("/graph");
+            }
+        }
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [router]);
+
+    function isActive(href: string) {
+        return pathname === href || pathname.startsWith(href + "/");
+    }
 
     function handleLogout() {
         localStorage.removeItem("token");
@@ -49,23 +84,34 @@ export default function Sidebar() {
             </div>
 
             {/* 导航 */}
-            <nav className="flex-1 px-3 py-4">
-                {navItems.map(({ href, label }) => {
-                    const isActive = pathname === href || pathname.startsWith(href + "/");
-                    return (
-                        <Link
-                            key={href}
-                            href={href}
-                            className={`block px-3 py-2 rounded-md text-sm mb-1 ${isActive
+            <nav className="flex-1 px-3 py-4 space-y-0.5">
+                {navItems.map(item => (
+                    <Link key={item.href} href={item.href}
+                        className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm
+                        transition-colors ${isActive(item.href)
                                 ? "bg-indigo-600 text-white"
                                 : "text-gray-400 hover:text-white hover:bg-gray-800"
-                                }`}
-                        >
-                            {label}
-                        </Link>
-                    );
-                })}
+                            }`}>
+                        <span>{item.label}</span>
+                        {item.shortcut && (
+                            <span className={`text-xs font-mono ${isActive(item.href) ? "text-indigo-200" : "text-gray-600"
+                                }`}>
+                                {item.shortcut}
+                            </span>
+                        )}
+                    </Link>
+                ))}
             </nav>
+
+            {/* 快捷键提示 */}
+            <div className="px-4 py-2 border-t border-gray-800/50">
+                <div className="text-xs text-gray-700 space-y-0.5">
+                    <div className="flex justify-between"><span>搜索</span><span className="font-mono">⌘K</span></div>
+                    <div className="flex justify-between"><span>问答</span><span className="font-mono">⌘/</span></div>
+                    <div className="flex justify-between"><span>文档库</span><span className="font-mono">⌘B</span></div>
+                    <div className="flex justify-between"><span>图谱</span><span className="font-mono">⌘G</span></div>
+                </div>
+            </div>
 
             {/* 底部用户信息 */}
             <div className="border-t border-gray-800">
@@ -81,12 +127,10 @@ export default function Sidebar() {
                     <div className="text-xs text-gray-600">v1.0.0</div>
                     <div className="flex items-center gap-2">
                         <ThemeToggle />
-                        <button
-                            onClick={handleLogout}
+                        <button onClick={handleLogout}
                             className="p-1.5 rounded-lg text-gray-400 hover:text-red-400
                          hover:bg-gray-800 transition-colors"
-                            title="退出登录"
-                        >
+                            title="退出登录">
                             <LogOut size={16} />
                         </button>
                     </div>
