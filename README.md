@@ -156,3 +156,95 @@ python -m pytest tests/ -v
 - [x] 全局跨文档搜索
 - [x] 文档对比功能
 - [x] 知识图谱整体拖拽平移（svg.call(zoom) 绑定）
+
+---
+
+## 待完善清单（经代码审查整理）
+
+### 知识图谱增强
+
+**节点与关系扩展**
+- [ ] Tool / Material / Process 节点间关系：`COMPATIBLE_WITH`、`REQUIRES_TOOL`（Process→Tool）、`ALTERNATIVE_TO`（材料替代关系）
+- [ ] 文档版本溯源：`SUPERSEDES` / `OBSOLETED_BY` 关系，支持"本次变更了哪些章节"查询
+- [ ] 工艺约束节点：力矩值、公差、温度等结构化参数从正文提取，形成独立节点并与章节关联
+- [ ] 跨文档语义边：相似章节间自动建立 `SIMILAR_TO` 关系（基于向量余弦相似度阈值）
+- [ ] 图谱统计 API：`GET /api/stats/knowledge-graph` 返回各类节点数量、边数量、覆盖率
+
+**图谱可视化**
+- [ ] 图谱节点数量限制可配置（当前 Document:50 / Section:200 / Image:100 均硬编码）
+- [ ] Tool / Material / Process 节点加入可视化及过滤（实体已写入 Neo4j，前端尚未渲染）
+- [ ] 节点详情侧边栏：点击任意节点展开属性面板，而非仅 tooltip
+- [ ] 图谱导出：支持导出为 JSON/GraphML，供 Gephi 等工具进一步分析
+- [ ] 支持按文档 `doc_id` 筛选，只展示单个规范的子图
+
+**实体质量**
+- [ ] 实体去重与归一化：当前用名称 MERGE，"液压泵" 与 "液压系统泵" 会产生冗余节点，需同义词合并
+- [ ] 实体审核页面：管理员可以查看、合并、删除自动提取的 Tool/Material/Process 节点
+
+---
+
+### 检索与推理增强
+
+**查询策略**
+- [ ] 实体感知检索：查询时提取问题中的工具/材料名，优先召回含对应 `REQUIRES_TOOL` / `USES_MATERIAL` 边的章节
+- [ ] 自动策略选择：根据问题类型（定义型/步骤型/对比型/约束型）自动选择检索策略，无需用户手选
+- [ ] 图谱增强策略延伸 Tool/Material/Process：当前 `graph_augmented` 仅展开 `HAS_SUBSECTION` / `NEXT_SECTION`，未利用实体节点跨章节扩展
+- [ ] 跨文档推理：沿 `REFERENCES` 边追踪被引用规范，将其相关章节纳入上下文
+
+**Reranker**
+- [ ] Reranker 统一应用：当前 `sequential` 策略未经过精排，导致结果质量低于 `parallel`
+- [ ] Reranker 内容截断优化：当前截断到 512 字符，改为按 token 截断，减少信息损失
+
+**多跳推理**
+- [ ] 多跳推理迭代上限保护：当前 `multi_hop.py` 无最大迭代次数限制，存在死循环风险
+- [ ] 多跳中间步骤可见化：前端展示推理链路（子问题 → 召回章节 → 子答案）
+
+---
+
+### 数据质量与一致性
+
+- [ ] 同步端点补齐：`POST /api/query`（同步）缺少 `history` 和 `images` 参数，与流式端点不一致
+- [ ] Session vs Conversation 统一：存在 Neo4j `QuerySession` 与 PostgreSQL `Conversation` 两套历史存储，需合并或明确分工
+- [ ] Section 节点冗余字段清理：`section_number` 与 `number` 字段重复存储（`neo4j_writer.py:65-66`）
+- [ ] 图片分析结果缓存：重复入库相同图片时跳过 VLM 调用，避免浪费 API 额度
+
+---
+
+### 实体与文档 API
+
+- [ ] `GET /api/documents/{doc_id}/entities` — 列出文档中所有工具/材料/工序节点
+- [ ] `GET /api/entities?type=Tool&q=扳手` — 实体搜索与过滤
+- [ ] `GET /api/documents/{doc_id}/images` — 列出文档图片及 VLM 描述
+- [ ] `POST /api/documents/{doc_id}/reanalyze` — 对已入库文档重新提取实体/图片（用于模型升级后）
+- [ ] `GET /api/query/suggest?q=...` — 基于知识图谱的查询建议/自动补全
+
+---
+
+### 工程基础设施
+
+- [ ] 配置文件去重：`config.py` 中 `MILVUS_HOST`、`REDIS_URL`、`LLM_API_URL` 等存在重复定义，后者覆盖前者
+- [ ] PostgreSQL 索引补齐：`conversations` 表缺 `user_id` 索引，`query_feedback` 表无任何索引
+- [ ] Neo4j 全文索引验证：启动时检查 `cps_fulltext_index` 是否存在，不存在则自动创建
+- [ ] GPU 支持：Embedder 硬编码 `device="cpu"`，需检测 CUDA 并自动切换
+- [ ] 配置热重载：修改模型/策略配置后无需重启服务
+
+---
+
+### 前端与用户体验
+
+- [ ] 文档对比页差异算法：当前用字符串相等判断差异，改为 Myers diff 算法，支持词级高亮
+- [ ] 浅色 / 深色主题切换
+- [ ] 移动端适配
+- [ ] 知识图谱节点搜索框：在图谱页输入节点名称快速定位并高亮
+- [ ] 对话分支：支持从某条 AI 消息处新开分支，探索不同追问路径
+
+---
+
+### 测试覆盖
+
+- [ ] 实体提取单元测试（`entity_extractor.py` / `entity_writer.py`）
+- [ ] 检索策略集成测试（parallel / sequential / graph_augmented / multi_hop）
+- [ ] Reranker 效果回归测试（保证精排结果质量）
+- [ ] 多轮对话端到端测试
+- [ ] 流式 SSE 响应测试
+- [ ] 鉴权边界测试（未登录/无权限访问受保护接口）
