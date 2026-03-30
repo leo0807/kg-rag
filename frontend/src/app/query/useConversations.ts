@@ -20,11 +20,9 @@ export function useConversations() {
                 headers: { "Authorization": `Bearer ${getToken()}` },
             });
             const data = await res.json();
-            const list = Array.isArray(data) ? data : [];  // ← 加这行
+            const list = Array.isArray(data) ? data : [];
             setConversations(list);
-            if (list.length > 0 && !activeId) {
-                setActiveId(list[0].id);
-            }
+            // 不自动选中历史会话，保持 null → 进入新建对话模式
         } catch (e) {
             console.error("加载会话失败", e);
             setConversations([]);
