@@ -95,3 +95,23 @@ def search_sections(
             "score":    float(hit.score),
         })
     return hits
+
+def get_all_embeddings() -> list[dict]:
+    """拉取集合中所有向量（用于离线批量相似度计算）。
+    警告：大规模生产环境（>10 万条）请改用分页或 Milvus bulk export。
+    """
+    col = get_or_create_collection()
+    col.load()
+    results = col.query(
+        expr          = "chunk_id != ''",
+        output_fields = ["chunk_id", "doc_id", "embedding"],
+        limit         = 16384,
+    )
+    return [
+        {
+            "chunk_id":  r["chunk_id"],
+            "doc_id":    r["doc_id"],
+            "embedding": r["embedding"],
+        }
+        for r in results
+    ]

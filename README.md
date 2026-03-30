@@ -164,11 +164,11 @@ python -m pytest tests/ -v
 ### 知识图谱增强
 
 **节点与关系扩展**
-- [ ] Tool / Material / Process 节点间关系：`COMPATIBLE_WITH`、`REQUIRES_TOOL`（Process→Tool）、`ALTERNATIVE_TO`（材料替代关系）
-- [ ] 文档版本溯源：`SUPERSEDES` / `OBSOLETED_BY` 关系，支持"本次变更了哪些章节"查询
-- [ ] 工艺约束节点：力矩值、公差、温度等结构化参数从正文提取，形成独立节点并与章节关联
-- [ ] 跨文档语义边：相似章节间自动建立 `SIMILAR_TO` 关系（基于向量余弦相似度阈值）
-- [ ] 图谱统计 API：`GET /api/stats/knowledge-graph` 返回各类节点数量、边数量、覆盖率
+- [x] Tool / Material / Process 节点间关系：`REQUIRES_TOOL`（Process→Tool）、`USES_MATERIAL`（Process→Material）、`ALTERNATIVE_TO`、`COMPATIBLE_WITH`
+- [x] 文档版本溯源：`SUPERSEDES` / `OBSOLETED_BY` 关系；章节级变更检测 `ADDED_SECTION` / `REMOVED_SECTION` / `CHANGED_TO`
+- [x] 工艺约束节点：LLM 提取力矩/公差/温度/压力等参数，写入 `Constraint` 节点，`(Section)-[:HAS_CONSTRAINT]->(Constraint)`
+- [x] 跨文档语义边：`SIMILAR_TO {score}` 关系，离线脚本 `scripts/build_semantic_links.py`，API `POST /api/graph/semantic-links`
+- [x] 图谱统计 API：`GET /api/stats/knowledge-graph` 返回节点数量、关系数量、各维度覆盖率
 
 **图谱可视化**
 - [ ] 图谱节点数量限制可配置（当前 Document:50 / Section:200 / Image:100 均硬编码）

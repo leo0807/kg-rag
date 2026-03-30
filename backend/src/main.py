@@ -256,11 +256,14 @@ async def ingest(
     await progress("writing", f"写入图谱，共 {doc.total_sections} 个章节...")
     write_document(doc)
 
-    # ── 实体提取：工具 / 材料 / 工序节点 ─────────────────
-    await progress("entities", "提取工具/材料/工序实体...")
+    # ── 实体提取：工具 / 材料 / 工序节点 + 实体间关系 ─────────────────────
+    await progress("entities", "提取工具/材料/工序实体及关系...")
     try:
-        from .services.entity_extractor import extract_entities_from_sections
-        from .services.entity_writer    import write_entities
+        from .services.entity_extractor import (
+            extract_entities_from_sections,
+            extract_constraints_from_sections,
+        )
+        from .services.entity_writer import write_entities, write_constraints
 
         section_dicts = [
             {"chunk_id": s.chunk_id, "title": s.title, "content": s.content}
@@ -268,8 +271,13 @@ async def ingest(
         ]
         entity_data = extract_entities_from_sections(section_dicts)
         write_entities(driver, doc.doc_id, entity_data)
+
+        # 工艺约束节点（力矩、公差、温度等）
+        await progress("constraints", "提取工艺约束参数...")
+        constraint_data = extract_constraints_from_sections(section_dicts)
+        write_constraints(driver, doc.doc_id, constraint_data)
     except Exception as e:
-        logger.warning("实体提取失败（不影响主流程）: %s", e)
+        logger.warning("实体/约束提取失败（不影响主流程）: %s", e)
 
     # ── 多模态：提取并分析图片 ────────────────────────────
     await progress("images", "提取图片中...")

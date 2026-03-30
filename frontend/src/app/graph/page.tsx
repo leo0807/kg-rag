@@ -37,12 +37,13 @@ const MIN_SCALE = 0.1;
 const MAX_SCALE = 4;
 
 const NODE_COLOR: Record<string, string> = {
-    Document: "#6366f1",
-    Section:  "#f59e0b",
-    Image:    "#ec4899",
-    Tool:     "#10b981",
-    Material: "#f97316",
-    Process:  "#a78bfa",
+    Document:   "#6366f1",
+    Section:    "#f59e0b",
+    Image:      "#ec4899",
+    Tool:       "#10b981",
+    Material:   "#f97316",
+    Process:    "#a78bfa",
+    Constraint: "#ef4444",
 };
 
 const EDGE_COLOR: Record<string, string> = {
@@ -54,13 +55,20 @@ const EDGE_COLOR: Record<string, string> = {
     REQUIRES_TOOL:     "#10b981",
     USES_MATERIAL:     "#f97316",
     INVOLVES_PROCESS:  "#a78bfa",
+    HAS_CONSTRAINT:    "#ef4444",
+    ALTERNATIVE_TO:    "#fb923c",
+    COMPATIBLE_WITH:   "#34d399",
     MENTIONS_TOOL:     "#6ee7b7",
+    SUPERSEDES:        "#818cf8",
+    SIMILAR_TO:        "#94a3b8",
+    CHANGED_TO:        "#fbbf24",
 };
 
 function nodeRadius(d: SimNode): number {
     const t = d.type || d.label;
-    if (t === "Document") return 36;
-    if (t === "Image")    return 18;
+    if (t === "Document")   return 36;
+    if (t === "Image")      return 18;
+    if (t === "Constraint") return 14;
     if (t === "Tool" || t === "Material" || t === "Process") return 16;
     return 22;
 }
@@ -208,9 +216,10 @@ function drawGraph(
     return zoom;
 }
 
-type NodeFilter = "全部" | "Document" | "Section" | "Image" | "Tool" | "Material" | "Process";
+type NodeFilter = "全部" | "Document" | "Section" | "Image" | "Tool" | "Material" | "Process" | "Constraint";
 type EdgeFilter = "全部关系" | "HAS_SECTION" | "REFERENCES" | "HAS_SUBSECTION" | "HAS_IMAGE"
-    | "REQUIRES_TOOL" | "USES_MATERIAL" | "INVOLVES_PROCESS";
+    | "REQUIRES_TOOL" | "USES_MATERIAL" | "INVOLVES_PROCESS" | "HAS_CONSTRAINT"
+    | "ALTERNATIVE_TO" | "COMPATIBLE_WITH" | "SUPERSEDES" | "SIMILAR_TO";
 
 export default function GraphPage() {
     const svgRef     = useRef<SVGSVGElement>(null);
@@ -260,8 +269,8 @@ export default function GraphPage() {
 
             {/* 过滤控制栏 */}
             <div className="absolute top-4 left-4 z-10 flex gap-2 flex-wrap">
-                <div className="flex gap-1 bg-gray-900 border border-gray-700 rounded-lg p-1">
-                    {(["全部", "Document", "Section", "Image", "Tool", "Material", "Process"] as NodeFilter[]).map(type => (
+                <div className="flex flex-wrap gap-1 bg-gray-900 border border-gray-700 rounded-lg p-1">
+                    {(["全部", "Document", "Section", "Image", "Tool", "Material", "Process", "Constraint"] as NodeFilter[]).map(type => (
                         <button key={type} onClick={() => setNodeFilter(type)}
                             className={`px-2.5 py-1 rounded text-xs transition-colors ${
                                 nodeFilter === type ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"
@@ -270,9 +279,10 @@ export default function GraphPage() {
                         </button>
                     ))}
                 </div>
-                <div className="flex gap-1 bg-gray-900 border border-gray-700 rounded-lg p-1">
+                <div className="flex flex-wrap gap-1 bg-gray-900 border border-gray-700 rounded-lg p-1">
                     {(["全部关系", "HAS_SECTION", "REFERENCES", "HAS_SUBSECTION", "HAS_IMAGE",
-                        "REQUIRES_TOOL", "USES_MATERIAL", "INVOLVES_PROCESS"] as EdgeFilter[]).map(type => (
+                        "REQUIRES_TOOL", "USES_MATERIAL", "INVOLVES_PROCESS", "HAS_CONSTRAINT",
+                        "ALTERNATIVE_TO", "COMPATIBLE_WITH", "SUPERSEDES", "SIMILAR_TO"] as EdgeFilter[]).map(type => (
                         <button key={type} onClick={() => setEdgeFilter(type)}
                             className={`px-2.5 py-1 rounded text-xs transition-colors ${
                                 edgeFilter === type ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"
@@ -288,12 +298,13 @@ export default function GraphPage() {
                       bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5">
                 <div className="text-xs text-gray-500 mb-1">图例</div>
                 {[
-                    { color: NODE_COLOR.Document, label: "Document 规范文档" },
-                    { color: NODE_COLOR.Section,  label: "Section 章节" },
-                    { color: NODE_COLOR.Image,    label: "Image 图片" },
-                    { color: NODE_COLOR.Tool,     label: "Tool 工具" },
-                    { color: NODE_COLOR.Material, label: "Material 材料" },
-                    { color: NODE_COLOR.Process,  label: "Process 工序" },
+                    { color: NODE_COLOR.Document,   label: "Document 规范文档" },
+                    { color: NODE_COLOR.Section,    label: "Section 章节" },
+                    { color: NODE_COLOR.Image,      label: "Image 图片" },
+                    { color: NODE_COLOR.Tool,       label: "Tool 工具" },
+                    { color: NODE_COLOR.Material,   label: "Material 材料" },
+                    { color: NODE_COLOR.Process,    label: "Process 工序" },
+                    { color: NODE_COLOR.Constraint, label: "Constraint 工艺约束" },
                 ].map(item => (
                     <div key={item.label} className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
@@ -309,6 +320,11 @@ export default function GraphPage() {
                         { color: EDGE_COLOR.REQUIRES_TOOL,    label: "REQUIRES_TOOL",    dash: false },
                         { color: EDGE_COLOR.USES_MATERIAL,    label: "USES_MATERIAL",    dash: false },
                         { color: EDGE_COLOR.INVOLVES_PROCESS, label: "INVOLVES_PROCESS", dash: false },
+                        { color: EDGE_COLOR.HAS_CONSTRAINT,   label: "HAS_CONSTRAINT",   dash: false },
+                        { color: EDGE_COLOR.ALTERNATIVE_TO,   label: "ALTERNATIVE_TO",   dash: true  },
+                        { color: EDGE_COLOR.COMPATIBLE_WITH,  label: "COMPATIBLE_WITH",  dash: false },
+                        { color: EDGE_COLOR.SUPERSEDES,       label: "SUPERSEDES",       dash: false },
+                        { color: EDGE_COLOR.SIMILAR_TO,       label: "SIMILAR_TO",       dash: true  },
                     ].map(item => (
                         <div key={item.label} className="flex items-center gap-2">
                             <svg width="16" height="4">
