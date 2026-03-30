@@ -152,9 +152,54 @@ async def send_progress(client_id: str, message: dict):
         except Exception:
             pass
 
-@app.get("/api/health", response_model=HealthResponse)
-async def health():
-    return {"status": "OK", "version": settings.APP_VERSION}
+@app.get("/api/health")
+async def health(driver: Driver = Depends(get_driver)):
+    import time
+    checks = {}
+    overall = "OK"
+
+    # Neo4j
+    try:
+        with driver.session() as session:
+            session.run("RETURN 1")
+        checks["neo4j"] = "OK"
+    except Exception as e:
+        checks["neo4j"] = f"ERROR: {e}"
+        overall = "DEGRADED"
+
+    # Redis
+    try:
+        from .services.cache import get_redis
+        get_redis().ping()
+        checks["redis"] = "OK"
+    except Exception as e:
+        checks["redis"] = f"ERROR: {e}"
+        overall = "DEGRADED"
+
+    # Milvus
+    try:
+        from pymilvus import connections
+        connections.get_connection_addr("default")
+        checks["milvus"] = "OK"
+    except Exception as e:
+        checks["milvus"] = f"ERROR: {e}"
+        overall = "DEGRADED"
+
+    # Elasticsearch
+    try:
+        from .services.es_store import get_es
+        get_es().ping()
+        checks["elasticsearch"] = "OK"
+    except Exception as e:
+        checks["elasticsearch"] = f"ERROR: {e}"
+        overall = "DEGRADED"
+
+    return {
+        "status":  overall,
+        "version": settings.APP_VERSION,
+        "checks":  checks,
+        "time":    int(time.time()),
+    }
 
 @app.post("/api/preview")
 async def preview(file: UploadFile = File(...)):
