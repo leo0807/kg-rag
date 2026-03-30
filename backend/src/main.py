@@ -21,6 +21,7 @@ from .routers.auth import router as auth_router
 from .routers.settings import router as settings_router
 from .routers.users import router as users_router
 from .routers.feedback import router as feedback_router
+from .routers.conversations import router as conversations_router
 
 from .db.session import init_tables
 from .services.milvus_store import connect_milvus, get_or_create_collection
@@ -126,6 +127,7 @@ app.include_router(auth_router)
 app.include_router(settings_router)
 app.include_router(users_router)
 app.include_router(feedback_router)
+app.include_router(conversations_router)
 
 # 存储活跃的 WebSocket 连接
 active_connections: dict[str, WebSocket] = {}
@@ -249,16 +251,30 @@ async def ingest(
     await progress("writing", f"写入图谱，共 {doc.total_sections} 个章节...")
     write_document(doc)
 
-    # ── 多模态：提取并分析图片 ────────────────
+    # ── 实体提取：工具 / 材料 / 工序节点 ─────────────────
+    await progress("entities", "提取工具/材料/工序实体...")
+    try:
+        from .services.entity_extractor import extract_entities_from_sections
+        from .services.entity_writer    import write_entities
+
+        section_dicts = [
+            {"chunk_id": s.chunk_id, "title": s.title, "content": s.content}
+            for s in doc.sections
+        ]
+        entity_data = extract_entities_from_sections(section_dicts)
+        write_entities(driver, doc.doc_id, entity_data)
+    except Exception as e:
+        logger.warning("实体提取失败（不影响主流程）: %s", e)
+
+    # ── 多模态：提取并分析图片 ────────────────────────────
     await progress("images", "提取图片中...")
     try:
         from .services.pdf_image_extractor import extract_images_from_pdf
         from .services.image_analyzer      import analyze_image
         from .services.multimodal_writer   import write_images_to_graph
+        from .services.entity_writer       import link_image_tools
 
         images = extract_images_from_pdf(str(tmp_path), doc.doc_id)
-
-        # 过滤掉 logo（太小或第1页的图）
         images = [img for img in images if img.page > 2 and img.width > 200]
 
         if images:
@@ -274,84 +290,15 @@ async def ingest(
                     "analysis": analysis,
                 })
             write_images_to_graph(driver, doc.doc_id, analyzed)
+            # 将图片识别到的工具链接到 Tool 节点
+            for item in analyzed:
+                tools = item.get("analysis", {}).get("tools", [])
+                link_image_tools(driver, item["image_id"], tools)
             logger.info("多模态写入完成 doc_id=%s images=%d", doc.doc_id, len(analyzed))
     except Exception as e:
         logger.warning("多模态处理失败（不影响主流程）: %s", e)
 
     await progress("done", f"{doc.doc_id} 写入完成")
-    return {
-        "status":   "OK",
-        "doc_id":   doc.doc_id,
-        "sections": doc.total_sections,
-    }
-    async def progress(step: str, detail: str = ""):
-        if client_id:
-            await send_progress(client_id, {
-                "step":   step,
-                "detail": detail,
-            })
-
-    tmp_path = UPLOAD_DIR / file.filename
-    with tmp_path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    await progress("parsing", "解析 PDF 中...")
-    doc = parse(tmp_path)
-
-    await progress("checking", f"检查是否已入库...")
-    with driver.session() as session:
-        result = session.run("""
-            MATCH (d:Document {name: $doc_id})
-            WHERE d.title IS NOT NULL
-            RETURN count(d) AS cnt
-        """, doc_id=doc.doc_id)
-        record = result.single()
-        already_exists = record and record["cnt"] > 0
-
-    if already_exists:
-        await progress("done", f"{doc.doc_id} 已入库，跳过")
-        return {
-            "status":   "skipped",
-            "doc_id":   doc.doc_id,
-            "message":  f"{doc.doc_id} 已入库，跳过",
-            "sections": doc.total_sections,
-        }
-
-    await progress("writing", f"写入图谱，共 {doc.total_sections} 个章节...")
-    write_document(doc)
-
-    await progress("done", f"{doc.doc_id} 写入完成")
-    return {
-        "status":   "OK",
-        "doc_id":   doc.doc_id,
-        "sections": doc.total_sections,
-    }
-    tmp_path = UPLOAD_DIR / file.filename
-    with tmp_path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    # 先解析拿到 doc_id
-    doc = parse(tmp_path)
-
-    # 检查是否已入库
-    with driver.session() as session:
-        result = session.run("""
-            MATCH (d:Document {name: $doc_id})
-            WHERE d.title IS NOT NULL
-            RETURN count(d) AS cnt
-        """, doc_id=doc.doc_id)
-        record = result.single()
-        already_exists = record and record["cnt"] > 0
-
-    if already_exists:
-        return {
-            "status":  "skipped",
-            "doc_id":  doc.doc_id,
-            "message": f"{doc.doc_id} 已入库，跳过",
-            "sections": doc.total_sections,
-        }
-
-    write_document(doc)
     return {
         "status":   "OK",
         "doc_id":   doc.doc_id,

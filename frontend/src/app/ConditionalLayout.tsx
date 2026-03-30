@@ -4,6 +4,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import Sidebar from "./Sidebar";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { useGlobalKeyboard } from "@/hooks/useKeyboard";
+
 
 const NO_SIDEBAR_PATHS = ["/login", "/register"];
 
@@ -15,6 +17,8 @@ export default function ConditionalLayout({
     const pathname = usePathname();
     const router = useRouter();
     const showSidebar = !NO_SIDEBAR_PATHS.includes(pathname);
+
+    useGlobalKeyboard();
 
     useEffect(() => {
         if (!showSidebar) return;
