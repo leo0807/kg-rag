@@ -41,7 +41,8 @@ async def get_graph(driver: Driver = Depends(get_driver)):
         img_result = session.run("""
             MATCH (i:Image)
             RETURN i.image_id AS id, i.caption AS name,
-                   i.doc_id AS doc_id, i.description AS description
+                   i.doc_id AS doc_id, i.description AS description,
+                   i.path AS path
             LIMIT 100
         """)
         nodes += [
@@ -51,6 +52,7 @@ async def get_graph(driver: Driver = Depends(get_driver)):
                 "type":        "Image",
                 "doc_id":      r["doc_id"],
                 "description": r["description"] or "",
+                "path":        r["path"] or "",
             }
             for r in img_result
         ]

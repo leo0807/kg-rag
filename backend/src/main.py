@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from neo4j import Driver
 from pydantic import BaseModel
 import shutil
@@ -36,6 +37,7 @@ from slowapi.errors import RateLimitExceeded
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
+(UPLOAD_DIR / "images").mkdir(exist_ok=True)
 
 logger = logging.getLogger(__name__)
 @asynccontextmanager
@@ -128,6 +130,9 @@ app.include_router(settings_router)
 app.include_router(users_router)
 app.include_router(feedback_router)
 app.include_router(conversations_router)
+
+# 挂载 uploads 目录为静态文件（图片预览）
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # 存储活跃的 WebSocket 连接
 active_connections: dict[str, WebSocket] = {}

@@ -10,6 +10,7 @@ interface GraphNode {
     type?: string;
     doc_id?: string;
     description?: string;
+    path?: string;
     x?: number;
     y?: number;
 }
@@ -69,6 +70,7 @@ function drawGraph(
     svgEl: SVGSVGElement,
     tooltipEl: HTMLDivElement,
     onScaleChange: (s: number) => void,
+    onImageClick: (node: GraphNode) => void,
 ): d3.ZoomBehavior<SVGSVGElement, unknown> {
     const width  = svgEl.clientWidth;
     const height = svgEl.clientHeight;
@@ -154,6 +156,8 @@ function drawGraph(
         if (type === "Document") {
             const docId = (d as any).doc_id || d.id;
             window.location.href = `/library/${docId}`;
+        } else if (type === "Image") {
+            onImageClick(d as GraphNode);
         }
     });
 
@@ -212,10 +216,11 @@ export default function GraphPage() {
     const svgRef     = useRef<SVGSVGElement>(null);
     const tooltipRef = useRef<HTMLDivElement>(null);
     const zoomRef    = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
-    const [data,       setData]       = useState<GraphData | null>(null);
-    const [scale,      setScale]      = useState(1);
-    const [nodeFilter, setNodeFilter] = useState<NodeFilter>("全部");
-    const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>("全部关系");
+    const [data,        setData]        = useState<GraphData | null>(null);
+    const [scale,       setScale]       = useState(1);
+    const [nodeFilter,  setNodeFilter]  = useState<NodeFilter>("全部");
+    const [edgeFilter,  setEdgeFilter]  = useState<EdgeFilter>("全部关系");
+    const [imageModal,  setImageModal]  = useState<GraphNode | null>(null);
 
     function zoomIn()    { if (svgRef.current && zoomRef.current) d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 1.3); }
     function zoomOut()   { if (svgRef.current && zoomRef.current) d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 0.7); }
@@ -246,6 +251,7 @@ export default function GraphPage() {
             svgRef.current,
             tooltipRef.current,
             setScale,
+            setImageModal,
         );
     }, [data, nodeFilter, edgeFilter]);
 
@@ -341,6 +347,66 @@ export default function GraphPage() {
             <div ref={tooltipRef}
                 className="fixed hidden px-2 py-1 bg-gray-800 text-white text-xs
                    rounded pointer-events-none border border-gray-700 max-w-xs" />
+
+            {/* Image 节点弹窗 */}
+            {imageModal && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+                    onClick={() => setImageModal(null)}
+                >
+                    <div
+                        className="relative bg-gray-900 border border-gray-700 rounded-2xl
+                                   shadow-2xl max-w-2xl w-full mx-4 overflow-hidden"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* 头部 */}
+                        <div className="flex items-start justify-between px-5 py-4 border-b border-gray-800">
+                            <div>
+                                <div className="text-sm font-medium text-white">
+                                    {imageModal.name || imageModal.id}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-0.5">{imageModal.id}</div>
+                            </div>
+                            <button
+                                onClick={() => setImageModal(null)}
+                                className="text-gray-500 hover:text-white transition-colors text-lg leading-none ml-4">
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* 图片 */}
+                        <div className="px-5 pt-4 flex justify-center bg-gray-950">
+                            {imageModal.path ? (
+                                // 将本地绝对路径转为 /uploads/... URL
+                                // path 形如 uploads/images/xxx.png 或 /abs/path/uploads/images/xxx.png
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                    src={`http://localhost:8000/${
+                                        imageModal.path.replace(/^.*?(uploads\/)/, "uploads/")
+                                    }`}
+                                    alt={imageModal.name}
+                                    className="max-h-96 max-w-full object-contain rounded-lg"
+                                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                />
+                            ) : (
+                                <div className="h-32 flex items-center justify-center text-gray-600 text-sm">
+                                    暂无图片
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 描述 */}
+                        {imageModal.description && (
+                            <div className="px-5 py-4">
+                                <div className="text-xs text-gray-500 mb-1">VLM 分析</div>
+                                <p className="text-sm text-gray-300 leading-relaxed">
+                                    {imageModal.description}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
