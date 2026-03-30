@@ -173,6 +173,74 @@ async def ingest(
 ):
     async def progress(step: str, detail: str = ""):
         if client_id:
+            await send_progress(client_id, {"step": step, "detail": detail})
+
+    tmp_path = UPLOAD_DIR / file.filename
+    with tmp_path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    await progress("parsing", "解析 PDF 中...")
+    doc = parse(tmp_path)
+
+    await progress("checking", "检查是否已入库...")
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (d:Document {name: $doc_id})
+            WHERE d.title IS NOT NULL
+            RETURN count(d) AS cnt
+        """, doc_id=doc.doc_id)
+        record = result.single()
+        already_exists = record and record["cnt"] > 0
+
+    if already_exists:
+        await progress("done", f"{doc.doc_id} 已入库，跳过")
+        return {
+            "status":   "skipped",
+            "doc_id":   doc.doc_id,
+            "message":  f"{doc.doc_id} 已入库，跳过",
+            "sections": doc.total_sections,
+        }
+
+    await progress("writing", f"写入图谱，共 {doc.total_sections} 个章节...")
+    write_document(doc)
+
+    # ── 多模态：提取并分析图片 ────────────────
+    await progress("images", "提取图片中...")
+    try:
+        from .services.pdf_image_extractor import extract_images_from_pdf
+        from .services.image_analyzer      import analyze_image
+        from .services.multimodal_writer   import write_images_to_graph
+
+        images = extract_images_from_pdf(str(tmp_path), doc.doc_id)
+
+        # 过滤掉 logo（太小或第1页的图）
+        images = [img for img in images if img.page > 2 and img.width > 200]
+
+        if images:
+            await progress("images", f"分析 {len(images)} 张图片...")
+            analyzed = []
+            for img in images:
+                analysis = analyze_image(img.path, img.caption, doc.doc_id)
+                analyzed.append({
+                    "image_id": img.image_id,
+                    "page":     img.page,
+                    "path":     img.path,
+                    "caption":  img.caption,
+                    "analysis": analysis,
+                })
+            write_images_to_graph(driver, doc.doc_id, analyzed)
+            logger.info("多模态写入完成 doc_id=%s images=%d", doc.doc_id, len(analyzed))
+    except Exception as e:
+        logger.warning("多模态处理失败（不影响主流程）: %s", e)
+
+    await progress("done", f"{doc.doc_id} 写入完成")
+    return {
+        "status":   "OK",
+        "doc_id":   doc.doc_id,
+        "sections": doc.total_sections,
+    }
+    async def progress(step: str, detail: str = ""):
+        if client_id:
             await send_progress(client_id, {
                 "step":   step,
                 "detail": detail,
