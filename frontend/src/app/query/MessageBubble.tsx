@@ -1,6 +1,9 @@
 "use client";
 import Link from "next/link";
 import { SourceSection } from "./types";
+import SourceGraph from "./SourceGraph";
+
+const RANK_COLORS = ["#fbbf24", "#34d399", "#60a5fa", "#f472b6", "#a78bfa"];
 
 interface Props {
     role: "user" | "assistant";
@@ -66,7 +69,7 @@ export default function MessageBubble({ role, content, sources, images, streamin
                         <div className="mt-3 pt-3 border-t border-gray-800">
                             <div className="text-xs text-gray-600 mb-2">引用来源</div>
                             <div className="flex flex-wrap gap-2">
-                                {sources.map(s => (
+                                {sources.map((s, idx) => (
                                     <Link
                                         key={s.chunk_id}
                                         href={`/library/${s.doc_id}`}
@@ -76,6 +79,12 @@ export default function MessageBubble({ role, content, sources, images, streamin
                                border border-gray-700 hover:border-indigo-500
                                transition-colors cursor-pointer"
                                     >
+                                        {/* 排名徽章 */}
+                                        <span className="w-4 h-4 rounded-full flex items-center justify-center
+                                                         text-[10px] font-bold text-gray-900 flex-shrink-0"
+                                              style={{ backgroundColor: RANK_COLORS[idx] ?? "#6b7280" }}>
+                                            {idx + 1}
+                                        </span>
                                         <span className="text-xs font-mono text-indigo-400">
                                             {s.doc_id} §{s.number}
                                         </span>
@@ -85,6 +94,8 @@ export default function MessageBubble({ role, content, sources, images, streamin
                                     </Link>
                                 ))}
                             </div>
+                            {/* 来源图谱 */}
+                            <SourceGraph sources={sources} />
                         </div>
                     )}
                 </div>
