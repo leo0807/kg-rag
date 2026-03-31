@@ -9,12 +9,13 @@ interface Props {
     onSelect: (id: string) => void;
     onDelete: (id: string) => void;
     onNew: () => void;
+    disableNew?: boolean;
 }
 
 const STORAGE_KEY = "conv_sidebar_collapsed";
 
 export default function ConversationSidebar({
-    conversations, activeId, onSelect, onDelete, onNew,
+    conversations, activeId, onSelect, onDelete, onNew, disableNew = false,
 }: Props) {
     const [collapsed, setCollapsed] = useState(false);
 
@@ -38,10 +39,12 @@ export default function ConversationSidebar({
             <div className={`flex items-center border-b border-gray-800 min-h-[57px]
                              ${collapsed ? "justify-center px-0 py-4" : "px-3 py-4 gap-2"}`}>
                 {!collapsed && (
-                    <button onClick={onNew}
+                    <button onClick={onNew} disabled={disableNew}
                         className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl
                          border border-gray-700 text-gray-400 text-sm
-                         hover:border-indigo-500 hover:text-white transition-colors">
+                         hover:border-indigo-500 hover:text-white transition-colors
+                         disabled:opacity-40 disabled:cursor-not-allowed
+                         disabled:hover:border-gray-700 disabled:hover:text-gray-400">
                         <Plus size={14} />
                         新建对话
                     </button>
@@ -60,8 +63,10 @@ export default function ConversationSidebar({
                 <div className="flex justify-center py-2 border-b border-gray-800">
                     <button
                         onClick={onNew}
-                        className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
-                        title="新建对话"
+                        disabled={disableNew}
+                        className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-800 transition-colors
+                                   disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                        title={disableNew ? "请先发送消息后再新建对话" : "新建对话"}
                     >
                         <Plus size={14} />
                     </button>

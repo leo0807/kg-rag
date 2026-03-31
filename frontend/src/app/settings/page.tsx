@@ -43,6 +43,7 @@ interface AuditRow {
     created_at: string;
 }
 
+const API = "http://localhost:8000";
 function getToken() {
     return localStorage.getItem("token") ?? "";
 }
@@ -81,7 +82,7 @@ export default function SettingsPage() {
     }, []);
 
     async function loadAuditLogs(page = 1) {
-        const res = await fetch(`/api/users/audit-logs?page=${page}&per_page=15`, {
+        const res = await fetch(`${API}/api/users/audit-logs?page=${page}&per_page=15`, {
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
         const data = await res.json();
@@ -91,21 +92,21 @@ export default function SettingsPage() {
     }
 
     async function loadProfile() {
-        const res = await fetch("/api/auth/profile", {
+        const res = await fetch(`${API}/api/auth/profile`, {
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
         setProfile(await res.json());
     }
 
     async function loadSettings() {
-        const res = await fetch("/api/settings/user", {
+        const res = await fetch(`${API}/api/settings/user`, {
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
         setSettings(await res.json());
     }
 
     async function loadUsers() {
-        const res = await fetch("/api/users", {
+        const res = await fetch(`${API}/api/users`, {
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
         setUsers(await res.json());
@@ -123,7 +124,7 @@ export default function SettingsPage() {
 
     async function saveProfile() {
         if (!profile) return;
-        const res = await fetch("/api/auth/profile", {
+        const res = await fetch(`${API}/api/auth/profile`, {
             method: "PUT",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
             body: JSON.stringify(profile),
@@ -144,7 +145,7 @@ export default function SettingsPage() {
             showError("两次密码不一致");
             return;
         }
-        const res = await fetch("/api/auth/password", {
+        const res = await fetch(`${API}/api/auth/password`, {
             method: "PUT",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
             body: JSON.stringify({
@@ -163,7 +164,7 @@ export default function SettingsPage() {
 
     async function saveSettings() {
         if (!settings) return;
-        const res = await fetch("/api/settings/user", {
+        const res = await fetch(`${API}/api/settings/user`, {
             method: "PUT",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
             body: JSON.stringify({ settings }),
@@ -173,7 +174,7 @@ export default function SettingsPage() {
     }
 
     async function toggleUser(userId: string) {
-        const res = await fetch(`/api/users/${userId}/toggle`, {
+        const res = await fetch(`${API}/api/users/${userId}/toggle`, {
             method: "PUT",
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
@@ -182,7 +183,7 @@ export default function SettingsPage() {
     }
 
     async function toggleAdmin(userId: string) {
-        const res = await fetch(`/api/users/${userId}/admin`, {
+        const res = await fetch(`${API}/api/users/${userId}/admin`, {
             method: "PUT",
             headers: { "Authorization": `Bearer ${getToken()}` },
         });

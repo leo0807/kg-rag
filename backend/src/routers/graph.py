@@ -8,16 +8,25 @@ router = APIRouter(prefix="/api", tags=["graph"])
 
 
 @router.get("/graph")
-async def get_graph(driver: Driver = Depends(get_driver)):
+async def get_graph(
+    limit_doc:    int = 50,
+    limit_sec:    int = 200,
+    limit_img:    int = 100,
+    limit_entity: int = 100,
+    doc_id:       str = "",       # 按文档 doc_id 筛选
+    driver: Driver = Depends(get_driver),
+):
     with driver.session() as session:
+        doc_filter = "WHERE $doc_id = '' OR d.name = $doc_id" if doc_id else ""
 
         # ── Document 节点 ─────────────────────────────────────────────────────
-        doc_result = session.run("""
+        doc_result = session.run(f"""
             MATCH (d:Document)
+            {("WHERE $doc_id = '' OR d.name = $doc_id") if True else ""}
             RETURN d.name AS id, coalesce(d.title, d.name) AS name,
                    d.name AS doc_id, d.version AS version, 'Document' AS type
-            LIMIT 50
-        """)
+            LIMIT $limit
+        """, doc_id=doc_id, limit=limit_doc)
         nodes = [
             {
                 "id":      r["id"],
@@ -32,9 +41,10 @@ async def get_graph(driver: Driver = Depends(get_driver)):
         # ── Section 节点 ──────────────────────────────────────────────────────
         sec_result = session.run("""
             MATCH (s:Section)
+            WHERE $doc_id = '' OR s.doc_id = $doc_id
             RETURN s.chunk_id AS id, s.title AS name, s.doc_id AS doc_id, 'Section' AS type
-            LIMIT 200
-        """)
+            LIMIT $limit
+        """, doc_id=doc_id, limit=limit_sec)
         nodes += [
             {"id": r["id"], "name": r["name"] or r["id"], "type": "Section", "doc_id": r["doc_id"]}
             for r in sec_result
@@ -43,10 +53,11 @@ async def get_graph(driver: Driver = Depends(get_driver)):
         # ── Image 节点 ────────────────────────────────────────────────────────
         img_result = session.run("""
             MATCH (i:Image)
+            WHERE $doc_id = '' OR i.doc_id = $doc_id
             RETURN i.image_id AS id, i.caption AS name,
                    i.doc_id AS doc_id, i.description AS description, i.path AS path
-            LIMIT 100
-        """)
+            LIMIT $limit
+        """, doc_id=doc_id, limit=limit_img)
         nodes += [
             {
                 "id":          r["id"],
@@ -62,9 +73,10 @@ async def get_graph(driver: Driver = Depends(get_driver)):
         # ── Tool 节点 ─────────────────────────────────────────────────────────
         tool_result = session.run("""
             MATCH (t:Tool)
+            WHERE $doc_id = '' OR t.doc_id = $doc_id
             RETURN t.name AS id, t.name AS name, t.doc_id AS doc_id, 'Tool' AS type
-            LIMIT 100
-        """)
+            LIMIT $limit
+        """, doc_id=doc_id, limit=limit_entity)
         nodes += [
             {"id": r["id"], "name": r["name"], "type": "Tool", "doc_id": r["doc_id"] or ""}
             for r in tool_result
@@ -280,6 +292,75 @@ async def knowledge_graph_stats(driver: Driver = Depends(get_driver)):
         "total_nodes": sum(node_counts.values()),
         "total_relations": sum(rel_counts.values()),
     }
+
+
+@router.get("/graph/timeline")
+async def get_timeline(driver: Driver = Depends(get_driver)):
+    """
+    版本时间线数据：返回所有文档的版本信息与章节变更统计。
+    X 轴 = 版本号（字母序），Y 轴 = 文档基名，气泡大小 = 变更量。
+    """
+    with driver.session() as session:
+        # ① 所有已入库文档（有 title 的才算正式文档）
+        docs_res = session.run("""
+            MATCH (d:Document)
+            WHERE d.title IS NOT NULL
+            RETURN d.name        AS doc_id,
+                   d.title       AS title,
+                   COALESCE(d.version, '')    AS version,
+                   COALESCE(d.issue_date, '') AS issue_date
+            ORDER BY d.name
+        """)
+        docs: dict[str, dict] = {}
+        for r in docs_res:
+            docs[r["doc_id"]] = {
+                "doc_id":           r["doc_id"],
+                "title":            r["title"],
+                "version":          r["version"],
+                "issue_date":       r["issue_date"],
+                "supersedes":       [],
+                "added_sections":   0,
+                "removed_sections": 0,
+                "changed_sections": 0,
+            }
+
+        # ② 版本溯源关系 SUPERSEDES
+        sup_res = session.run("""
+            MATCH (new:Document)-[:SUPERSEDES]->(old:Document)
+            RETURN new.name AS new_id, old.name AS old_id
+        """)
+        for r in sup_res:
+            if r["new_id"] in docs:
+                docs[r["new_id"]]["supersedes"].append(r["old_id"])
+
+        # ③ 新增章节计数（ADDED_SECTION）
+        added_res = session.run("""
+            MATCH (d:Document)-[:ADDED_SECTION]->()
+            RETURN d.name AS doc_id, count(*) AS cnt
+        """)
+        for r in added_res:
+            if r["doc_id"] in docs:
+                docs[r["doc_id"]]["added_sections"] = r["cnt"]
+
+        # ④ 删除章节计数（REMOVED_SECTION）
+        removed_res = session.run("""
+            MATCH (d:Document)-[:REMOVED_SECTION]->()
+            RETURN d.name AS doc_id, count(*) AS cnt
+        """)
+        for r in removed_res:
+            if r["doc_id"] in docs:
+                docs[r["doc_id"]]["removed_sections"] = r["cnt"]
+
+        # ⑤ 内容变更章节计数（CHANGED_TO）
+        changed_res = session.run("""
+            MATCH (d:Document)-[:HAS_SECTION]->(s:Section)-[:CHANGED_TO]->()
+            RETURN d.name AS doc_id, count(s) AS cnt
+        """)
+        for r in changed_res:
+            if r["doc_id"] in docs:
+                docs[r["doc_id"]]["changed_sections"] = r["cnt"]
+
+    return {"docs": list(docs.values())}
 
 
 @router.post("/graph/semantic-links")

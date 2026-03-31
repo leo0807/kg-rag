@@ -15,6 +15,55 @@ const SUGGESTED = [
     "收压接头的安装步骤有哪些",
 ];
 
+// ── 多跳推理链路展示组件 ───────────────────────────────────────────────────────
+interface ReasoningStep {
+    hop: number;
+    query: string;
+    found: number;
+    titles: string[];
+}
+
+function ReasoningChain({ steps }: { steps: ReasoningStep[] }) {
+    const [open, setOpen] = useState(false);
+    if (!steps.length) return null;
+    return (
+        <div className="mb-4 border border-gray-800 rounded-xl overflow-hidden">
+            <button onClick={() => setOpen(v => !v)}
+                className="w-full flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-left hover:bg-gray-800/50 transition-colors">
+                <svg className={`w-3 h-3 transition-transform text-gray-500 ${open ? "rotate-90" : ""}`}
+                    viewBox="0 0 12 12" fill="currentColor"><path d="M4 2l5 4-5 4V2z" /></svg>
+                <span className="text-xs text-gray-500">多跳推理过程</span>
+                <span className="ml-auto text-xs text-gray-600">{steps.length} 跳</span>
+            </button>
+            {open && (
+                <div className="px-4 py-3 space-y-3 bg-gray-950">
+                    {steps.map(step => (
+                        <div key={step.hop} className="flex gap-3">
+                            <div className="w-5 h-5 rounded-full bg-indigo-900 border border-indigo-700
+                                            flex items-center justify-center text-xs text-indigo-400 shrink-0">
+                                {step.hop}
+                            </div>
+                            <div>
+                                <div className="text-xs text-gray-300 font-medium">{step.query}</div>
+                                <div className="text-xs text-gray-600 mt-0.5">找到 {step.found} 个章节</div>
+                                {step.titles.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                        {step.titles.map((t, i) => (
+                                            <span key={i} className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">
+                                                {t.length > 30 ? t.slice(0, 30) + "…" : t}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function QueryPage() {
     const {
         conversations, activeId, activeConv,
@@ -22,14 +71,38 @@ export default function QueryPage() {
         updateConversation, deleteConversation, clearConversation,
     } = useConversations();
 
-    const [input, setInput] = useState("");
-    const [strategy, setStrategy] = useState<Strategy>("parallel");
-    const [loading, setLoading] = useState(false);
-    const [streaming, setStreaming] = useState(false);
+    const [input,          setInput]          = useState("");
+    const [strategy,       setStrategy]       = useState<Strategy>("parallel");
+    const [loading,        setLoading]        = useState(false);
+    const [streaming,      setStreaming]      = useState(false);
     const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
-    const [pendingImages, setPendingImages] = useState<string[]>([]);
+    const [pendingImages,  setPendingImages]  = useState<string[]>([]);
+    const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
     const answerRef = useRef("");
     const bottomRef = useRef<HTMLDivElement>(null);
+
+    // Refs 用于在 visibilitychange 回调中读取最新值，避免闭包过期
+    const activeIdRef       = useRef<string | null>(activeId);
+    const conversationsRef  = useRef(conversations);
+    const deleteConvRef     = useRef(deleteConversation);
+    useEffect(() => { activeIdRef.current      = activeId;         });
+    useEffect(() => { conversationsRef.current = conversations;    });
+    useEffect(() => { deleteConvRef.current    = deleteConversation; });
+
+    // 切换浏览器 tab 返回时，若当前对话为空则删除
+    useEffect(() => {
+        const handleVisibility = () => {
+            if (document.visibilityState !== "visible") return;
+            const cid = activeIdRef.current;
+            if (!cid) return;
+            const conv = conversationsRef.current.find(c => c.id === cid);
+            if (conv && conv.messages.length === 0) {
+                deleteConvRef.current(cid);
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisibility);
+        return () => document.removeEventListener("visibilitychange", handleVisibility);
+    }, []);
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -39,37 +112,32 @@ export default function QueryPage() {
         if ((!input.trim() && pendingImages.length === 0) || loading || streaming) return;
 
         const question = input.trim();
-        const images = [...pendingImages];
+        const images   = [...pendingImages];
         setInput("");
         setPendingImages([]);
+        setReasoningSteps([]);
 
-        // 确保有活跃会话
         let convId = activeId;
         if (!convId) {
             convId = await createConversation(question.slice(0, 20), strategy);
         }
 
-        const conv = conversations.find(c => c.id === convId);
+        const conv     = conversations.find(c => c.id === convId);
         const prevMsgs = conv?.messages ?? [];
 
         const userMsg: Message = {
-            id: `user_${Date.now()}`,
-            role: "user",
-            content: question,
-            images: images.length > 0 ? images : undefined,
+            id:        `user_${Date.now()}`,
+            role:      "user",
+            content:   question,
+            images:    images.length > 0 ? images : undefined,
             timestamp: Date.now(),
         };
-
         const aiMsgId = `ai_${Date.now()}`;
         const aiMsg: Message = {
-            id: aiMsgId,
-            role: "assistant",
-            content: "",
-            sources: [],
-            timestamp: Date.now(),
+            id: aiMsgId, role: "assistant", content: "", sources: [], timestamp: Date.now(),
         };
 
-        const newMsgs = [...prevMsgs, userMsg, aiMsg];
+        const newMsgs  = [...prevMsgs, userMsg, aiMsg];
         const newTitle = prevMsgs.length === 0 ? question.slice(0, 20) : undefined;
         await updateConversation(convId, newMsgs, newTitle);
 
@@ -77,28 +145,23 @@ export default function QueryPage() {
         setLoading(true);
         answerRef.current = "";
 
-        // 构建历史（不含当前问题）
-        const history = (activeConv?.messages ?? []).map(m => ({
-            role: m.role,
-            content: m.content,
-        }));
+        const history = (activeConv?.messages ?? []).map(m => ({ role: m.role, content: m.content }));
         try {
             const token = localStorage.getItem("token") ?? "";
             const res = await fetch("http://localhost:8000/api/query/stream", {
-                method: "POST",
+                method:  "POST",
                 headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-                body: JSON.stringify({ question, strategy, history, images }),
+                body:    JSON.stringify({ question, strategy, history, images }),
             });
 
             if (!res.ok) throw new Error("请求失败");
             setLoading(false);
             setStreaming(true);
 
-            const reader = res.body!.getReader();
+            const reader  = res.body!.getReader();
             const decoder = new TextDecoder();
             let sources: SourceSection[] = [];
 
-            // 定时刷新流式内容
             const intervalId = setInterval(() => {
                 updateConversation(convId!, newMsgs.map(m =>
                     m.id === aiMsgId ? { ...m, content: answerRef.current } : m
@@ -114,8 +177,9 @@ export default function QueryPage() {
                     if (data === "[DONE]") break;
                     try {
                         const event = JSON.parse(data);
-                        if (event.type === "sources") sources = event.content;
-                        else if (event.type === "delta") answerRef.current += event.content;
+                        if (event.type === "sources")     sources = event.content;
+                        else if (event.type === "delta")  answerRef.current += event.content;
+                        else if (event.type === "steps")  setReasoningSteps(event.content || []);
                     } catch { }
                 }
             }
@@ -124,11 +188,8 @@ export default function QueryPage() {
             setStreaming(false);
             setStreamingMsgId(null);
 
-            // 最终写入完整答案和来源
             const finalMsgs = newMsgs.map(m =>
-                m.id === aiMsgId
-                    ? { ...m, content: answerRef.current, sources }
-                    : m
+                m.id === aiMsgId ? { ...m, content: answerRef.current, sources } : m
             );
             await updateConversation(convId!, finalMsgs);
 
@@ -143,16 +204,35 @@ export default function QueryPage() {
         }
     }
 
+    // ── 对话分支 ──────────────────────────────────────────────────────────────
+    async function handleBranch(upToIndex: number) {
+        if (!activeConv) return;
+        const branchedMessages = activeConv.messages.slice(0, upToIndex + 1);
+        const branchTitle = `分支: ${branchedMessages[0]?.content?.slice(0, 18) || "新分支"}`;
+        const token = localStorage.getItem("token") || "";
+        try {
+            const res = await fetch("/api/conversations", {
+                method:  "POST",
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+                body:    JSON.stringify({ title: branchTitle, strategy, messages: branchedMessages }),
+            });
+            const conv = await res.json();
+            if (conv?.id) setActiveId(conv.id);
+        } catch (e) {
+            console.error("分支创建失败:", e);
+        }
+    }
+
     async function handleSourceClick(chunkId: string) {
-        const stored = JSON.parse(localStorage.getItem("user") ?? "{}");
+        const stored   = JSON.parse(localStorage.getItem("user") ?? "{}");
         const lastUser = activeConv?.messages.findLast(m => m.role === "user");
-        const lastAI = activeConv?.messages.findLast(m => m.role === "assistant");
+        const lastAI   = activeConv?.messages.findLast(m => m.role === "assistant");
         await fetch("/api/feedback", {
-            method: "POST",
+            method:  "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 question: lastUser?.content ?? "",
-                answer: lastAI?.content ?? "",
+                answer:   lastAI?.content   ?? "",
                 sources: [], rating: 1, strategy,
                 user_id: stored.user_id ?? "",
                 detail: `clicked_source:${chunkId}`,
@@ -165,16 +245,14 @@ export default function QueryPage() {
         const lines = [
             `# ${activeConv.title}`, ``,
             ...activeConv.messages.flatMap(m => [
-                m.role === "user"
-                    ? `**用户：** ${m.content}`
-                    : `**AI：** ${m.content}`,
+                m.role === "user" ? `**用户：** ${m.content}` : `**AI：** ${m.content}`,
                 ``,
             ]),
             `---`, `*导出时间：${new Date().toLocaleString("zh-CN")}*`,
         ];
         const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a"); a.href = url;
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a"); a.href = url;
         a.download = `${activeConv.title}_${Date.now()}.md`; a.click();
         URL.revokeObjectURL(url);
     }
@@ -189,20 +267,20 @@ export default function QueryPage() {
                 onSelect={setActiveId}
                 onDelete={deleteConversation}
                 onNew={() => createConversation()}
+                disableNew={activeConv !== null && activeConv.messages.length === 0}
             />
 
             <div className="flex-1 flex flex-col min-w-0">
                 {/* 顶部栏 */}
-                <div className="flex items-center justify-between px-6 py-3
-                        border-b border-gray-800 shrink-0">
+                <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800 shrink-0">
                     <div className="text-sm text-gray-400 truncate">
                         {activeConv?.title ?? "选择或新建对话"}
                     </div>
                     <button onClick={exportConversation}
                         disabled={!activeConv || historyLen === 0}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs
-                       text-gray-500 hover:text-gray-300 border border-gray-800
-                       hover:border-gray-600 rounded-lg transition-colors disabled:opacity-30">
+                                   text-gray-500 hover:text-gray-300 border border-gray-800
+                                   hover:border-gray-600 rounded-lg transition-colors disabled:opacity-30">
                         <Download size={12} /> 导出对话
                     </button>
                 </div>
@@ -218,25 +296,31 @@ export default function QueryPage() {
                                     {SUGGESTED.map(q => (
                                         <button key={q} onClick={() => setInput(q)}
                                             className="px-3 py-1.5 bg-gray-900 border border-gray-700
-                                 text-xs text-gray-400 rounded-xl
-                                 hover:border-indigo-500 hover:text-white transition-colors">
+                                                       text-xs text-gray-400 rounded-xl
+                                                       hover:border-indigo-500 hover:text-white transition-colors">
                                             {q}
                                         </button>
                                     ))}
                                 </div>
                             </div>
                         ) : (
-                            activeConv.messages.map(msg => (
-                                <MessageBubble
-                                    key={msg.id}
-                                    role={msg.role}
-                                    content={msg.content}
-                                    sources={msg.sources}
-                                    images={msg.images}
-                                    streaming={streaming && msg.id === streamingMsgId}
-                                    onSourceClick={handleSourceClick}
-                                />
-                            ))
+                            <>
+                                <ReasoningChain steps={reasoningSteps} />
+                                {activeConv.messages.map((msg, i) => (
+                                    <MessageBubble
+                                        key={msg.id}
+                                        role={msg.role}
+                                        content={msg.content}
+                                        sources={msg.sources}
+                                        images={msg.images}
+                                        streaming={streaming && msg.id === streamingMsgId}
+                                        onSourceClick={handleSourceClick}
+                                        onBranch={msg.role === "assistant" && !streaming
+                                            ? () => handleBranch(i)
+                                            : undefined}
+                                    />
+                                ))}
+                            </>
                         )}
                         {loading && <SkeletonCard />}
                         <div ref={bottomRef} />

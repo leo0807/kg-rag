@@ -13,7 +13,7 @@ export function useConversations() {
     const [activeId, setActiveId] = useState<string | null>(null);
     const [loadingConvs, setLoadingConvs] = useState(true);
 
-    // 从后端加载会话列表
+    // 从后端加载会话列表（同时清理空会话）
     const fetchConversations = useCallback(async () => {
         try {
             const res = await fetch(`${API}/api/conversations`, {
@@ -21,7 +21,22 @@ export function useConversations() {
             });
             const data = await res.json();
             const list = Array.isArray(data) ? data : [];
-            setConversations(list);
+
+            // 删除后端残留的空会话（无消息）
+            const emptyIds = list
+                .filter((c: { messages: unknown[] }) => !c.messages || c.messages.length === 0)
+                .map((c: { id: string }) => c.id);
+            if (emptyIds.length > 0) {
+                await Promise.all(emptyIds.map((id: string) =>
+                    fetch(`${API}/api/conversations/${id}`, {
+                        method: "DELETE",
+                        headers: { "Authorization": `Bearer ${getToken()}` },
+                    }).catch(() => {})
+                ));
+                setActiveId(prev => emptyIds.includes(prev ?? "") ? null : prev);
+            }
+
+            setConversations(list.filter((c: { messages: unknown[] }) => c.messages && c.messages.length > 0));
             // 不自动选中历史会话，保持 null → 进入新建对话模式
         } catch (e) {
             console.error("加载会话失败", e);
