@@ -12,10 +12,23 @@ logger = logging.getLogger(__name__)
 RERANKER_PATH = Path(__file__).parent.parent.parent / "models" / "bge-reranker-v2-m3"
 
 
+def _get_device() -> str:
+    """自动检测 CUDA，优先使用 GPU"""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            logger.info("检测到 CUDA，Reranker 模型使用 GPU 加速")
+            return "cuda"
+    except ImportError:
+        pass
+    return "cpu"
+
+
 @lru_cache(maxsize=1)
 def get_reranker() -> CrossEncoder:
-    logger.info("加载 Reranker 模型: %s", RERANKER_PATH)
-    model = CrossEncoder(str(RERANKER_PATH), device="cpu")
+    device = _get_device()
+    logger.info("加载 Reranker 模型: %s (device=%s)", RERANKER_PATH, device)
+    model = CrossEncoder(str(RERANKER_PATH), device=device)
     logger.info("Reranker 模型加载完成")
     return model
 
@@ -33,9 +46,10 @@ def rerank(
     if not sections:
         return []
 
-    model  = get_reranker()
-    pairs  = [
-        (query, f"{s['title']}\n{s.get('content', '')[:512]}")
+    model = get_reranker()
+    pairs = [
+        # 1024 chars ≈ 512 tokens for Chinese text（比原来的 512 字符更充分）
+        (query, f"{s['title']}\n{s.get('content', '')[:1024]}")
         for s in sections
     ]
     scores = model.predict(pairs)

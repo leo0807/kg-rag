@@ -60,11 +60,10 @@ def write_document(doc: DocumentSchema) -> None:
             MATCH (d:Document {name: $doc_id})
             UNWIND $sections AS s
             MERGE (sec:Section {chunk_id: s.chunk_id})
-            SET sec.doc_id         = $doc_id,
-                sec.number         = s.number,
-                sec.section_number = s.number,
-                sec.title          = s.title,
-                sec.content        = s.content
+            SET sec.doc_id  = $doc_id,
+                sec.number  = s.number,
+                sec.title   = s.title,
+                sec.content = s.content
             MERGE (d)-[:HAS_SECTION]->(sec)
         """,
         doc_id=doc.doc_id,

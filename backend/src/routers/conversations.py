@@ -1,6 +1,11 @@
 """
 src/routers/conversations.py
 多轮对话会话管理（按用户隔离，存储在 PostgreSQL）
+
+架构说明：本系统存在两套历史存储机制
+1. PostgreSQL Conversation 表（本文件）：持久化存储，用于跨会话历史，支持多端同步
+2. Neo4j QuerySession 节点（如有）：图谱关联，用于构建用户→查询→章节的知识图谱
+分工：Conversation 为主存储，Neo4j QuerySession 为辅助（图谱分析用途），两者不重复存储对话内容
 """
 import json
 import logging
@@ -22,6 +27,7 @@ router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 class ConversationCreate(BaseModel):
     title:    str       = "新对话"
     strategy: str       = "parallel"
+    messages: list[dict] = []  # 支持分支：创建时可携带初始消息列表
 
 
 class MessageAdd(BaseModel):
@@ -65,7 +71,7 @@ async def create_conversation(
         user_id  = user.id,
         title    = req.title,
         strategy = req.strategy,
-        messages = "[]",
+        messages = json.dumps(req.messages, ensure_ascii=False) if req.messages else "[]",
     )
     db.add(conv)
     await db.commit()

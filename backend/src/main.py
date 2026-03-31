@@ -23,6 +23,7 @@ from .routers.settings import router as settings_router
 from .routers.users import router as users_router
 from .routers.feedback import router as feedback_router
 from .routers.conversations import router as conversations_router
+from .routers.admin import router as admin_router
 
 from .db.session import init_tables
 from .services.milvus_store import connect_milvus, get_or_create_collection
@@ -56,6 +57,25 @@ async def lifespan(app: FastAPI):
     init_db()
 
     await init_tables()
+
+    # 确保 Neo4j 全文索引存在
+    try:
+        driver = get_driver()
+        with driver.session() as session:
+            result = session.run(
+                "SHOW FULLTEXT INDEXES WHERE name = 'cps_fulltext_index'"
+            ).single()
+            if not result:
+                logger.info("全文索引不存在，正在创建...")
+                session.run("""
+                    CREATE FULLTEXT INDEX cps_fulltext_index
+                    FOR (s:Section) ON EACH [s.title, s.content, s.doc_id]
+                """)
+                logger.info("全文索引创建完成: cps_fulltext_index")
+            else:
+                logger.info("全文索引已就绪: cps_fulltext_index")
+    except Exception as e:
+        logger.warning("全文索引检查失败（不影响主流程）: %s", e)
 
     # 初始化 Milvus
     try:
@@ -130,6 +150,7 @@ app.include_router(settings_router)
 app.include_router(users_router)
 app.include_router(feedback_router)
 app.include_router(conversations_router)
+app.include_router(admin_router)
 
 # 挂载 uploads 目录为静态文件（图片预览）
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
@@ -294,6 +315,20 @@ async def ingest(
             await progress("images", f"分析 {len(images)} 张图片...")
             analyzed = []
             for img in images:
+                # 检查图片是否已入库并有 VLM 分析结果（缓存命中则跳过）
+                already_analyzed = False
+                try:
+                    with driver.session() as _sess:
+                        hit = _sess.run(
+                            "MATCH (i:Image {path: $path}) WHERE i.description IS NOT NULL AND i.description <> '' RETURN i LIMIT 1",
+                            path=img.path
+                        ).single()
+                        already_analyzed = hit is not None
+                except Exception:
+                    pass
+                if already_analyzed:
+                    logger.info("图片已有 VLM 分析，跳过: %s", img.path)
+                    continue
                 analysis = analyze_image(img.path, img.caption, doc.doc_id)
                 analyzed.append({
                     "image_id": img.image_id,

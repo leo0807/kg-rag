@@ -10,6 +10,8 @@ from ..core.config import settings
 
 logger = logging.getLogger(__name__)
 
+MAX_HOPS = 5  # 最大迭代次数，防止死循环
+
 
 # ── Agent 状态定义 ────────────────────────────────────────────
 class AgentState(TypedDict):
@@ -18,6 +20,7 @@ class AgentState(TypedDict):
     retrieved:   Annotated[list[dict], operator.add]  # 累积检索结果
     hop_count:   int
     final_answer: str
+    steps:       Annotated[list[dict], operator.add]  # 中间推理步骤
 
 
 # ── 节点函数 ──────────────────────────────────────────────────
@@ -81,11 +84,11 @@ def retrieve_for_subquery(state: AgentState, driver, top_k: int = 3) -> AgentSta
                 CALL db.index.fulltext.queryNodes(
                     'cps_fulltext_index', $question
                 ) YIELD node, score
-                RETURN node.chunk_id       AS chunk_id,
-                       node.doc_id         AS doc_id,
-                       node.section_number AS number,
-                       node.title          AS title,
-                       node.content        AS content,
+                RETURN node.chunk_id AS chunk_id,
+                       node.doc_id   AS doc_id,
+                       node.number   AS number,
+                       node.title    AS title,
+                       node.content  AS content,
                        score
                 ORDER BY score DESC
                 LIMIT $top_k
@@ -102,15 +105,14 @@ def retrieve_for_subquery(state: AgentState, driver, top_k: int = 3) -> AgentSta
         seen = {r["chunk_id"] for r in retrieved}
         for r in vec_results:
             if r["chunk_id"] not in seen:
-                # 从 Neo4j 获取完整内容
                 with driver.session() as session:
                     node = session.run("""
                         MATCH (s:Section {chunk_id: $cid})
-                        RETURN s.chunk_id       AS chunk_id,
-                               s.doc_id         AS doc_id,
-                               s.section_number AS number,
-                               s.title          AS title,
-                               s.content        AS content
+                        RETURN s.chunk_id AS chunk_id,
+                               s.doc_id   AS doc_id,
+                               s.number   AS number,
+                               s.title    AS title,
+                               s.content  AS content
                     """, cid=r["chunk_id"]).single()
                     if node:
                         retrieved.append({**dict(node), "score": r["score"]})
@@ -118,15 +120,27 @@ def retrieve_for_subquery(state: AgentState, driver, top_k: int = 3) -> AgentSta
     except Exception as e:
         logger.warning("多跳向量检索失败: %s", e)
 
+    # 记录中间步骤
+    step = {
+        "hop":    state["hop_count"] + 1,
+        "query":  current_query,
+        "found":  len(retrieved),
+        "titles": [r.get("title", "") for r in retrieved[:3]],
+    }
+
     return {
         **state,
-        "retrieved":  retrieved,
-        "hop_count":  state["hop_count"] + 1,
+        "retrieved": retrieved,
+        "hop_count": state["hop_count"] + 1,
+        "steps":     [step],
     }
 
 
 def should_continue(state: AgentState) -> str:
-    """判断是否需要继续检索"""
+    """判断是否需要继续检索，加入最大跳数保护"""
+    if state["hop_count"] >= MAX_HOPS:
+        logger.warning("达到最大跳数限制 (%d)，强制终止", MAX_HOPS)
+        return "synthesize"
     if state["hop_count"] < len(state["sub_queries"]):
         return "retrieve"
     return "synthesize"
@@ -140,8 +154,8 @@ def synthesize_answer(state: AgentState) -> AgentState:
         return {**state, "final_answer": "在知识库中未找到相关章节，请确认文件已入库。"}
 
     # 去重
-    seen      = set()
-    unique    = []
+    seen   = set()
+    unique = []
     for r in state["retrieved"]:
         if r["chunk_id"] not in seen:
             unique.append(r)
@@ -201,8 +215,8 @@ def build_multi_hop_graph(driver):
         return retrieve_for_subquery(state, driver)
 
     graph = StateGraph(AgentState)
-    graph.add_node("decompose", decompose_question)
-    graph.add_node("retrieve",  retrieve)
+    graph.add_node("decompose",  decompose_question)
+    graph.add_node("retrieve",   retrieve)
     graph.add_node("synthesize", synthesize_answer)
 
     graph.set_entry_point("decompose")
@@ -217,10 +231,10 @@ def build_multi_hop_graph(driver):
     return graph.compile()
 
 
-def multi_hop_query(question: str, driver, top_k: int = 5) -> tuple[str, list[dict]]:
+def multi_hop_query(question: str, driver, top_k: int = 5) -> tuple[str, list[dict], list[dict]]:
     """
     多跳推理查询入口
-    返回：(answer, sources)
+    返回：(answer, sources, steps)
     """
     graph = build_multi_hop_graph(driver)
 
@@ -230,6 +244,7 @@ def multi_hop_query(question: str, driver, top_k: int = 5) -> tuple[str, list[di
         retrieved    = [],
         hop_count    = 0,
         final_answer = "",
+        steps        = [],
     )
 
     result = graph.invoke(initial_state)
@@ -242,4 +257,4 @@ def multi_hop_query(question: str, driver, top_k: int = 5) -> tuple[str, list[di
             sources.append(r)
             seen.add(r["chunk_id"])
 
-    return result["final_answer"], sources[:top_k]
+    return result["final_answer"], sources[:top_k], result.get("steps", [])

@@ -23,11 +23,11 @@ def get_section_details(driver: Driver, chunk_ids: list[str]) -> list[dict]:
         result = session.run("""
             UNWIND $chunk_ids AS cid
             MATCH (s:Section {chunk_id: cid})
-            RETURN s.chunk_id       AS chunk_id,
-                   s.doc_id         AS doc_id,
-                   s.section_number AS number,
-                   s.title          AS title,
-                   s.content        AS content
+            RETURN s.chunk_id AS chunk_id,
+                   s.doc_id   AS doc_id,
+                   s.number   AS number,
+                   s.title    AS title,
+                   s.content  AS content
         """, chunk_ids=chunk_ids)
         records = {r["chunk_id"]: dict(r) for r in result}
     return [records[cid] for cid in chunk_ids if cid in records]
@@ -87,7 +87,27 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
     else:
         fused_ids = ft_ids[:top_k * 2]
 
-    # 图谱增强扩展
+    # ── 实体感知检索：从问题中提取实体名，优先召回包含实体关系的章节 ─────────
+    try:
+        with driver.session() as session:
+            entity_result = session.run("""
+                MATCH (e)
+                WHERE (e:Tool OR e:Material OR e:Process)
+                  AND toLower($question) CONTAINS toLower(e.name)
+                WITH e LIMIT 10
+                MATCH (s:Section)-[:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS]->(e)
+                RETURN DISTINCT s.chunk_id AS chunk_id
+                LIMIT 20
+            """, question=question)
+            entity_section_ids = [r["chunk_id"] for r in entity_result]
+            if entity_section_ids:
+                seen_fused = set(fused_ids)
+                priority   = [cid for cid in entity_section_ids if cid not in seen_fused]
+                fused_ids  = priority + fused_ids
+    except Exception as e:
+        logger.warning("实体感知检索失败: %s", e)
+
+    # ── 图谱增强扩展（含实体节点跨章节扩展） ─────────────────────────────────
     if strategy == "graph_augmented" and fused_ids:
         try:
             with driver.session() as session:
@@ -96,9 +116,13 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
                     MATCH (s:Section {chunk_id: cid})
                     OPTIONAL MATCH (s)-[:HAS_SUBSECTION|NEXT_SECTION]-(nb:Section)
                     OPTIONAL MATCH (p:Section)-[:HAS_SUBSECTION]->(s)
+                    OPTIONAL MATCH (s)-[:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS]->(e)
+                    OPTIONAL MATCH (sibling:Section)-[:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS]->(e)
+                    WHERE sibling.chunk_id <> cid
                     WITH collect(DISTINCT s.chunk_id) +
                          collect(DISTINCT nb.chunk_id) +
-                         collect(DISTINCT p.chunk_id) AS all_ids
+                         collect(DISTINCT p.chunk_id) +
+                         collect(DISTINCT sibling.chunk_id) AS all_ids
                     UNWIND all_ids AS id
                     WITH id WHERE id IS NOT NULL
                     RETURN collect(DISTINCT id) AS expanded_ids
@@ -112,9 +136,31 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
         except Exception as e:
             logger.warning("图谱增强失败: %s", e)
 
+        # ── 跨文档推理：沿 REFERENCES 边追踪被引用规范 ────────────────────────
+        try:
+            with driver.session() as session:
+                ref_result = session.run("""
+                    UNWIND $chunk_ids AS cid
+                    MATCH (s:Section {chunk_id: cid})<-[:HAS_SECTION]-(d:Document)
+                    MATCH (d)-[:REFERENCES]->(ref_doc:Document)
+                    MATCH (ref_doc)-[:HAS_SECTION]->(ref_sec:Section)
+                    WHERE NOT ref_sec.chunk_id IN $chunk_ids
+                    RETURN DISTINCT ref_sec.chunk_id AS chunk_id
+                    LIMIT 10
+                """, chunk_ids=fused_ids[:5])
+                ref_ids = [r["chunk_id"] for r in ref_result]
+                seen    = set(fused_ids)
+                for rid in ref_ids:
+                    if rid not in seen:
+                        fused_ids.append(rid)
+                        seen.add(rid)
+        except Exception as e:
+            logger.warning("跨文档推理失败: %s", e)
+
     sections = get_section_details(driver, fused_ids[:top_k * 2])
 
-    if sections and strategy in ("parallel", "graph_augmented"):
+    # Reranker 应用于 parallel / graph_augmented / sequential
+    if sections and strategy in ("parallel", "graph_augmented", "sequential"):
         try:
             from ...services.reranker import rerank
             sections = rerank(question, sections, top_k=top_k)

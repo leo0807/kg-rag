@@ -9,7 +9,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 from ..db.session import get_db
 from ..db.models import Base
-from sqlalchemy import String, Integer, Text, DateTime, Boolean
+from sqlalchemy import String, Integer, Text, DateTime, Boolean, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 from sqlalchemy import func
@@ -19,7 +19,11 @@ router = APIRouter(prefix="/api/feedback", tags=["feedback"])
 
 
 class QueryFeedback(Base):
-    __tablename__ = "query_feedback"
+    __tablename__  = "query_feedback"
+    __table_args__ = (
+        Index("ix_query_feedback_user_id",    "user_id"),
+        Index("ix_query_feedback_created_at", "created_at"),
+    )
 
     id:          Mapped[int]  = mapped_column(primary_key=True, autoincrement=True)
     question:    Mapped[str]  = mapped_column(Text)
