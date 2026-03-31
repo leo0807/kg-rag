@@ -7,6 +7,8 @@ from neo4j import Driver
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from ...core.database import get_driver
+from ...auth.deps import get_optional_user
+from ...db.models import User
 from .models import QueryRequest, QueryResponse
 from .sync   import query_sync
 from .stream import query_stream
@@ -17,19 +19,29 @@ limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/query", response_model=QueryResponse)
 @limiter.limit("30/minute")
-async def query(request: Request, req: QueryRequest, driver: Driver = Depends(get_driver)):
-    return await query_sync(request, req, driver)
+async def query(
+    request:      Request,
+    req:          QueryRequest,
+    driver:       Driver     = Depends(get_driver),
+    current_user: User | None = Depends(get_optional_user),
+):
+    return await query_sync(request, req, driver, current_user)
 
 
 @router.post("/query/stream")
 @limiter.limit("30/minute")
-async def query_stream_route(request: Request, req: QueryRequest, driver: Driver = Depends(get_driver)):
-    return await query_stream(request, req, driver)
+async def query_stream_route(
+    request:      Request,
+    req:          QueryRequest,
+    driver:       Driver     = Depends(get_driver),
+    current_user: User | None = Depends(get_optional_user),
+):
+    return await query_stream(request, req, driver, current_user)
 
 
 @router.get("/query/source-graph")
 async def source_graph(
-    chunk_ids: str,          # 逗号分隔，顺序即优先级（第 1 个为最高相关）
+    chunk_ids: str,
     driver: Driver = Depends(get_driver),
 ):
     """
@@ -40,11 +52,9 @@ async def source_graph(
     if not ids:
         return {"nodes": [], "edges": []}
 
-    # rank 映射：chunk_id → 1-based 顺序
     rank_map = {cid: idx + 1 for idx, cid in enumerate(ids)}
 
     with driver.session() as session:
-        # ── 1. 来源 Section 节点 ──────────────────────────────────────────────
         sec_result = session.run("""
             UNWIND $ids AS cid
             MATCH (s:Section {chunk_id: cid})
@@ -56,16 +66,12 @@ async def source_graph(
         for r in sec_result:
             cid = r["id"]
             nodes.append({
-                "id":     cid,
-                "name":   r["name"] or cid,
-                "type":   "Section",
-                "doc_id": r["doc_id"] or "",
-                "number": r["number"] or "",
-                "rank":   rank_map.get(cid, 0),
+                "id": cid, "name": r["name"] or cid, "type": "Section",
+                "doc_id": r["doc_id"] or "", "number": r["number"] or "",
+                "rank": rank_map.get(cid, 0),
             })
             seen_ids.add(cid)
 
-        # ── 2. 父 Document 节点 ───────────────────────────────────────────────
         doc_result = session.run("""
             UNWIND $ids AS cid
             MATCH (s:Section {chunk_id: cid})<-[:HAS_SECTION]-(d:Document)
@@ -77,7 +83,6 @@ async def source_graph(
                                "doc_id": r["doc_id"], "rank": 0})
                 seen_ids.add(r["id"])
 
-        # ── 3. 直接关联的实体节点（Tool / Material / Process / Constraint）──────
         entity_result = session.run("""
             UNWIND $ids AS cid
             MATCH (s:Section {chunk_id: cid})-[r]->(e)
@@ -96,7 +101,6 @@ async def source_graph(
                                "type": r["type"], "doc_id": r["doc_id"], "rank": 0})
                 seen_ids.add(eid)
 
-        # ── 4. 来源章节间的邻居章节（HAS_SUBSECTION / NEXT_SECTION）──────────
         neighbor_result = session.run("""
             UNWIND $ids AS cid
             MATCH (s:Section {chunk_id: cid})-[:HAS_SUBSECTION|NEXT_SECTION]->(nb:Section)
@@ -108,12 +112,10 @@ async def source_graph(
         for r in neighbor_result:
             nid = r["id"]
             if nid not in seen_ids:
-                nodes.append({"id": nid, "name": r["name"] or nid,
-                               "type": "Section", "doc_id": r["doc_id"] or "",
-                               "number": r["number"] or "", "rank": 0})
+                nodes.append({"id": nid, "name": r["name"] or nid, "type": "Section",
+                               "doc_id": r["doc_id"] or "", "number": r["number"] or "", "rank": 0})
                 seen_ids.add(nid)
 
-        # ── 5. 边 ──────────────────────────────────────────────────────────────
         edges = []
         edge_result = session.run("""
             MATCH (a)-[r]->(b)
@@ -131,3 +133,62 @@ async def source_graph(
                 edges.append({"source": src, "target": tgt, "type": r["type"]})
 
     return {"nodes": nodes, "edges": edges}
+
+
+@router.get("/query/suggest")
+async def query_suggest(
+    q:      str    = "",
+    driver: Driver = Depends(get_driver),
+):
+    """基于知识图谱的查询建议/自动补全"""
+    if not q.strip() or len(q) < 2:
+        return {"suggestions": []}
+
+    suggestions = []
+    with driver.session() as session:
+        sec_result = session.run("""
+            MATCH (s:Section)
+            WHERE toLower(s.title)   CONTAINS toLower($q)
+               OR toLower(s.content) CONTAINS toLower($q)
+            RETURN DISTINCT s.title AS text, 'section' AS type, s.doc_id AS doc_id
+            LIMIT 5
+        """, q=q)
+        for r in sec_result:
+            if r["text"]:
+                suggestions.append({"text": r["text"], "type": r["type"], "doc_id": r["doc_id"] or ""})
+
+        entity_result = session.run("""
+            MATCH (e)
+            WHERE (e:Tool OR e:Material OR e:Process)
+              AND toLower(e.name) CONTAINS toLower($q)
+            RETURN DISTINCT e.name AS text, labels(e)[0] AS type, e.doc_id AS doc_id
+            LIMIT 5
+        """, q=q)
+        for r in entity_result:
+            if r["text"]:
+                suggestions.append({"text": r["text"], "type": r["type"].lower(), "doc_id": r["doc_id"] or ""})
+
+    return {"suggestions": suggestions[:10]}
+
+
+@router.post("/query/auto-strategy")
+async def auto_strategy(req: QueryRequest):
+    """
+    根据问题类型自动推荐检索策略。
+    对比型 → parallel，步骤/流程型 → graph_augmented，
+    约束参数型 → graph_augmented，跨引用型 → multi_hop，其他 → parallel
+    """
+    q = req.question.lower()
+
+    if any(kw in q for kw in ["对比", "比较", "区别", "不同", "差异"]):
+        strategy, reason = "parallel", "对比型问题适合并行全文+向量检索"
+    elif any(kw in q for kw in ["引用", "参照", "规范要求", "另一"]):
+        strategy, reason = "multi_hop", "跨文档引用问题适合多跳推理"
+    elif any(kw in q for kw in ["力矩", "温度", "压力", "公差", "参数", "数值", "范围", "极限"]):
+        strategy, reason = "graph_augmented", "工艺约束参数问题适合图谱增强检索"
+    elif any(kw in q for kw in ["如何", "步骤", "流程", "怎么", "操作", "程序", "顺序"]):
+        strategy, reason = "graph_augmented", "步骤/流程型问题适合图谱增强检索"
+    else:
+        strategy, reason = "parallel", "通用问题使用并行检索"
+
+    return {"strategy": strategy, "reason": reason, "question": req.question}

@@ -34,6 +34,46 @@ def extract_refs(sections: list[dict]) -> list[str]:
             return list(set(refs))
     return []
 
+# 封面非标题行特征：密级标注、版本、编号、日期、公司名、页码等
+_NON_TITLE = re.compile(
+    r'^('
+    r'密级|保密|内部|公开|受控|非受控|'          # 密级标注
+    r'版本[:：]|版\s*本|Rev\.|版次|'             # 版本
+    r'CPS\d|HB\d|Q/\w|第\d+页|共\d+页|'        # 编号 / 页码
+    r'\d{4}[-年]\d{1,2}[-月]|'                  # 日期
+    r'中国商用|中国航空|上海飞机|'               # 公司名
+    r'[\d\.\-\s]+$'                              # 纯数字/分隔符行
+    r')',
+    re.IGNORECASE,
+)
+
+
+def _extract_title_fallback(cover_text: str, pdf_path: Path) -> str:
+    """当正则未能从封面提取标题时的多级 fallback"""
+
+    # 优先从文件名提取（文件名格式：CPS1002_J_整体油箱的密封_422413.pdf）
+    fn_match = re.search(r'CPS\d+_[A-Z]_([\u4e00-\u9fff\w\-·]+?)_\d+\.pdf', pdf_path.name, re.IGNORECASE)
+    if fn_match:
+        candidate = fn_match.group(1).strip()
+        if len(candidate) >= 4:
+            return candidate
+
+    # 从封面文本中逐行筛选：跳过非标题行，取第一个有效行
+    lines = [l.strip() for l in cover_text.split('\n') if l.strip()]
+    for line in lines:
+        if len(line) < 4:
+            continue
+        if _NON_TITLE.match(line):
+            continue
+        # 要求至少包含一个中文字符
+        if not re.search(r'[\u4e00-\u9fff]', line):
+            continue
+        return line
+
+    # 最终 fallback：取第二行（保留原有行为）
+    return lines[1] if len(lines) > 1 else ""
+
+
 def extract_meta(pdf_path: Path) -> dict:
     with pdfplumber.open(pdf_path) as pdf:
         cover_text = pdf.pages[0].extract_text() or ""
@@ -55,12 +95,10 @@ def extract_meta(pdf_path: Path) -> dict:
         r'中国商用飞机有限责任公司(?:规范|文件)\n(.*?)\n',
         cover_text
     )
-    # 如果还是找不到，取第二行非空文字作为标题
-    if not title_match:
-        lines = [l.strip() for l in cover_text.split('\n') if l.strip()]
-        title = lines[1] if len(lines) > 1 else ""
-    else:
+    if title_match:
         title = title_match.group(1).strip()
+    else:
+        title = _extract_title_fallback(cover_text, pdf_path)
 
     # 日期：取第一个出现的日期
     date_match = re.search(r'(\d{4}-\d{2}-\d{2})', cover_text)

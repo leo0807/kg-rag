@@ -1,5 +1,6 @@
 "use client";
-import { Plus, Trash2, MessageSquare } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Trash2, MessageSquare, ChevronLeft, ChevronRight } from "lucide-react";
 import { Conversation } from "./types";
 
 interface Props {
@@ -10,52 +11,116 @@ interface Props {
     onNew: () => void;
 }
 
+const STORAGE_KEY = "conv_sidebar_collapsed";
+
 export default function ConversationSidebar({
     conversations, activeId, onSelect, onDelete, onNew,
 }: Props) {
+    const [collapsed, setCollapsed] = useState(false);
+
+    useEffect(() => {
+        if (localStorage.getItem(STORAGE_KEY) === "1") setCollapsed(true);
+    }, []);
+
+    function toggle() {
+        setCollapsed(v => {
+            const next = !v;
+            localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+            return next;
+        });
+    }
+
     return (
-        <aside className="w-56 shrink-0 border-r border-gray-800 flex flex-col bg-gray-950">
-            <div className="px-3 py-4 border-b border-gray-800">
-                <button onClick={onNew}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl
-                     border border-gray-700 text-gray-400 text-sm
-                     hover:border-indigo-500 hover:text-white transition-colors">
-                    <Plus size={14} />
-                    新建对话
+        <aside className={`shrink-0 border-r border-gray-800 flex flex-col bg-gray-950
+                           transition-all duration-200 ${collapsed ? "w-10" : "w-56"}`}>
+
+            {/* 折叠按钮 */}
+            <div className={`flex items-center border-b border-gray-800 min-h-[57px]
+                             ${collapsed ? "justify-center px-0 py-4" : "px-3 py-4 gap-2"}`}>
+                {!collapsed && (
+                    <button onClick={onNew}
+                        className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl
+                         border border-gray-700 text-gray-400 text-sm
+                         hover:border-indigo-500 hover:text-white transition-colors">
+                        <Plus size={14} />
+                        新建对话
+                    </button>
+                )}
+                <button
+                    onClick={toggle}
+                    className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-800 transition-colors flex-shrink-0"
+                    title={collapsed ? "展开历史" : "折叠历史"}
+                >
+                    {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
                 </button>
             </div>
 
-            <div className="flex-1 overflow-auto px-2 py-2">
-                {conversations.length === 0 ? (
-                    <div className="px-3 py-8 text-center text-xs text-gray-600">
-                        暂无对话记录
-                    </div>
-                ) : conversations.filter(c => c.id).map(conv => (
-                    <div key={conv.id}
-                        className={`group flex items-start gap-2 px-3 py-2.5 rounded-xl mb-0.5
-                        cursor-pointer transition-colors ${activeId === conv.id
-                                ? "bg-gray-800 text-white"
-                                : "text-gray-400 hover:bg-gray-900 hover:text-gray-300"
-                            }`}
-                        onClick={() => onSelect(conv.id)}>
-                        <MessageSquare size={14} className="shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                            <div className="text-xs leading-relaxed line-clamp-2">
-                                {conv.title}
-                            </div>
-                            <div className="text-xs text-gray-600 mt-0.5">
-                                {conv.messages.length / 2} 轮对话
-                            </div>
+            {/* 折叠时显示新建按钮图标 */}
+            {collapsed && (
+                <div className="flex justify-center py-2 border-b border-gray-800">
+                    <button
+                        onClick={onNew}
+                        className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
+                        title="新建对话"
+                    >
+                        <Plus size={14} />
+                    </button>
+                </div>
+            )}
+
+            {/* 对话列表 */}
+            {!collapsed && (
+                <div className="flex-1 overflow-auto px-2 py-2">
+                    {conversations.length === 0 ? (
+                        <div className="px-3 py-8 text-center text-xs text-gray-600">
+                            暂无对话记录
                         </div>
+                    ) : conversations.filter(c => c.id).map(conv => (
+                        <div key={conv.id}
+                            className={`group flex items-start gap-2 px-3 py-2.5 rounded-xl mb-0.5
+                            cursor-pointer transition-colors ${activeId === conv.id
+                                    ? "bg-gray-800 text-white"
+                                    : "text-gray-400 hover:bg-gray-900 hover:text-gray-300"
+                                }`}
+                            onClick={() => onSelect(conv.id)}>
+                            <MessageSquare size={14} className="shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                                <div className="text-xs leading-relaxed line-clamp-2">
+                                    {conv.title}
+                                </div>
+                                <div className="text-xs text-gray-600 mt-0.5">
+                                    {conv.messages.length / 2} 轮对话
+                                </div>
+                            </div>
+                            <button
+                                onClick={e => { e.stopPropagation(); onDelete(conv.id); }}
+                                className="opacity-0 group-hover:opacity-100 shrink-0
+                             p-0.5 hover:text-red-400 transition-all">
+                                <Trash2 size={12} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* 折叠时显示对话图标列表 */}
+            {collapsed && (
+                <div className="flex-1 overflow-auto py-2 flex flex-col items-center gap-1">
+                    {conversations.filter(c => c.id).map(conv => (
                         <button
-                            onClick={e => { e.stopPropagation(); onDelete(conv.id); }}
-                            className="opacity-0 group-hover:opacity-100 shrink-0
-                         p-0.5 hover:text-red-400 transition-all">
-                            <Trash2 size={12} />
+                            key={conv.id}
+                            onClick={() => onSelect(conv.id)}
+                            title={conv.title}
+                            className={`p-1.5 rounded-lg transition-colors ${activeId === conv.id
+                                ? "bg-gray-800 text-white"
+                                : "text-gray-600 hover:text-white hover:bg-gray-800"
+                                }`}
+                        >
+                            <MessageSquare size={14} />
                         </button>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            )}
         </aside>
     );
 }

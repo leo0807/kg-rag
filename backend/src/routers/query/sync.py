@@ -6,8 +6,10 @@ import time
 from fastapi import Depends, HTTPException, Request
 from neo4j import Driver
 from ...core.database import get_driver
-from ...core.observability import send_trace
+from ...core.config import settings
+from ...core.observability import send_generation
 from ...services.cache import get_cached_result, set_cached_result
+from ...db.models import User
 from .models import QueryRequest, QueryResponse, SourceSection
 from .core   import do_retrieval
 
@@ -15,9 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 async def query_sync(
-    request: Request,
-    req:     QueryRequest,
-    driver:  Driver = Depends(get_driver),
+    request:      Request,
+    req:          QueryRequest,
+    driver:       Driver = Depends(get_driver),
+    current_user: User | None = None,
 ):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question 不能为空")
@@ -29,10 +32,13 @@ async def query_sync(
 
     start = time.time()
 
+    user_id    = current_user.id         if current_user else ""
+    department = current_user.department if current_user else ""
+
     if req.strategy == "multi_hop":
         try:
             from ...services.multi_hop import multi_hop_query
-            answer, mh_sections = multi_hop_query(req.question, driver, top_k=top_k)
+            answer, mh_sections, _steps = multi_hop_query(req.question, driver, top_k=top_k)
             sources = [
                 SourceSection(
                     chunk_id=s["chunk_id"], doc_id=s["doc_id"],
@@ -42,8 +48,12 @@ async def query_sync(
                 for s in mh_sections
             ]
             latency_ms = int((time.time() - start) * 1000)
-            send_trace(name="graphrag-query", input=req.question, output=answer,
-                       metadata={"strategy": "multi_hop", "latency_ms": latency_ms})
+            send_generation(
+                name="graphrag-query", model=settings.LLM_MODEL,
+                input_messages=[{"role": "user", "content": req.question}],
+                output=answer, latency_ms=latency_ms, strategy="multi_hop",
+                user_id=user_id, department=department, question_preview=req.question,
+            )
             set_cached_result(req.question, req.strategy, top_k,
                               {"answer": answer, "sources": [s.model_dump() for s in sources]})
             return QueryResponse(answer=answer, sources=sources)
@@ -53,6 +63,7 @@ async def query_sync(
     sections, ft_score_map = do_retrieval(driver, req.question, req.strategy, top_k)
     latency_ms = int((time.time() - start) * 1000)
 
+    prompt_tokens = completion_tokens = 0
     if not sections:
         answer = "在知识库中未找到相关章节，请确认文件已入库。"
     else:
@@ -61,8 +72,12 @@ async def query_sync(
             for s in sections
         )
         try:
-            from ...services.llm import generate_answer
-            answer = generate_answer(question=req.question, context=context)
+            from ...services.llm import generate_answer_with_usage
+            answer, usage = generate_answer_with_usage(
+                question=req.question, context=context, history=req.history,
+            )
+            prompt_tokens     = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
         except Exception as e:
             logger.warning("LLM 失败: %s", e)
             answer = f"检索到 {len(sections)} 个相关章节：\n\n{context[:2000]}"
@@ -76,8 +91,13 @@ async def query_sync(
         for s in sections
     ]
 
-    send_trace(name="graphrag-query", input=req.question, output=answer,
-               metadata={"strategy": req.strategy, "latency_ms": latency_ms})
+    send_generation(
+        name="graphrag-query", model=settings.LLM_MODEL,
+        input_messages=[{"role": "user", "content": req.question}],
+        output=answer, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+        latency_ms=latency_ms, strategy=req.strategy,
+        user_id=user_id, department=department, question_preview=req.question,
+    )
     set_cached_result(req.question, req.strategy, top_k,
                       {"answer": answer, "sources": [s.model_dump() for s in sources]})
     return QueryResponse(answer=answer, sources=sources)

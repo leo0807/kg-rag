@@ -1,7 +1,7 @@
 """
 FastAPI 依赖注入：从请求头提取当前用户
 """
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -10,6 +10,7 @@ from ..db.session import get_db
 from ..db.models import User
 
 bearer = HTTPBearer()
+bearer_optional = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
@@ -45,3 +46,20 @@ async def get_admin_user(
             detail="需要管理员权限",
         )
     return current_user
+
+
+async def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_optional),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """尝试从请求头中提取用户，无 Token 时返回 None（不报错）"""
+    if not credentials:
+        return None
+    try:
+        payload = decode_token(credentials.credentials)
+        user_id = payload["sub"]
+    except Exception:
+        return None
+    result = await db.execute(select(User).where(User.id == user_id))
+    user   = result.scalar_one_or_none()
+    return user if (user and user.is_active) else None

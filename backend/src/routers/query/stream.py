@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from neo4j import Driver
 from ...core.database import get_driver
+from ...db.models import User
 from .models import QueryRequest
 from .core   import do_retrieval
 
@@ -14,20 +15,56 @@ logger = logging.getLogger(__name__)
 
 
 async def query_stream(
-    request: Request,
-    req:     QueryRequest,
-    driver:  Driver = Depends(get_driver),
+    request:      Request,
+    req:          QueryRequest,
+    driver:       Driver = Depends(get_driver),
+    current_user: User | None = None,
 ):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question 不能为空")
 
     top_k = req.top_k or 5
 
+    user_id    = current_user.id         if current_user else ""
+    department = current_user.department if current_user else ""
+
     async def generate():
         from ...core.config import settings
+        from ...core.observability import send_generation
         import httpx
+        import time
 
+        t_start = time.time()
         yield f"data: {json.dumps({'type': 'status', 'content': '检索中...'}, ensure_ascii=False)}\n\n"
+
+        # 多跳推理单独处理，以便发送中间步骤
+        if req.strategy == "multi_hop":
+            try:
+                from ...services.multi_hop import multi_hop_query
+                answer_mh, mh_sections, mh_steps = multi_hop_query(req.question, driver, top_k=top_k)
+                yield f"data: {json.dumps({'type': 'steps', 'content': mh_steps}, ensure_ascii=False)}\n\n"
+                sources_mh = [
+                    {
+                        "chunk_id": s["chunk_id"], "doc_id": s["doc_id"],
+                        "number":   s.get("number") or "", "title": s.get("title") or "",
+                        "score":    round(float(s.get("score", 0)), 4),
+                    }
+                    for s in mh_sections
+                ]
+                yield f"data: {json.dumps({'type': 'sources', 'content': sources_mh}, ensure_ascii=False)}\n\n"
+                for char in answer_mh:
+                    yield f"data: {json.dumps({'type': 'delta', 'content': char}, ensure_ascii=False)}\n\n"
+                latency_ms = int((time.time() - t_start) * 1000)
+                send_generation(
+                    name="graphrag-stream", model=settings.LLM_MODEL,
+                    input_messages=[{"role": "user", "content": req.question}],
+                    output=answer_mh, latency_ms=latency_ms, strategy="multi_hop",
+                    user_id=user_id, department=department, question_preview=req.question,
+                )
+                yield "data: [DONE]\n\n"
+                return
+            except Exception as e:
+                logger.warning("多跳流式推理失败，降级: %s", e)
 
         sections, ft_score_map = do_retrieval(driver, req.question, req.strategy, top_k)
 
@@ -81,6 +118,9 @@ async def query_stream(
         else:
             messages.append({"role": "user", "content": user_text})
 
+        full_answer    = ""
+        prompt_tokens  = 0
+        compl_tokens   = 0
         try:
             async with httpx.AsyncClient(timeout=60) as client:
                 async with client.stream(
@@ -91,9 +131,10 @@ async def query_stream(
                         "Content-Type":  "application/json",
                     },
                     json={
-                        "model":    settings.LLM_MODEL,
-                        "messages": messages,
-                        "stream":   True,
+                        "model":          settings.LLM_MODEL,
+                        "messages":       messages,
+                        "stream":         True,
+                        "stream_options": {"include_usage": True},
                     },
                 ) as response:
                     async for line in response.aiter_lines():
@@ -104,14 +145,29 @@ async def query_stream(
                             break
                         try:
                             chunk = json.loads(data)
+                            # 最终 usage chunk（choices 为空）
+                            if chunk.get("usage") and not chunk.get("choices"):
+                                usage = chunk["usage"]
+                                prompt_tokens = usage.get("prompt_tokens", 0)
+                                compl_tokens  = usage.get("completion_tokens", 0)
+                                continue
                             delta = chunk["choices"][0]["delta"].get("content", "")
                             if delta:
+                                full_answer += delta
                                 yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
                         except Exception:
                             pass
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
 
+        latency_ms = int((time.time() - t_start) * 1000)
+        send_generation(
+            name="graphrag-stream", model=settings.LLM_MODEL,
+            input_messages=[{"role": "user", "content": req.question}],
+            output=full_answer, prompt_tokens=prompt_tokens, completion_tokens=compl_tokens,
+            latency_ms=latency_ms, strategy=req.strategy,
+            user_id=user_id, department=department, question_preview=req.question,
+        )
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
