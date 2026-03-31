@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
-import { Settings, Search, Download, X, Layers, Share2, Check } from "lucide-react";
+import {
+    Settings, Search, Download, X, Layers, Share2, Check,
+    Compass, ChevronLeft, ChevronRight, Square,
+} from "lucide-react";
+
+const API = "http://localhost:8000";
 
 interface GraphNode {
     id: string;
@@ -11,6 +16,7 @@ interface GraphNode {
     type?: string;
     doc_id?: string;
     description?: string;
+    content?: string;
     path?: string;
     x?: number;
     y?: number;
@@ -32,6 +38,13 @@ interface SimNode extends GraphNode {
     fy?: number | null;
 }
 
+interface TourStop {
+    index:       number;
+    node_id:     string;
+    node:        GraphNode;
+    explanation: string;
+}
+
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 4;
 
@@ -45,9 +58,8 @@ const NODE_COLOR: Record<string, string> = {
     Constraint: "#ef4444",
 };
 
-// 工具栏中显示的中文缩写
 const NODE_SHORT: Record<string, string> = {
-    "全部":       "全部",
+    "全部":     "全部",
     Document:   "文档",
     Section:    "章节",
     Image:      "图片",
@@ -58,28 +70,28 @@ const NODE_SHORT: Record<string, string> = {
 };
 
 const EDGE_COLOR: Record<string, string> = {
-    HAS_SECTION:       "#4f46e5",
-    REFERENCES:        "#059669",
-    HAS_SUBSECTION:    "#d97706",
-    NEXT_SECTION:      "#6b7280",
-    HAS_IMAGE:         "#ec4899",
-    REQUIRES_TOOL:     "#10b981",
-    USES_MATERIAL:     "#f97316",
-    INVOLVES_PROCESS:  "#a78bfa",
-    HAS_CONSTRAINT:    "#ef4444",
-    ALTERNATIVE_TO:    "#fb923c",
-    COMPATIBLE_WITH:   "#34d399",
-    MENTIONS_TOOL:     "#6ee7b7",
-    SUPERSEDES:        "#818cf8",
-    SIMILAR_TO:        "#94a3b8",
-    CHANGED_TO:        "#fbbf24",
+    HAS_SECTION:      "#4f46e5",
+    REFERENCES:       "#059669",
+    HAS_SUBSECTION:   "#d97706",
+    NEXT_SECTION:     "#6b7280",
+    HAS_IMAGE:        "#ec4899",
+    REQUIRES_TOOL:    "#10b981",
+    USES_MATERIAL:    "#f97316",
+    INVOLVES_PROCESS: "#a78bfa",
+    HAS_CONSTRAINT:   "#ef4444",
+    ALTERNATIVE_TO:   "#fb923c",
+    COMPATIBLE_WITH:  "#34d399",
+    MENTIONS_TOOL:    "#6ee7b7",
+    SUPERSEDES:       "#818cf8",
+    SIMILAR_TO:       "#94a3b8",
+    CHANGED_TO:       "#fbbf24",
 };
 
-const NODE_TYPES = ["全部","Document","Section","Image","Tool","Material","Process","Constraint"] as const;
+const NODE_TYPES = ["全部", "Document", "Section", "Image", "Tool", "Material", "Process", "Constraint"] as const;
 const EDGE_TYPES = [
-    "全部关系","HAS_SECTION","REFERENCES","HAS_SUBSECTION","HAS_IMAGE",
-    "REQUIRES_TOOL","USES_MATERIAL","INVOLVES_PROCESS","HAS_CONSTRAINT",
-    "ALTERNATIVE_TO","COMPATIBLE_WITH","SUPERSEDES","SIMILAR_TO",
+    "全部关系", "HAS_SECTION", "REFERENCES", "HAS_SUBSECTION", "HAS_IMAGE",
+    "REQUIRES_TOOL", "USES_MATERIAL", "INVOLVES_PROCESS", "HAS_CONSTRAINT",
+    "ALTERNATIVE_TO", "COMPATIBLE_WITH", "SUPERSEDES", "SIMILAR_TO",
 ] as const;
 
 type NodeFilter = typeof NODE_TYPES[number];
@@ -102,9 +114,12 @@ function drawGraph(
     onScaleChange: (s: number) => void,
     onNodeClick: (node: GraphNode) => void,
     highlightedIds: Set<string>,
+    tourNodeIds?: Set<string>,
+    tourCurrentId?: string,
 ): d3.ZoomBehavior<SVGSVGElement, unknown> {
     const width  = svgEl.clientWidth;
     const height = svgEl.clientHeight;
+    const tourMode = (tourNodeIds?.size ?? 0) > 0;
 
     d3.select(svgEl).selectAll("*").remove();
 
@@ -148,9 +163,14 @@ function drawGraph(
         .selectAll("line")
         .data(data.edges)
         .join("line")
-        .attr("stroke",         (d: any) => EDGE_COLOR[d.type] ?? "#374151")
-        .attr("stroke-width",   (d: any) => d.type === "REFERENCES" ? 2 : 1.5)
-        .attr("stroke-opacity", 0.6)
+        .attr("stroke", (d: any) => EDGE_COLOR[d.type] ?? "#374151")
+        .attr("stroke-width", (d: any) => d.type === "REFERENCES" ? 2 : 1.5)
+        .attr("stroke-opacity", (d: any) => {
+            if (!tourMode) return 0.6;
+            const s = typeof d.source === "string" ? d.source : (d.source as GraphNode).id;
+            const t = typeof d.target === "string" ? d.target : (d.target as GraphNode).id;
+            return (tourNodeIds!.has(s) && tourNodeIds!.has(t)) ? 0.85 : 0.05;
+        })
         .attr("stroke-dasharray", (d: any) =>
             d.type === "HAS_IMAGE" || d.type === "MENTIONS_TOOL" ? "4 2" : null
         );
@@ -180,29 +200,49 @@ function drawGraph(
         onNodeClick(d as GraphNode);
     });
 
-    node.filter(d => highlightedIds.has(d.id))
-        .append("circle")
-        .attr("r",              d => nodeRadius(d) + 6)
-        .attr("fill",           "none")
-        .attr("stroke",         "#f97316")
-        .attr("stroke-width",   2.5)
-        .attr("stroke-opacity", 0.9);
+    // Tour: glow ring for current stop node
+    if (tourMode && tourCurrentId) {
+        node.filter(d => d.id === tourCurrentId)
+            .append("circle")
+            .attr("r",              d => nodeRadius(d) + 11)
+            .attr("fill",           "none")
+            .attr("stroke",         "#fbbf24")
+            .attr("stroke-width",   3.5)
+            .attr("stroke-opacity", 0.75);
+    }
+
+    // Search highlight ring (only outside tour mode)
+    if (!tourMode) {
+        node.filter(d => highlightedIds.has(d.id))
+            .append("circle")
+            .attr("r",              d => nodeRadius(d) + 6)
+            .attr("fill",           "none")
+            .attr("stroke",         "#f97316")
+            .attr("stroke-width",   2.5)
+            .attr("stroke-opacity", 0.9);
+    }
 
     node.append("circle")
         .attr("r",    d => nodeRadius(d))
         .attr("fill", d => NODE_COLOR[d.type || d.label] ?? "#6b7280")
-        .attr("stroke",       d => highlightedIds.has(d.id) ? "#f97316" : "none")
-        .attr("stroke-width", 2);
+        .attr("opacity", d => {
+            if (!tourMode) return 0.95;
+            if (d.id === tourCurrentId)    return 1;
+            if (tourNodeIds!.has(d.id))    return 0.72;
+            return 0.1;
+        })
+        .attr("stroke",       d => d.id === tourCurrentId ? "#fbbf24" : (highlightedIds.has(d.id) ? "#f97316" : "none"))
+        .attr("stroke-width", 2.5);
 
     node
         .on("mouseover", (event: MouseEvent, d) => {
             const t    = d3.select(tooltipEl);
-            const desc = (d as any).description;
+            const desc = (d as any).description || (d as any).content;
             t.classed("hidden", false)
                 .style("left", (event.clientX + 12) + "px")
                 .style("top",  (event.clientY - 8)  + "px")
                 .html(desc
-                    ? `<div class="font-medium">${d.name}</div><div class="text-gray-400 mt-1 max-w-xs">${desc.slice(0, 80)}…</div>`
+                    ? `<div class="font-medium">${d.name}</div><div class="text-gray-400 mt-1 max-w-xs">${String(desc).slice(0, 80)}…</div>`
                     : d.name
                 );
         })
@@ -219,7 +259,7 @@ function drawGraph(
             return name.length > 6 ? name.slice(0, 6) + "…" : name;
         })
         .attr("font-size",         d => (d.type || d.label) === "Document" ? 12 : 10)
-        .attr("fill",              "#fff")
+        .attr("fill",              d => tourMode && !tourNodeIds!.has(d.id) && d.id !== tourCurrentId ? "#444" : "#fff")
         .attr("text-anchor",       "middle")
         .attr("dominant-baseline", "central")
         .attr("pointer-events",    "none");
@@ -241,7 +281,7 @@ function NodeDetailSidebar({ node, onClose }: { node: GraphNode; onClose: () => 
     const type    = node.type || node.label;
     const color   = NODE_COLOR[type] ?? "#6b7280";
     const imgPath = node.path
-        ? `http://localhost:8000/${node.path.replace(/^.*?(uploads\/)/, "uploads/")}`
+        ? `${API}/${node.path.replace(/^.*?(uploads\/)/, "uploads/")}`
         : null;
 
     return (
@@ -286,7 +326,7 @@ function NodeDetailSidebar({ node, onClose }: { node: GraphNode; onClose: () => 
 
             <div className="px-4 py-3 space-y-2">
                 {Object.entries(node)
-                    .filter(([k]) => !["id","name","label","type","x","y","fx","fy","description","path"].includes(k))
+                    .filter(([k]) => !["id","name","label","type","x","y","fx","fy","description","path","content"].includes(k))
                     .map(([k, v]) => v != null && String(v) !== "" && (
                         <div key={k} className="flex gap-2">
                             <span className="text-xs text-gray-600 w-20 shrink-0">{k}</span>
@@ -316,8 +356,8 @@ export default function GraphPage() {
 
     const filteredNodesRef  = useRef<GraphNode[]>([]);
     const filteredEdgesRef  = useRef<GraphEdge[]>([]);
-    const pendingSearchRef  = useRef("");          // 待恢复的搜索词（URL init）
-    const pendingNodeIdRef  = useRef("");          // 待恢复的选中节点 ID（URL init）
+    const pendingSearchRef  = useRef("");
+    const pendingNodeIdRef  = useRef("");
 
     const [data,           setData]           = useState<GraphData | null>(null);
     const [scale,          setScale]          = useState(1);
@@ -334,11 +374,46 @@ export default function GraphPage() {
     const [showExport,     setShowExport]     = useState(false);
     const [copied,         setCopied]         = useState(false);
 
+    // ── 漫游模式状态 ──────────────────────────────────────────────────────────
+    const [tourOpen,      setTourOpen]      = useState(false);
+    const [tourTopic,     setTourTopic]     = useState("");
+    const [tourRunning,   setTourRunning]   = useState(false);
+    const [tourData,      setTourData]      = useState<GraphData | null>(null);
+    const [tourStops,     setTourStops]     = useState<TourStop[]>([]);
+    const [tourTotal,     setTourTotal]     = useState(0);
+    const [tourIdx,       setTourIdx]       = useState(-1);
+    const [tourText,      setTourText]      = useState("");
+    const [tourStreaming, setTourStreaming]  = useState(false);
+    const [tourNodeIds,   setTourNodeIds]   = useState<Set<string>>(new Set());
+    const [tourCurrentId, setTourCurrentId] = useState("");
+
+    // refs for async callbacks
+    const tourIdxRef   = useRef(-1);
+    const tourTextRef  = useRef("");
+    const readerRef    = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+
+    useEffect(() => { tourIdxRef.current = tourIdx; }, [tourIdx]);
+
     function zoomIn()    { if (svgRef.current && zoomRef.current) d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 1.3); }
     function zoomOut()   { if (svgRef.current && zoomRef.current) d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 0.7); }
     function zoomReset() { if (svgRef.current && zoomRef.current) d3.select(svgRef.current).transition().call(zoomRef.current.transform, d3.zoomIdentity); }
 
-    // ── URL 快照：初始化（从 URL 恢复状态，仅运行一次）────────────────────────
+    function zoomToNode(nodeId: string, delay = 900) {
+        setTimeout(() => {
+            const simNode = filteredNodesRef.current.find(n => n.id === nodeId) as SimNode | undefined;
+            if (!simNode?.x || !simNode?.y || !svgRef.current || !zoomRef.current) return;
+            const w = svgRef.current.clientWidth;
+            const h = svgRef.current.clientHeight;
+            d3.select(svgRef.current).transition().duration(700).call(
+                zoomRef.current.transform,
+                d3.zoomIdentity
+                    .translate(w / 2 - simNode.x * 1.6, h / 2 - simNode.y * 1.6)
+                    .scale(1.6),
+            );
+        }, delay);
+    }
+
+    // ── URL 快照 ───────────────────────────────────────────────────────────────
     useEffect(() => {
         const p = new URLSearchParams(window.location.search);
         if (p.has("nf")) setNodeFilter(p.get("nf") as NodeFilter);
@@ -351,17 +426,10 @@ export default function GraphPage() {
                 entity: Number(p.get("le") || 100),
             });
         }
-        if (p.has("sq")) {
-            const sq = p.get("sq")!;
-            setSearchQuery(sq);
-            pendingSearchRef.current = sq;
-        }
-        if (p.has("sn")) {
-            pendingNodeIdRef.current = p.get("sn")!;
-        }
+        if (p.has("sq")) { const sq = p.get("sq")!; setSearchQuery(sq); pendingSearchRef.current = sq; }
+        if (p.has("sn")) { pendingNodeIdRef.current = p.get("sn")!; }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // ── URL 快照：同步（状态变更时写回 URL）──────────────────────────────────
     useEffect(() => {
         const p = new URLSearchParams();
         if (nodeFilter !== "全部")    p.set("nf", nodeFilter);
@@ -377,7 +445,6 @@ export default function GraphPage() {
         window.history.replaceState(null, "", newUrl);
     }, [nodeFilter, edgeFilter, searchQuery, docFilter, limits, selectedNode]);
 
-    // ── 复制当前 URL 到剪贴板 ─────────────────────────────────────────────────
     function shareSnapshot() {
         navigator.clipboard.writeText(window.location.href).then(() => {
             setCopied(true);
@@ -385,6 +452,7 @@ export default function GraphPage() {
         });
     }
 
+    // ── 数据加载 ───────────────────────────────────────────────────────────────
     useEffect(() => {
         const params = new URLSearchParams({
             limit_doc:    String(limits.doc),
@@ -392,11 +460,11 @@ export default function GraphPage() {
             limit_entity: String(limits.entity),
             doc_id:       docFilter,
         });
-        fetch(`/api/graph?${params}`).then(r => r.json()).then(setData);
+        fetch(`${API}/api/graph?${params}`).then(r => r.json()).then(setData);
     }, [limits, docFilter]);
 
     useEffect(() => {
-        fetch("/api/documents?per_page=200")
+        fetch(`${API}/api/documents?per_page=200`)
             .then(r => r.json())
             .then(d => setDocs((d.data || []).map((doc: any) => ({ doc_id: doc.doc_id, title: doc.title || "" }))))
             .catch(() => {});
@@ -411,7 +479,6 @@ export default function GraphPage() {
             (n.id   || "").toLowerCase().includes(lower)
         );
         setHighlightedIds(new Set(matches.map(n => n.id)));
-
         if (matches.length > 0 && svgRef.current && zoomRef.current) {
             const target = matches[0] as SimNode;
             if (target.x !== undefined && target.y !== undefined) {
@@ -429,7 +496,6 @@ export default function GraphPage() {
         const nodes = filteredNodesRef.current;
         const edges = filteredEdgesRef.current;
         if (!nodes.length) return;
-
         if (format === "json") {
             const blob = new Blob([JSON.stringify({ nodes, edges }, null, 2)], { type: "application/json" });
             const url  = URL.createObjectURL(blob);
@@ -455,13 +521,9 @@ export default function GraphPage() {
         }
     }
 
-    // ── 数据加载后恢复搜索高亮与选中节点 ──────────────────────────────────────
     useEffect(() => {
         if (!data) return;
-        if (pendingSearchRef.current) {
-            handleSearch(pendingSearchRef.current);
-            pendingSearchRef.current = "";
-        }
+        if (pendingSearchRef.current) { handleSearch(pendingSearchRef.current); pendingSearchRef.current = ""; }
         if (pendingNodeIdRef.current) {
             const node = data.nodes.find(n => n.id === pendingNodeIdRef.current);
             if (node) setSelectedNode(node);
@@ -469,15 +531,18 @@ export default function GraphPage() {
         }
     }, [data, handleSearch]);
 
-    useEffect(() => {
-        if (!data || !svgRef.current || !tooltipRef.current) return;
+    // ── D3 渲染（漫游时使用 tourData，否则用 data）──────────────────────────
+    const effectiveData = tourOpen && tourData ? tourData : data;
 
-        const filteredNodes = data.nodes
-            .filter(n => nodeFilter === "全部" || (n.type || n.label) === nodeFilter)
+    useEffect(() => {
+        if (!effectiveData || !svgRef.current || !tooltipRef.current) return;
+
+        const filteredNodes = effectiveData.nodes
+            .filter(n => !tourOpen || nodeFilter === "全部" || (n.type || n.label) === nodeFilter)
             .map(n => ({ ...n, x: undefined, y: undefined }));
 
         const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
-        const filteredEdges   = data.edges
+        const filteredEdges   = effectiveData.edges
             .filter(e =>
                 (edgeFilter === "全部关系" || e.type === edgeFilter) &&
                 filteredNodeIds.has(typeof e.source === "string" ? e.source : (e.source as any).id) &&
@@ -495,18 +560,131 @@ export default function GraphPage() {
             setScale,
             node => setSelectedNode(node),
             highlightedIds,
+            tourOpen ? tourNodeIds    : undefined,
+            tourOpen ? tourCurrentId  : undefined,
         );
-    }, [data, nodeFilter, edgeFilter, highlightedIds]);
+    }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, tourNodeIds, tourCurrentId, tourOpen]);
+
+    // ── 漫游控制 ───────────────────────────────────────────────────────────────
+    async function startTour() {
+        if (!tourTopic.trim() || tourRunning) return;
+
+        // Reset state
+        setTourStops([]);
+        setTourIdx(-1);
+        setTourText("");
+        setTourTotal(0);
+        setTourNodeIds(new Set());
+        setTourCurrentId("");
+        setTourData(null);
+        tourIdxRef.current = -1;
+        tourTextRef.current = "";
+        setTourRunning(true);
+        setTourStreaming(false);
+        setNodeFilter("全部");   // show all node types during tour
+
+        try {
+            const res = await fetch(`${API}/api/graph/tour`, {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify({ topic: tourTopic, max_stops: 6 }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const reader = res.body!.getReader();
+            readerRef.current = reader;
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                for (const line of decoder.decode(value).split("\n")) {
+                    if (!line.startsWith("data: ")) continue;
+                    try {
+                        const ev = JSON.parse(line.slice(6));
+                        if (ev.type === "init") {
+                            setTourTotal(ev.total);
+                        } else if (ev.type === "path") {
+                            setTourData({ nodes: ev.nodes, edges: ev.edges });
+                            setTourNodeIds(new Set(ev.nodes.map((n: GraphNode) => n.id)));
+                        } else if (ev.type === "stop") {
+                            const idx = ev.index as number;
+                            tourIdxRef.current = idx;
+                            setTourIdx(idx);
+                            setTourCurrentId(ev.node_id);
+                            setTourText("");
+                            tourTextRef.current = "";
+                            setTourStreaming(true);
+                            setTourStops(prev => [...prev, {
+                                index:       idx,
+                                node_id:     ev.node_id,
+                                node:        ev.node,
+                                explanation: "",
+                            }]);
+                            zoomToNode(ev.node_id, idx === 0 ? 1800 : 400);
+                        } else if (ev.type === "delta") {
+                            tourTextRef.current += ev.content;
+                            const snapshot = tourTextRef.current;
+                            setTourText(snapshot);
+                            setTourStops(prev => prev.map(s =>
+                                s.index === tourIdxRef.current ? { ...s, explanation: snapshot } : s
+                            ));
+                        } else if (ev.type === "next_stop") {
+                            setTourStreaming(false);
+                        } else if (ev.type === "done") {
+                            setTourStreaming(false);
+                            setTourRunning(false);
+                        } else if (ev.type === "error") {
+                            setTourStreaming(false);
+                            setTourRunning(false);
+                        }
+                    } catch { /* ignore parse errors */ }
+                }
+            }
+        } catch (e) {
+            console.error("漫游失败:", e);
+        } finally {
+            setTourRunning(false);
+            setTourStreaming(false);
+        }
+    }
+
+    function stopTour() {
+        readerRef.current?.cancel().catch(() => {});
+        readerRef.current = null;
+        setTourRunning(false);
+        setTourStreaming(false);
+        setTourData(null);
+        setTourNodeIds(new Set());
+        setTourCurrentId("");
+        setTourIdx(-1);
+        setTourStops([]);
+        setTourText("");
+    }
+
+    function navigateTour(idx: number) {
+        if (idx < 0 || idx >= tourStops.length) return;
+        const stop = tourStops[idx];
+        tourIdxRef.current = idx;
+        setTourIdx(idx);
+        setTourCurrentId(stop.node_id);
+        setTourText(stop.explanation);
+        tourTextRef.current = stop.explanation;
+        zoomToNode(stop.node_id, 200);
+    }
+
+    const hasPrev = tourIdx > 0;
+    const hasNext = tourIdx >= 0 && tourIdx < tourStops.length - 1 && !tourStreaming;
 
     return (
         <div
             className="w-full h-full bg-gray-950 select-none flex flex-col"
             onClick={() => { if (showExport) setShowExport(false); }}
         >
-            {/* ── 紧凑工具栏 (44px) ─────────────────────────────────────────── */}
+            {/* ── 工具栏 ─────────────────────────────────────────────────── */}
             <div className="shrink-0 flex items-center gap-1.5 px-3 h-11 bg-gray-900 border-b border-gray-800 z-20">
 
-                {/* 节点类型过滤 — 彩色圆点 chip */}
+                {/* 节点类型过滤 */}
                 <div className="flex items-center gap-0.5">
                     {NODE_TYPES.map(type => (
                         <button
@@ -532,16 +710,14 @@ export default function GraphPage() {
 
                 <div className="w-px h-5 bg-gray-700 mx-0.5 shrink-0" />
 
-                {/* 边类型过滤 — 下拉选择 */}
+                {/* 边类型过滤 */}
                 <select
                     value={edgeFilter}
                     onChange={e => setEdgeFilter(e.target.value as EdgeFilter)}
                     className="h-7 px-2 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300
                                outline-none focus:border-indigo-500 max-w-[138px]"
                 >
-                    {EDGE_TYPES.map(t => (
-                        <option key={t} value={t}>{t}</option>
-                    ))}
+                    {EDGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
 
                 <div className="flex-1" />
@@ -566,19 +742,29 @@ export default function GraphPage() {
                                outline-none focus:border-indigo-500 max-w-[110px]"
                 >
                     <option value="">全部文档</option>
-                    {docs.map(d => (
-                        <option key={d.doc_id} value={d.doc_id}>{d.doc_id}</option>
-                    ))}
+                    {docs.map(d => <option key={d.doc_id} value={d.doc_id}>{d.doc_id}</option>)}
                 </select>
 
                 <div className="w-px h-5 bg-gray-700 mx-0.5 shrink-0" />
 
+                {/* 漫游模式 */}
+                <button
+                    onClick={() => { setTourOpen(v => !v); if (tourRunning) stopTour(); }}
+                    className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+                        tourOpen
+                            ? "bg-amber-500 text-gray-950"
+                            : "text-gray-400 hover:text-white hover:bg-gray-800"
+                    }`}
+                    title="图谱漫游"
+                >
+                    <Compass size={13} />
+                    {!tourOpen && <span className="hidden sm:inline">漫游</span>}
+                </button>
+
                 {/* 节点数量设置 */}
                 <button
                     onClick={() => { setShowLimits(v => !v); setShowLegend(false); }}
-                    className={`p-1.5 rounded transition-colors ${
-                        showLimits ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"
-                    }`}
+                    className={`p-1.5 rounded transition-colors ${showLimits ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"}`}
                     title="节点数量"
                 >
                     <Settings size={14} />
@@ -587,9 +773,7 @@ export default function GraphPage() {
                 {/* 图例 */}
                 <button
                     onClick={() => { setShowLegend(v => !v); setShowLimits(false); }}
-                    className={`p-1.5 rounded transition-colors ${
-                        showLegend ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"
-                    }`}
+                    className={`p-1.5 rounded transition-colors ${showLegend ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"}`}
                     title="图例"
                 >
                     <Layers size={14} />
@@ -598,21 +782,17 @@ export default function GraphPage() {
                 {/* 分享快照 */}
                 <button
                     onClick={shareSnapshot}
-                    className={`p-1.5 rounded transition-colors ${
-                        copied ? "bg-emerald-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"
-                    }`}
+                    className={`p-1.5 rounded transition-colors ${copied ? "bg-emerald-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"}`}
                     title="复制分享链接"
                 >
                     {copied ? <Check size={14} /> : <Share2 size={14} />}
                 </button>
 
-                {/* 导出下拉 */}
+                {/* 导出 */}
                 <div className="relative" onClick={e => e.stopPropagation()}>
                     <button
                         onClick={() => setShowExport(v => !v)}
-                        className={`p-1.5 rounded transition-colors ${
-                            showExport ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"
-                        }`}
+                        className={`p-1.5 rounded transition-colors ${showExport ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"}`}
                         title="导出"
                     >
                         <Download size={14} />
@@ -620,16 +800,12 @@ export default function GraphPage() {
                     {showExport && (
                         <div className="absolute right-0 top-full mt-1 bg-gray-900 border border-gray-700
                                         rounded-lg py-1 w-28 shadow-xl z-30">
-                            <button
-                                onClick={() => { exportGraph("json"); setShowExport(false); }}
-                                className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800"
-                            >
+                            <button onClick={() => { exportGraph("json"); setShowExport(false); }}
+                                className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800">
                                 导出 JSON
                             </button>
-                            <button
-                                onClick={() => { exportGraph("graphml"); setShowExport(false); }}
-                                className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800"
-                            >
+                            <button onClick={() => { exportGraph("graphml"); setShowExport(false); }}
+                                className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800">
                                 导出 GraphML
                             </button>
                         </div>
@@ -637,87 +813,235 @@ export default function GraphPage() {
                 </div>
             </div>
 
-            {/* ── 图谱主区域 ────────────────────────────────────────────────── */}
-            <div className="flex-1 flex overflow-hidden">
-                <div className="relative flex-1 overflow-hidden">
-                    <svg ref={svgRef} className="w-full h-full" />
+            {/* ── 图谱主区域 ────────────────────────────────────────────── */}
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                <div className="flex-1 flex overflow-hidden min-h-0">
+                    <div className="relative flex-1 overflow-hidden">
+                        <svg ref={svgRef} className="w-full h-full" />
 
-                    {/* 浮动：节点数量面板 */}
-                    {showLimits && (
-                        <div className="absolute top-3 left-3 bg-gray-900 border border-gray-700 rounded-xl
-                                        px-4 py-3 space-y-3 w-56 z-10 shadow-xl">
-                            <div className="text-xs text-gray-400 font-medium">节点数量限制</div>
-                            {([
-                                { key: "doc",    label: "Document", min: 10,  max: 200 },
-                                { key: "sec",    label: "Section",  min: 50,  max: 500 },
-                                { key: "entity", label: "Entity",   min: 20,  max: 200 },
-                            ] as { key: keyof Limits; label: string; min: number; max: number }[]).map(({ key, label, min, max }) => (
-                                <div key={key} className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-400 w-16">{label}</span>
-                                    <input
-                                        type="range"
-                                        min={min} max={max} step={10}
-                                        value={limits[key]}
-                                        onChange={e => setLimits(prev => ({ ...prev, [key]: Number(e.target.value) }))}
-                                        className="flex-1 h-1 accent-indigo-500"
-                                    />
-                                    <span className="text-xs text-gray-500 w-8 text-right">{limits[key]}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* 浮动：图例面板 */}
-                    {showLegend && (
-                        <div className="absolute top-3 right-3 bg-gray-900 border border-gray-700 rounded-xl
-                                        px-3 py-2.5 z-10 shadow-xl">
-                            <div className="text-xs text-gray-500 mb-2">节点类型</div>
-                            <div className="flex flex-col gap-1.5">
-                                {Object.entries(NODE_COLOR).map(([k, c]) => (
-                                    <div key={k} className="flex items-center gap-2">
-                                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c }} />
-                                        <span className="text-xs text-gray-400">{k}</span>
+                        {/* 节点数量面板 */}
+                        {showLimits && (
+                            <div className="absolute top-3 left-3 bg-gray-900 border border-gray-700 rounded-xl
+                                            px-4 py-3 space-y-3 w-56 z-10 shadow-xl">
+                                <div className="text-xs text-gray-400 font-medium">节点数量限制</div>
+                                {([
+                                    { key: "doc",    label: "Document", min: 10,  max: 200 },
+                                    { key: "sec",    label: "Section",  min: 50,  max: 500 },
+                                    { key: "entity", label: "Entity",   min: 20,  max: 200 },
+                                ] as { key: keyof Limits; label: string; min: number; max: number }[]).map(({ key, label, min, max }) => (
+                                    <div key={key} className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-400 w-16">{label}</span>
+                                        <input
+                                            type="range" min={min} max={max} step={10}
+                                            value={limits[key]}
+                                            onChange={e => setLimits(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                                            className="flex-1 h-1 accent-indigo-500"
+                                        />
+                                        <span className="text-xs text-gray-500 w-8 text-right">{limits[key]}</span>
                                     </div>
                                 ))}
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {/* 缩放控制 */}
-                    <div className="absolute bottom-4 right-4 flex items-center gap-2">
-                        <span className="text-xs text-gray-600 mr-1">拖拽平移 · 滚轮缩放</span>
-                        <button
-                            onClick={zoomOut}
-                            disabled={scale <= MIN_SCALE}
-                            className="w-7 h-7 rounded bg-gray-800 text-white text-sm hover:bg-gray-700
-                                       disabled:opacity-30 flex items-center justify-center"
-                        >−</button>
-                        <button
-                            onClick={() => { zoomReset(); setNodeFilter("全部"); setEdgeFilter("全部关系"); }}
-                            className="px-2 h-7 rounded bg-gray-800 text-xs text-gray-300 hover:bg-gray-700"
-                        >重置</button>
-                        <button
-                            onClick={zoomIn}
-                            disabled={scale >= MAX_SCALE}
-                            className="w-7 h-7 rounded bg-gray-800 text-white text-sm hover:bg-gray-700
-                                       disabled:opacity-30 flex items-center justify-center"
-                        >+</button>
+                        {/* 图例面板 */}
+                        {showLegend && (
+                            <div className="absolute top-3 right-3 bg-gray-900 border border-gray-700 rounded-xl
+                                            px-3 py-2.5 z-10 shadow-xl">
+                                <div className="text-xs text-gray-500 mb-2">节点类型</div>
+                                <div className="flex flex-col gap-1.5">
+                                    {Object.entries(NODE_COLOR).map(([k, c]) => (
+                                        <div key={k} className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c }} />
+                                            <span className="text-xs text-gray-400">{k}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 漫游进行中：图上状态浮层 */}
+                        {tourOpen && tourRunning && tourIdx >= 0 && (
+                            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10
+                                            bg-gray-900/90 border border-amber-500/40 rounded-full
+                                            px-4 py-1.5 flex items-center gap-2 backdrop-blur-sm">
+                                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                                <span className="text-xs text-amber-300 font-medium">
+                                    漫游中 · 第 {tourIdx + 1}/{tourTotal} 站
+                                </span>
+                            </div>
+                        )}
+
+                        {/* 缩放控制 */}
+                        <div className="absolute bottom-4 right-4 flex items-center gap-2">
+                            <span className="text-xs text-gray-600 mr-1">拖拽平移 · 滚轮缩放</span>
+                            <button onClick={zoomOut} disabled={scale <= MIN_SCALE}
+                                className="w-7 h-7 rounded bg-gray-800 text-white text-sm hover:bg-gray-700
+                                           disabled:opacity-30 flex items-center justify-center">−</button>
+                            <button onClick={() => { zoomReset(); setNodeFilter("全部"); setEdgeFilter("全部关系"); }}
+                                className="px-2 h-7 rounded bg-gray-800 text-xs text-gray-300 hover:bg-gray-700">重置</button>
+                            <button onClick={zoomIn} disabled={scale >= MAX_SCALE}
+                                className="w-7 h-7 rounded bg-gray-800 text-white text-sm hover:bg-gray-700
+                                           disabled:opacity-30 flex items-center justify-center">+</button>
+                        </div>
+
+                        {/* Tooltip */}
+                        <div
+                            ref={tooltipRef}
+                            className="fixed hidden px-2 py-1 bg-gray-800 text-white text-xs
+                                       rounded pointer-events-none border border-gray-700 max-w-xs"
+                        />
                     </div>
 
-                    {/* Tooltip */}
-                    <div
-                        ref={tooltipRef}
-                        className="fixed hidden px-2 py-1 bg-gray-800 text-white text-xs
-                                   rounded pointer-events-none border border-gray-700 max-w-xs"
-                    />
+                    {/* 节点详情侧边栏 */}
+                    {selectedNode && (
+                        <NodeDetailSidebar node={selectedNode} onClose={() => setSelectedNode(null)} />
+                    )}
                 </div>
 
-                {/* 节点详情侧边栏 */}
-                {selectedNode && (
-                    <NodeDetailSidebar
-                        node={selectedNode}
-                        onClose={() => setSelectedNode(null)}
-                    />
+                {/* ── 漫游面板（底部） ─────────────────────────────────── */}
+                {tourOpen && (
+                    <div className="shrink-0 border-t border-gray-800 bg-gray-900">
+                        {!tourRunning && tourStops.length === 0 ? (
+                            /* 输入区 */
+                            <div className="flex items-center gap-3 px-4 py-3">
+                                <Compass size={15} className="text-amber-400 shrink-0" />
+                                <input
+                                    value={tourTopic}
+                                    onChange={e => setTourTopic(e.target.value)}
+                                    onKeyDown={e => e.key === "Enter" && startTour()}
+                                    placeholder="输入导览主题，如：液压系统安装、密封件更换…"
+                                    className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg
+                                               text-sm text-gray-200 placeholder-gray-600
+                                               outline-none focus:border-amber-500 transition-colors"
+                                />
+                                <button
+                                    onClick={startTour}
+                                    disabled={!tourTopic.trim()}
+                                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-gray-950
+                                               text-sm font-medium rounded-lg transition-colors
+                                               disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    开始漫游
+                                </button>
+                                <button onClick={() => setTourOpen(false)}
+                                    className="p-1.5 text-gray-600 hover:text-white transition-colors">
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        ) : (
+                            /* 漫游中 / 完成 */
+                            <div className="flex flex-col px-4 py-3 gap-2.5" style={{ minHeight: 140 }}>
+                                {/* 顶部控制栏 */}
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <Compass size={14} className="text-amber-400 shrink-0" />
+                                    <span className="text-xs text-amber-300 font-medium truncate max-w-[200px]">
+                                        「{tourTopic}」
+                                    </span>
+                                    {/* 进度 dots */}
+                                    <div className="flex items-center gap-1 mx-2">
+                                        {Array.from({ length: tourTotal || tourStops.length }).map((_, i) => (
+                                            <button
+                                                key={i}
+                                                onClick={() => navigateTour(i)}
+                                                disabled={i >= tourStops.length}
+                                                className={`rounded-full transition-all ${
+                                                    i === tourIdx
+                                                        ? "w-3.5 h-3.5 bg-amber-400"
+                                                        : i < tourStops.length
+                                                            ? "w-2 h-2 bg-gray-500 hover:bg-gray-300"
+                                                            : "w-2 h-2 bg-gray-800"
+                                                }`}
+                                                title={tourStops[i]?.node.name}
+                                            />
+                                        ))}
+                                        {tourRunning && (
+                                            <span className="text-xs text-gray-600 ml-1 animate-pulse">…</span>
+                                        )}
+                                    </div>
+
+                                    <div className="ml-auto flex items-center gap-1">
+                                        <button onClick={() => navigateTour(tourIdx - 1)} disabled={!hasPrev}
+                                            className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-800
+                                                       disabled:opacity-30 transition-colors">
+                                            <ChevronLeft size={14} />
+                                        </button>
+                                        <span className="text-xs text-gray-600 w-12 text-center">
+                                            {tourIdx + 1} / {tourTotal || "?"}
+                                        </span>
+                                        <button onClick={() => navigateTour(tourIdx + 1)} disabled={!hasNext}
+                                            className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-800
+                                                       disabled:opacity-30 transition-colors">
+                                            <ChevronRight size={14} />
+                                        </button>
+                                        <button onClick={stopTour}
+                                            className="flex items-center gap-1 px-2 py-1 ml-1 rounded
+                                                       bg-gray-800 text-red-400 hover:text-white
+                                                       text-xs transition-colors">
+                                            <Square size={10} />停止
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* 当前节点 + 讲解 */}
+                                {tourIdx >= 0 && tourStops[tourIdx] && (
+                                    <div className="flex items-start gap-3 flex-1 min-h-0">
+                                        {/* 节点徽章 */}
+                                        <div className="shrink-0 mt-0.5">
+                                            <span
+                                                className="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
+                                                style={{
+                                                    backgroundColor: (NODE_COLOR[tourStops[tourIdx].node.type || ""] ?? "#6b7280") + "33",
+                                                    color:            NODE_COLOR[tourStops[tourIdx].node.type || ""] ?? "#9ca3af",
+                                                }}
+                                            >
+                                                {tourStops[tourIdx].node.type}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex-1 min-w-0 overflow-auto" style={{ maxHeight: 90 }}>
+                                            <div className="text-sm font-semibold text-white leading-tight mb-1 truncate">
+                                                {tourStops[tourIdx].node.name}
+                                            </div>
+                                            <div className="text-xs text-gray-300 leading-relaxed">
+                                                {tourText || (tourStreaming ? "" : "—")}
+                                                {tourStreaming && (
+                                                    <span className="inline-block w-0.5 h-3.5 bg-amber-400 ml-0.5 align-middle animate-pulse" />
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* doc_id */}
+                                        {tourStops[tourIdx].node.doc_id && (
+                                            <div className="shrink-0 text-xs text-gray-600 font-mono mt-0.5">
+                                                {tourStops[tourIdx].node.doc_id}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* 加载中占位 */}
+                                {tourRunning && tourIdx < 0 && (
+                                    <div className="flex items-center gap-2 text-xs text-gray-500 animate-pulse">
+                                        <Compass size={12} className="text-amber-400" />
+                                        AI 正在规划导览路径…
+                                    </div>
+                                )}
+
+                                {/* 漫游完成 */}
+                                {!tourRunning && tourStops.length > 0 && (
+                                    <div className="text-xs text-gray-600 mt-auto shrink-0">
+                                        导览完成，共 {tourStops.length} 站 ·{" "}
+                                        <button
+                                            onClick={() => { stopTour(); setTourTopic(""); }}
+                                            className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2"
+                                        >
+                                            重新开始
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 )}
             </div>
         </div>
