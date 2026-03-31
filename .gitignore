@@ -32,4 +32,7 @@ ingest_progress.json
 .vscode/
 node_modules/
 models/
+# 但允许追踪源码目录下的 Python 模型定义文件
+!backend/src/models/
+!backend/src/models/*.py
 backend/.venv/

@@ -6,7 +6,7 @@ import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
 import {
     LogOut, Upload, BookOpen, Search, MessageSquare,
-    Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch,
+    Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch, BrainCircuit,
 } from "lucide-react";
 
 const navItems = [
@@ -18,6 +18,7 @@ const navItems = [
     { href: "/timeline",        label: "版本时间线", shortcut: "",   Icon: GitBranch    },
     { href: "/compare",         label: "文档对比",   shortcut: "",   Icon: GitCompare   },
     { href: "/admin/entities",  label: "实体审核",   shortcut: "",   Icon: ShieldCheck  },
+    { href: "/admin/gnn",       label: "GNN 训练",   shortcut: "",   Icon: BrainCircuit },
     { href: "/settings",        label: "设置",       shortcut: "",   Icon: Settings     },
 ];
 

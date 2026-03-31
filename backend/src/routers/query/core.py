@@ -1,5 +1,12 @@
 """
 检索核心：RRF融合、章节获取、多策略检索
+
+策略列表:
+  parallel        — 全文 + 向量 RRF 融合
+  sequential      — 全文优先，不足时向量补充
+  graph_augmented — parallel + 图谱邻居扩展 + 跨文档推理
+  gnn             — GNN 结构感知嵌入 + 全文 RRF 融合（GraphSAGE）
+  multi_hop       — 多跳推理 Agent（独立模块）
 """
 import logging
 from neo4j import Driver
@@ -66,8 +73,33 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
         except Exception as e:
             logger.warning("向量检索失败: %s", e)
 
+    # GNN 结构感知检索（strategy="gnn"）
+    gnn_ids: list[str] = []
+    if strategy == "gnn":
+        try:
+            from ...services.embedder   import embed_query
+            from ...services.gnn_service import get_gnn_service
+            gnn_svc = get_gnn_service()
+            if gnn_svc.loaded:
+                q_vec   = embed_query(question)
+                gnn_ids = [r["chunk_id"] for r in gnn_svc.search(q_vec, top_k=top_k * 2)]
+                logger.debug("GNN 检索返回 %d 个候选", len(gnn_ids))
+            else:
+                logger.warning("GNN 嵌入未加载，降级到全文检索")
+        except Exception as e:
+            logger.warning("GNN 检索失败，降级: %s", e)
+
     # 策略分发
-    if strategy == "parallel" and vector_ids:
+    if strategy == "gnn":
+        if gnn_ids and ft_ids:
+            # GNN + 全文 RRF 融合，充分利用两路信号
+            fused_ids = rrf_fusion(gnn_ids, ft_ids)[:top_k * 2]
+        elif gnn_ids:
+            fused_ids = gnn_ids[:top_k * 2]
+        else:
+            # GNN 不可用时退化为全文检索
+            fused_ids = ft_ids[:top_k * 2]
+    elif strategy == "parallel" and vector_ids:
         fused_ids = rrf_fusion(ft_ids, vector_ids)[:top_k * 2]
     elif strategy == "sequential":
         fused_ids = list(ft_ids[:top_k])
@@ -159,8 +191,8 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
 
     sections = get_section_details(driver, fused_ids[:top_k * 2])
 
-    # Reranker 应用于 parallel / graph_augmented / sequential
-    if sections and strategy in ("parallel", "graph_augmented", "sequential"):
+    # Reranker 应用于 parallel / graph_augmented / sequential / gnn
+    if sections and strategy in ("parallel", "graph_augmented", "sequential", "gnn"):
         try:
             from ...services.reranker import rerank
             sections = rerank(question, sections, top_k=top_k)

@@ -24,6 +24,7 @@ from .routers.users import router as users_router
 from .routers.feedback import router as feedback_router
 from .routers.conversations import router as conversations_router
 from .routers.admin import router as admin_router
+from .routers.gnn import router as gnn_router
 
 from .db.session import init_tables
 from .services.milvus_store import connect_milvus, get_or_create_collection
@@ -89,6 +90,17 @@ async def lifespan(app: FastAPI):
         logger.info("ES 初始化完成")
     except Exception as e:
         logger.warning("Milvus 初始化失败: %s", e)
+
+    # 预加载 GNN 嵌入（如已训练）
+    try:
+        from .services.gnn_service import get_gnn_service
+        gnn_svc = get_gnn_service()
+        if gnn_svc.loaded:
+            logger.info("GNN 嵌入预加载完成: %d 个节点", len(gnn_svc.chunk_ids))
+        else:
+            logger.info("GNN 嵌入未就绪，gnn 策略将在训练后可用")
+    except Exception as e:
+        logger.warning("GNN 服务初始化失败（不影响其他功能）: %s", e)
     print(">>> lifespan 启动：数据库连接已建立")
     yield
     get_driver().close()
@@ -119,6 +131,7 @@ app = FastAPI(
 | parallel | 全文+向量并行，RRF融合 |
 | sequential | 全文优先，不足时向量补充 |
 | graph_augmented | 并行+图谱邻居扩展 |
+| gnn | GraphSAGE 结构感知嵌入+全文 RRF 融合 |
 | multi_hop | 多跳推理（开发中）|
     """,
     version     = "1.0.0",
@@ -151,6 +164,7 @@ app.include_router(users_router)
 app.include_router(feedback_router)
 app.include_router(conversations_router)
 app.include_router(admin_router)
+app.include_router(gnn_router)
 
 # 挂载 uploads 目录为静态文件（图片预览）
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
