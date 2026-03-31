@@ -11,7 +11,7 @@ train_gnn.py — GraphSAGE 离线训练脚本
 
 用法:
   cd /path/to/kg-rag
-  python -m backend.scripts.train_gnn [--epochs 100] [--lr 1e-3] [--device cpu]
+  python backend/scripts/train_gnn.py [--epochs 100] [--lr 1e-3] [--device cpu]
 """
 import argparse
 import json

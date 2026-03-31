@@ -10,11 +10,17 @@ GNN 管理 API
 """
 import asyncio
 import logging
+import os
 import sys
+from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..services.gnn_service import get_gnn_service
+
+# 项目根目录（kg-rag/），训练脚本运行时需要以此为 cwd
+_PROJECT_ROOT  = Path(__file__).resolve().parent.parent.parent.parent
+_TRAIN_SCRIPT  = _PROJECT_ROOT / "backend" / "scripts" / "train_gnn.py"
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/gnn", tags=["GNN"])
@@ -61,9 +67,15 @@ async def trigger_train(req: TrainRequest = TrainRequest()):
         global _training
         _training = {"running": True, "progress": "启动训练进程...", "error": ""}
         try:
+            # 直接执行脚本文件，并将项目根目录注入 PYTHONPATH 和 cwd，
+            # 避免 `-m backend.scripts.train_gnn` 依赖包查找顺序
+            env = {
+                **os.environ,
+                "PYTHONPATH": str(_PROJECT_ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""),
+            }
             proc = await asyncio.create_subprocess_exec(
                 sys.executable,
-                "-m", "backend.scripts.train_gnn",
+                str(_TRAIN_SCRIPT),
                 "--epochs",      str(req.epochs),
                 "--lr",          str(req.lr),
                 "--batch_size",  str(req.batch_size),
@@ -73,6 +85,8 @@ async def trigger_train(req: TrainRequest = TrainRequest()):
                 "--device",      req.device,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
+                cwd=str(_PROJECT_ROOT),
+                env=env,
             )
             _training["progress"] = f"训练中 (epochs={req.epochs}, device={req.device})"
             stdout, _ = await proc.communicate()
