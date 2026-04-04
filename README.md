@@ -157,7 +157,7 @@ python -m pytest tests/ -v
 ## 未来计划
 
 - [x] LangGraph 多跳推理 Agent
-- [ ] 浅色/深色主题切换
+- [x] 浅色/深色主题切换
 - [x] 移动端适配
 - [ ] Kubernetes 部署
 
