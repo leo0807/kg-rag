@@ -107,6 +107,32 @@ npm run dev
 
 访问 http://localhost:3000，注册账号后开始使用。
 
+### 默认管理员账号
+
+**系统没有内置账号**，首次启动后需手动注册——**第一个注册的用户自动获得管理员权限**。
+
+推荐使用以下信息完成初始化（开发/演示环境）：
+
+| 字段 | 值 |
+|------|----|
+| 工号（用户名） | `000001` |
+| 密码 | `admin123` |
+| 邮箱 | `admin@internal` |
+
+**方式一：通过注册页面**（推荐）
+
+访问 http://localhost:3000 点击注册，填写上述信息即可。
+
+**方式二：直接调用 API**
+
+```bash
+curl -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"000001","password":"admin123","email":"admin@internal","full_name":"管理员"}'
+```
+
+> ⚠️ 生产环境请务必使用强密码，并在登录后前往「设置 → 修改密码」更改。
+
 ### 批量导入 PDF
 ```bash
 cd backend
