@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Plus, Trash2, MessageSquare, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, MessageSquare, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { Conversation } from "./types";
 
 interface Props {
@@ -18,6 +18,7 @@ export default function ConversationSidebar({
     conversations, activeId, onSelect, onDelete, onNew, disableNew = false,
 }: Props) {
     const [collapsed, setCollapsed] = useState(false);
+    const [query, setQuery] = useState("");
 
     useEffect(() => {
         if (localStorage.getItem(STORAGE_KEY) === "1") setCollapsed(true);
@@ -73,38 +74,69 @@ export default function ConversationSidebar({
                 </div>
             )}
 
+            {/* 搜索框 */}
+            {!collapsed && (
+                <div className="px-2 py-2 border-b border-gray-800">
+                    <div className="relative">
+                        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                        <input
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
+                            placeholder="搜索对话..."
+                            className="w-full pl-7 pr-6 py-1.5 bg-gray-900 border border-gray-800
+                                       rounded-lg text-xs text-gray-300 outline-none
+                                       focus:border-gray-600 placeholder-gray-600 transition-colors"
+                        />
+                        {query && (
+                            <button
+                                onClick={() => setQuery("")}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors"
+                            >
+                                <X size={11} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* 对话列表 */}
             {!collapsed && (
                 <div className="flex-1 overflow-auto px-2 py-2">
-                    {conversations.length === 0 ? (
-                        <div className="px-3 py-8 text-center text-xs text-gray-600">
-                            暂无对话记录
-                        </div>
-                    ) : conversations.filter(c => c.id).map(conv => (
-                        <div key={conv.id}
-                            className={`group flex items-start gap-2 px-3 py-2.5 rounded-xl mb-0.5
-                            cursor-pointer transition-colors ${activeId === conv.id
-                                    ? "bg-gray-800 text-white"
-                                    : "text-gray-400 hover:bg-gray-900 hover:text-gray-300"
-                                }`}
-                            onClick={() => onSelect(conv.id)}>
-                            <MessageSquare size={14} className="shrink-0 mt-0.5" />
-                            <div className="flex-1 min-w-0">
-                                <div className="text-xs leading-relaxed line-clamp-2">
-                                    {conv.title}
-                                </div>
-                                <div className="text-xs text-gray-600 mt-0.5">
-                                    {conv.messages.length / 2} 轮对话
-                                </div>
+                    {(() => {
+                        const filtered = conversations
+                            .filter(c => c.id)
+                            .filter(c => !query || c.title.toLowerCase().includes(query.toLowerCase()));
+                        if (filtered.length === 0) return (
+                            <div className="px-3 py-8 text-center text-xs text-gray-600">
+                                {query ? "无匹配对话" : "暂无对话记录"}
                             </div>
-                            <button
-                                onClick={e => { e.stopPropagation(); onDelete(conv.id); }}
-                                className="opacity-0 group-hover:opacity-100 shrink-0
-                             p-0.5 hover:text-red-400 transition-all">
-                                <Trash2 size={12} />
-                            </button>
-                        </div>
-                    ))}
+                        );
+                        return filtered.map(conv => (
+                            <div key={conv.id}
+                                className={`group flex items-start gap-2 px-3 py-2.5 rounded-xl mb-0.5
+                                cursor-pointer transition-colors ${activeId === conv.id
+                                        ? "bg-gray-800 text-white"
+                                        : "text-gray-400 hover:bg-gray-900 hover:text-gray-300"
+                                    }`}
+                                onClick={() => onSelect(conv.id)}>
+                                <MessageSquare size={14} className="shrink-0 mt-0.5" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-xs leading-relaxed line-clamp-2">
+                                        {conv.title}
+                                    </div>
+                                    <div className="text-xs text-gray-600 mt-0.5">
+                                        {conv.messages.length / 2} 轮对话
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={e => { e.stopPropagation(); onDelete(conv.id); }}
+                                    className="opacity-0 group-hover:opacity-100 shrink-0
+                                     p-0.5 hover:text-red-400 transition-all">
+                                    <Trash2 size={12} />
+                                </button>
+                            </div>
+                        ));
+                    })()}
                 </div>
             )}
 
