@@ -130,10 +130,16 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     )
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(req.password, user.hashed_pw):
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="该工号不存在，请联系管理员开通账号",
+        )
+
+    if not verify_password(req.password, user.hashed_pw):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误",
+            detail="密码错误，请重试",
         )
 
     if not user.is_active:

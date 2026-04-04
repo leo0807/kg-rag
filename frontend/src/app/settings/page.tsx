@@ -71,6 +71,10 @@ export default function SettingsPage() {
     });
     const [creating, setCreating] = useState(false);
 
+    const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
+    const [resetPw, setResetPw] = useState("");
+    const [resetting, setResetting] = useState(false);
+
     useEffect(() => {
 
         const stored = localStorage.getItem("user");
@@ -224,6 +228,29 @@ export default function SettingsPage() {
         });
         if (res.ok) { loadUsers(); showMsg("操作成功"); }
         else showError("操作失败");
+    }
+
+    async function doResetPassword() {
+        if (!resetTarget || !resetPw.trim()) return;
+        if (resetPw.length < 6) { showError("密码至少6位"); return; }
+        setResetting(true);
+        try {
+            const res = await fetch(`/api/users/${resetTarget.user_id}/reset-password`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
+                body: JSON.stringify({ new_password: resetPw }),
+            });
+            if (res.ok) {
+                showMsg(`已重置 ${resetTarget.username} 的密码`);
+                setResetTarget(null);
+                setResetPw("");
+            } else {
+                const err = await res.json();
+                showError(err.detail || "重置失败");
+            }
+        } finally {
+            setResetting(false);
+        }
     }
 
     const tabs: { key: Tab; label: string }[] = [
@@ -524,6 +551,45 @@ export default function SettingsPage() {
                         </div>
                     )}
 
+                    {/* 重置密码弹窗 */}
+                    {resetTarget && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                            <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-80 shadow-2xl">
+                                <h3 className="text-sm font-semibold text-white mb-1">重置密码</h3>
+                                <p className="text-xs text-gray-500 mb-4">
+                                    为用户 <span className="text-indigo-400 font-mono">{resetTarget.username}</span>
+                                    {resetTarget.full_name ? `（${resetTarget.full_name}）` : ""} 设置新密码
+                                </p>
+                                <input
+                                    type="password"
+                                    value={resetPw}
+                                    onChange={e => setResetPw(e.target.value)}
+                                    placeholder="新密码（至少6位）"
+                                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded
+                                               text-sm text-gray-200 outline-none focus:border-indigo-500 mb-4"
+                                    onKeyDown={e => e.key === "Enter" && doResetPassword()}
+                                    autoFocus
+                                />
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={doResetPassword}
+                                        disabled={resetting || !resetPw.trim()}
+                                        className="flex-1 py-2 bg-indigo-600 text-white text-sm rounded-lg
+                                                   hover:bg-indigo-500 disabled:opacity-40 transition-colors"
+                                    >
+                                        {resetting ? "重置中..." : "确认重置"}
+                                    </button>
+                                    <button
+                                        onClick={() => { setResetTarget(null); setResetPw(""); }}
+                                        className="px-4 py-2 bg-gray-800 text-gray-400 text-sm rounded-lg hover:text-white"
+                                    >
+                                        取消
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* 用户列表 */}
                     <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
                         <table className="w-full text-sm">
@@ -558,14 +624,18 @@ export default function SettingsPage() {
                                             </span>
                                         </td>
                                         <td className="px-4 py-3">
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-1.5">
                                                 <button onClick={() => toggleUser(u.user_id)}
                                                     className="px-2 py-1 bg-gray-800 text-gray-400 text-xs rounded hover:text-white transition-colors">
                                                     {u.is_active ? "禁用" : "启用"}
                                                 </button>
                                                 <button onClick={() => toggleAdmin(u.user_id)}
                                                     className="px-2 py-1 bg-gray-800 text-gray-400 text-xs rounded hover:text-white transition-colors">
-                                                    {u.is_admin ? "撤销管理员" : "设为管理员"}
+                                                    {u.is_admin ? "撤销管理员" : "设管理员"}
+                                                </button>
+                                                <button onClick={() => { setResetTarget(u); setResetPw(""); }}
+                                                    className="px-2 py-1 bg-gray-800 text-amber-500/70 text-xs rounded hover:text-amber-400 transition-colors">
+                                                    重置密码
                                                 </button>
                                             </div>
                                         </td>
