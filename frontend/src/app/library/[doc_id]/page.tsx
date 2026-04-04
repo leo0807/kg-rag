@@ -81,7 +81,8 @@ export default function DocumentDetailPage() {
     const [watermarkUrl,   setWatermarkUrl]  = useState("");
 
     useEffect(() => {
-        fetchApi<DocumentDetail>(`/api/documents/${docId}`).then(setDoc);
+        if (!docId) return;
+        fetchApi<DocumentDetail>(`/api/documents/${docId}`).then(setDoc).catch(() => {});
 
         // 尝试获取 PDF 静态地址（文件不存在时静默失败）
         fetchApi<{ url: string }>(`/api/documents/${docId}/pdf-url`)

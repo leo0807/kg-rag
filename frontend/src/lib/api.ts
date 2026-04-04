@@ -32,8 +32,13 @@ export async function fetchApi<T>(
         ...(options?.headers as Record<string, string>),
     };
 
-    if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
+    // Re-read after potential refresh so we always use the latest token
+    const currentToken = typeof window !== "undefined"
+        ? localStorage.getItem("token")
+        : null;
+
+    if (currentToken) {
+        headers["Authorization"] = `Bearer ${currentToken}`;
     }
 
     const res = await fetch(url, { ...options, headers });
