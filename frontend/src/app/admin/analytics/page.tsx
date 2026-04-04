@@ -123,6 +123,7 @@ function DauChart({ data, maxQ }: { data: DauPoint[]; maxQ: number }) {
 export default function AnalyticsPage() {
     const [report,  setReport]  = useState<Report | null>(null);
     const [loading, setLoading] = useState(false);
+    const [error,   setError]   = useState<string | null>(null);
     const [days,    setDays]    = useState(30);
     const [tab,     setTab]     = useState<Tab>("user");
     const [sortKey, setSortKey] = useState<string>("total_queries");
@@ -130,11 +131,12 @@ export default function AnalyticsPage() {
 
     const load = useCallback(async (d: number) => {
         setLoading(true);
+        setError(null);
         try {
             const data = await fetchApi<Report>(`${API}/api/admin/analytics/user-activity?days=${d}`);
             setReport(data);
-        } catch (e) {
-            console.error(e);
+        } catch (e: unknown) {
+            setError(e instanceof Error ? e.message : "加载失败，请检查后端服务是否正常");
         } finally {
             setLoading(false);
         }
@@ -286,6 +288,20 @@ export default function AnalyticsPage() {
             {loading && (
                 <div className="flex items-center justify-center py-16 text-gray-500 text-sm">
                     <RefreshCw size={16} className="animate-spin mr-2" />加载中…
+                </div>
+            )}
+
+            {!loading && error && (
+                <div className="flex items-center gap-3 px-4 py-3 bg-red-950/40 border border-red-800/50
+                                rounded-xl text-sm text-red-400">
+                    <span className="shrink-0">⚠</span>
+                    <span>{error}</span>
+                    <button
+                        onClick={() => load(days)}
+                        className="ml-auto text-xs text-red-300 hover:text-white underline underline-offset-2"
+                    >
+                        重试
+                    </button>
                 </div>
             )}
 
