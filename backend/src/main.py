@@ -28,6 +28,7 @@ from .routers.gnn import router as gnn_router
 
 from .db.session import init_tables
 from .services.milvus_store import connect_milvus, get_or_create_collection
+from .services.health import health_monitor
 from .core.config import settings
 from .core.logging import setup_logging
 from .services.es_store import init_es_index
@@ -117,6 +118,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Milvus 初始化失败: %s", e)
 
+    # 启动时全量健康检查 + 启动后台定期 ping（每 30s）
+    logger.info("执行启动健康检查...")
+    try:
+        health_monitor.check_all()
+    except Exception as e:
+        logger.warning("启动健康检查异常: %s", e)
+    health_monitor.start_background_task()
+
     # 预加载 GNN 嵌入（如已训练）
     try:
         from .services.gnn_service import get_gnn_service
@@ -129,6 +138,7 @@ async def lifespan(app: FastAPI):
         logger.warning("GNN 服务初始化失败（不影响其他功能）: %s", e)
     print(">>> lifespan 启动：数据库连接已建立")
     yield
+    health_monitor.stop_background_task()
     get_driver().close()
 
 class HealthResponse(BaseModel):
@@ -221,52 +231,15 @@ async def send_progress(client_id: str, message: dict):
             pass
 
 @app.get("/api/health")
-async def health(driver: Driver = Depends(get_driver)):
+async def health():
     import time
-    checks = {}
-    overall = "OK"
-
-    # Neo4j
-    try:
-        with driver.session() as session:
-            session.run("RETURN 1")
-        checks["neo4j"] = "OK"
-    except Exception as e:
-        checks["neo4j"] = f"ERROR: {e}"
-        overall = "DEGRADED"
-
-    # Redis
-    try:
-        from .services.cache import get_redis
-        get_redis().ping()
-        checks["redis"] = "OK"
-    except Exception as e:
-        checks["redis"] = f"ERROR: {e}"
-        overall = "DEGRADED"
-
-    # Milvus
-    try:
-        from pymilvus import connections
-        connections.get_connection_addr("default")
-        checks["milvus"] = "OK"
-    except Exception as e:
-        checks["milvus"] = f"ERROR: {e}"
-        overall = "DEGRADED"
-
-    # Elasticsearch
-    try:
-        from .services.es_store import get_es
-        get_es().ping()
-        checks["elasticsearch"] = "OK"
-    except Exception as e:
-        checks["elasticsearch"] = f"ERROR: {e}"
-        overall = "DEGRADED"
-
+    services = health_monitor.to_dict()
+    overall  = "OK" if all(v["state"] == "ok" for v in services.values()) else "DEGRADED"
     return {
-        "status":  overall,
-        "version": settings.APP_VERSION,
-        "checks":  checks,
-        "time":    int(time.time()),
+        "status":   overall,
+        "version":  settings.APP_VERSION,
+        "services": services,
+        "time":     int(time.time()),
     }
 
 def _is_logo(img) -> bool:

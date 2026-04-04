@@ -10,6 +10,7 @@
 """
 import logging
 from neo4j import Driver
+from ...services.health import health_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -45,33 +46,46 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
 
     # ES 全文检索
     ft_ids, ft_score_map = [], {}
-    try:
-        from ...services.es_store import search_sections_es
-        es_results   = search_sections_es(question, top_k=top_k * 2)
-        ft_ids       = [r["chunk_id"] for r in es_results]
-        ft_score_map = {r["chunk_id"]: r["score"] for r in es_results}
-    except Exception as e:
-        logger.warning("ES 检索失败，降级到 Neo4j: %s", e)
-        with driver.session() as session:
-            ft_result = session.run("""
-                CALL db.index.fulltext.queryNodes('cps_fulltext_index', $q)
-                YIELD node, score
-                RETURN node.chunk_id AS chunk_id, score
-                ORDER BY score DESC LIMIT $top_k
-            """, q=question, top_k=top_k * 2)
-            rows         = [dict(r) for r in ft_result]
-            ft_ids       = [r["chunk_id"] for r in rows]
-            ft_score_map = {r["chunk_id"]: r["score"] for r in rows}
+    if health_monitor.elasticsearch.is_ok:
+        try:
+            from ...services.es_store import search_sections_es
+            es_results   = search_sections_es(question, top_k=top_k * 2)
+            ft_ids       = [r["chunk_id"] for r in es_results]
+            ft_score_map = {r["chunk_id"]: r["score"] for r in es_results}
+        except Exception as e:
+            logger.warning("ES 检索失败，降级到 Neo4j 全文索引: %s", e)
+            health_monitor.elasticsearch.state = health_monitor.elasticsearch.state.__class__.DOWN
+    else:
+        logger.info("ES 不可用（已知 DOWN），跳过 ES 检索")
 
-    # 向量检索
+    # ES 不可用时降级到 Neo4j 全文索引
+    if not ft_ids and health_monitor.neo4j.is_ok:
+        try:
+            with driver.session() as session:
+                ft_result = session.run("""
+                    CALL db.index.fulltext.queryNodes('cps_fulltext_index', $q)
+                    YIELD node, score
+                    RETURN node.chunk_id AS chunk_id, score
+                    ORDER BY score DESC LIMIT $top_k
+                """, q=question, top_k=top_k * 2)
+                rows         = [dict(r) for r in ft_result]
+                ft_ids       = [r["chunk_id"] for r in rows]
+                ft_score_map = {r["chunk_id"]: r["score"] for r in rows}
+        except Exception as e:
+            logger.warning("Neo4j 全文索引检索也失败: %s", e)
+
+    # 向量检索（Milvus 可用时才执行）
     vector_ids = []
     if strategy in ("parallel", "graph_augmented"):
-        try:
-            from ...services.embedder     import embed_query
-            from ...services.milvus_store import search_sections
-            vector_ids = [r["chunk_id"] for r in search_sections(embed_query(question), top_k=top_k * 2)]
-        except Exception as e:
-            logger.warning("向量检索失败: %s", e)
+        if not health_monitor.milvus.is_ok:
+            logger.info("Milvus 不可用（已知 DOWN），跳过向量检索，仅使用全文结果")
+        else:
+            try:
+                from ...services.embedder     import embed_query
+                from ...services.milvus_store import search_sections
+                vector_ids = [r["chunk_id"] for r in search_sections(embed_query(question), top_k=top_k * 2)]
+            except Exception as e:
+                logger.warning("向量检索失败: %s", e)
 
     # GNN 结构感知检索（strategy="gnn"）
     gnn_ids: list[str] = []
@@ -119,25 +133,28 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
     else:
         fused_ids = ft_ids[:top_k * 2]
 
-    # ── 实体感知检索：从问题中提取实体名，优先召回包含实体关系的章节 ─────────
-    try:
-        with driver.session() as session:
-            entity_result = session.run("""
-                MATCH (e)
-                WHERE (e:Tool OR e:Material OR e:Process)
-                  AND toLower($question) CONTAINS toLower(e.name)
-                WITH e LIMIT 10
-                MATCH (s:Section)-[:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS]->(e)
-                RETURN DISTINCT s.chunk_id AS chunk_id
-                LIMIT 20
-            """, question=question)
-            entity_section_ids = [r["chunk_id"] for r in entity_result]
-            if entity_section_ids:
-                seen_fused = set(fused_ids)
-                priority   = [cid for cid in entity_section_ids if cid not in seen_fused]
-                fused_ids  = priority + fused_ids
-    except Exception as e:
-        logger.warning("实体感知检索失败: %s", e)
+    # ── 实体感知检索（Neo4j 可用时才执行） ──────────────────────────────────
+    if not health_monitor.neo4j.is_ok:
+        logger.info("Neo4j 不可用（已知 DOWN），跳过实体感知检索和图谱增强")
+    else:
+        try:
+            with driver.session() as session:
+                entity_result = session.run("""
+                    MATCH (e)
+                    WHERE (e:Tool OR e:Material OR e:Process)
+                      AND toLower($question) CONTAINS toLower(e.name)
+                    WITH e LIMIT 10
+                    MATCH (s:Section)-[:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS]->(e)
+                    RETURN DISTINCT s.chunk_id AS chunk_id
+                    LIMIT 20
+                """, question=question)
+                entity_section_ids = [r["chunk_id"] for r in entity_result]
+                if entity_section_ids:
+                    seen_fused = set(fused_ids)
+                    priority   = [cid for cid in entity_section_ids if cid not in seen_fused]
+                    fused_ids  = priority + fused_ids
+        except Exception as e:
+            logger.warning("实体感知检索失败: %s", e)
 
     # ── 图谱增强扩展（含实体节点跨章节扩展） ─────────────────────────────────
     if strategy == "graph_augmented" and fused_ids:
@@ -189,7 +206,21 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
         except Exception as e:
             logger.warning("跨文档推理失败: %s", e)
 
-    sections = get_section_details(driver, fused_ids[:top_k * 2])
+    # ── 获取章节详情（Neo4j 不可用时从 ES 降级） ─────────────────────────────
+    if health_monitor.neo4j.is_ok:
+        sections = get_section_details(driver, fused_ids[:top_k * 2])
+    else:
+        # Neo4j 不可用：从 ES 获取章节内容作为降级方案
+        try:
+            from ...services.es_store import search_sections_es
+            es_fallback = search_sections_es(question, top_k=top_k * 2)
+            sections = [
+                {k: r[k] for k in ("chunk_id", "doc_id", "number", "title", "content") if k in r}
+                for r in es_fallback
+            ]
+        except Exception as e:
+            logger.warning("ES 降级获取章节详情失败: %s", e)
+            sections = []
 
     # Reranker 应用于 parallel / graph_augmented / sequential / gnn
     if sections and strategy in ("parallel", "graph_augmented", "sequential", "gnn"):

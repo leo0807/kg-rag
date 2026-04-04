@@ -327,10 +327,10 @@ python -m pytest tests/ -v
 ### 高可用与容错
 
 - [ ] **LLM API 重试与熔断**：使用 `tenacity` 对 LLM API 调用实现指数退避重试（最多 3 次），并用 `pybreaker` 实现熔断，防止级联失败
-- [ ] **向量库 / 图数据库连接池健康检查**：启动时及运行时定期 ping，连接失败时降级（仅全文检索）而非直接 500
+- [x] **向量库 / 图数据库连接池健康检查**：启动时及运行时定期 ping，连接失败时降级（仅全文检索）而非直接 500
 - [ ] **异步任务队列**：将 PDF 入库（耗时 > 30s）迁移至 Celery + Redis 队列，支持任务重试、失败重新入队，前端通过 WebSocket 订阅进度（当前同步阻塞）
 - [ ] **优雅关闭（Graceful Shutdown）**：捕获 SIGTERM，等待当前流式响应完成后再关闭，防止用户请求被截断
-- [ ] **数据库连接池调优**：PostgreSQL `pool_size` / `max_overflow` / `pool_timeout` 根据并发量配置，并添加慢查询日志（`echo_slow_threshold`）
+- [x] **数据库连接池调优**：PostgreSQL `pool_size` / `max_overflow` / `pool_timeout` 根据并发量配置，并添加慢查询日志（`echo_slow_threshold`）
 
 ---
 
