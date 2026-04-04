@@ -107,6 +107,181 @@ function nodeRadius(d: SimNode): number {
     return 22;
 }
 
+// ── Canvas 渲染（节点数 > 500 时自动启用） ───────────────────────────────────
+function drawGraphCanvas(
+    data: GraphData,
+    canvasEl: HTMLCanvasElement,
+    tooltipEl: HTMLDivElement,
+    onScaleChange: (s: number) => void,
+    onNodeClick: (node: GraphNode) => void,
+    highlightedIds: Set<string>,
+    tourNodeIds?: Set<string>,
+    tourCurrentId?: string,
+): d3.ZoomBehavior<HTMLCanvasElement, unknown> {
+    const tourMode = (tourNodeIds?.size ?? 0) > 0;
+
+    // HiDPI scaling
+    const dpr    = window.devicePixelRatio || 1;
+    const width  = canvasEl.clientWidth;
+    const height = canvasEl.clientHeight;
+    canvasEl.width  = width  * dpr;
+    canvasEl.height = height * dpr;
+    const ctx = canvasEl.getContext("2d")!;
+    ctx.scale(dpr, dpr);
+
+    const nodes = data.nodes as SimNode[];
+    nodes.forEach(n => {
+        if (n.x === undefined) {
+            n.x = width  / 2 + (Math.random() - 0.5) * 200;
+            n.y = height / 2 + (Math.random() - 0.5) * 200;
+        }
+    });
+
+    const nc = nodes.length;
+    const simulation = d3.forceSimulation(nodes)
+        .force("link",    d3.forceLink(data.edges).id((d: any) => d.id).distance(nc > 50 ? 60 : 140))
+        .force("charge",  d3.forceManyBody().strength(nc > 50 ? -120 : -500))
+        .force("center",  d3.forceCenter(width / 2, height / 2))
+        .force("collide", d3.forceCollide<SimNode>().radius(d => nodeRadius(d) + 6).strength(0.7))
+        .alphaDecay(0.03)
+        .velocityDecay(0.4);
+
+    let transform = d3.zoomIdentity;
+
+    function getNodeAt(mx: number, my: number): SimNode | null {
+        const [sx, sy] = transform.invert([mx, my]);
+        for (let i = nodes.length - 1; i >= 0; i--) {
+            const n = nodes[i];
+            if (n.x == null) continue;
+            const r = nodeRadius(n);
+            if ((sx - n.x!) ** 2 + (sy - n.y!) ** 2 <= r * r) return n;
+        }
+        return null;
+    }
+
+    function render() {
+        ctx.save();
+        ctx.clearRect(0, 0, width, height);
+        ctx.translate(transform.x, transform.y);
+        ctx.scale(transform.k, transform.k);
+
+        // Edges
+        for (const e of data.edges) {
+            const s = e.source as SimNode;
+            const t = e.target as SimNode;
+            if (s.x == null || t.x == null) continue;
+            const opacity = tourMode
+                ? ((tourNodeIds!.has(s.id) && tourNodeIds!.has(t.id)) ? 0.85 : 0.05)
+                : 0.6;
+            ctx.globalAlpha  = opacity;
+            ctx.strokeStyle  = EDGE_COLOR[e.type] ?? "#374151";
+            ctx.lineWidth    = e.type === "REFERENCES" ? 2 : 1.5;
+            ctx.setLineDash(e.type === "HAS_IMAGE" || e.type === "MENTIONS_TOOL" ? [4, 2] : []);
+            ctx.beginPath();
+            ctx.moveTo(s.x!, s.y!);
+            ctx.lineTo(t.x!, t.y!);
+            ctx.stroke();
+        }
+        ctx.setLineDash([]);
+
+        // Nodes
+        for (const n of nodes) {
+            if (n.x == null) continue;
+            const r           = nodeRadius(n);
+            const color       = NODE_COLOR[n.type || n.label] ?? "#6b7280";
+            const isCurrent   = n.id === tourCurrentId;
+            const inPath      = tourNodeIds?.has(n.id) ?? false;
+            const opacity     = tourMode ? (isCurrent ? 1 : inPath ? 0.72 : 0.1) : 0.95;
+            const isHighlight = highlightedIds.has(n.id);
+
+            // Tour glow ring
+            if (tourMode && isCurrent) {
+                ctx.globalAlpha = 0.75;
+                ctx.strokeStyle = "#fbbf24";
+                ctx.lineWidth   = 3.5;
+                ctx.beginPath();
+                ctx.arc(n.x!, n.y!, r + 11, 0, 2 * Math.PI);
+                ctx.stroke();
+            }
+            // Search highlight ring
+            if (!tourMode && isHighlight) {
+                ctx.globalAlpha = 0.9;
+                ctx.strokeStyle = "#f97316";
+                ctx.lineWidth   = 2.5;
+                ctx.beginPath();
+                ctx.arc(n.x!, n.y!, r + 6, 0, 2 * Math.PI);
+                ctx.stroke();
+            }
+            // Main circle
+            ctx.globalAlpha = opacity;
+            ctx.fillStyle   = color;
+            ctx.beginPath();
+            ctx.arc(n.x!, n.y!, r, 0, 2 * Math.PI);
+            ctx.fill();
+            if (isCurrent || isHighlight) {
+                ctx.strokeStyle = isCurrent ? "#fbbf24" : "#f97316";
+                ctx.lineWidth   = 2.5;
+                ctx.stroke();
+            }
+            // Label
+            ctx.globalAlpha    = (tourMode && !inPath && !isCurrent) ? 0.3 : 1;
+            ctx.fillStyle      = "#fff";
+            ctx.font           = `${(n.type || n.label) === "Document" ? 12 : 10}px Arial`;
+            ctx.textAlign      = "center";
+            ctx.textBaseline   = "middle";
+            const nm = n.name || n.label || "";
+            ctx.fillText(nm.length > 6 ? nm.slice(0, 6) + "…" : nm, n.x!, n.y!);
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+
+    simulation.on("tick", render);
+
+    const zoom = d3.zoom<HTMLCanvasElement, unknown>()
+        .scaleExtent([MIN_SCALE, MAX_SCALE])
+        .on("zoom", event => {
+            transform = event.transform;
+            onScaleChange(event.transform.k);
+            render();
+        });
+
+    const sel = d3.select(canvasEl);
+    sel.call(zoom);
+    sel.call(zoom.transform, d3.zoomIdentity);
+    sel.style("cursor", "grab")
+        .on("mousedown.cursor", () => sel.style("cursor", "grabbing"))
+        .on("mouseup.cursor",   () => sel.style("cursor", "grab"));
+
+    sel.on("click.nodes", (event: MouseEvent) => {
+        if (event.defaultPrevented) return;
+        const rect = canvasEl.getBoundingClientRect();
+        const n = getNodeAt(event.clientX - rect.left, event.clientY - rect.top);
+        if (n) onNodeClick(n as GraphNode);
+    });
+
+    sel.on("mousemove.nodes", (event: MouseEvent) => {
+        const rect = canvasEl.getBoundingClientRect();
+        const n = getNodeAt(event.clientX - rect.left, event.clientY - rect.top);
+        if (n) {
+            const desc = (n as any).description || (n as any).content;
+            tooltipEl.classList.remove("hidden");
+            tooltipEl.style.left = (event.clientX + 12) + "px";
+            tooltipEl.style.top  = (event.clientY - 8)  + "px";
+            tooltipEl.innerHTML  = desc
+                ? `<div class="font-medium">${n.name}</div><div class="text-gray-400 mt-1 max-w-xs">${String(desc).slice(0, 80)}…</div>`
+                : n.name;
+        } else {
+            tooltipEl.classList.add("hidden");
+        }
+    });
+
+    sel.on("mouseleave.nodes", () => tooltipEl.classList.add("hidden"));
+
+    return zoom;
+}
+
 function drawGraph(
     data: GraphData,
     svgEl: SVGSVGElement,
@@ -351,8 +526,10 @@ function NodeDetailSidebar({ node, onClose }: { node: GraphNode; onClose: () => 
 // ── 主页面 ────────────────────────────────────────────────────────────────────
 export default function GraphPage() {
     const svgRef     = useRef<SVGSVGElement>(null);
+    const canvasRef  = useRef<HTMLCanvasElement>(null);
     const tooltipRef = useRef<HTMLDivElement>(null);
-    const zoomRef    = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+    const zoomRef    = useRef<any>(null);
+    const [useCanvas, setUseCanvas] = useState(false);
 
     const filteredNodesRef  = useRef<GraphNode[]>([]);
     const filteredEdgesRef  = useRef<GraphEdge[]>([]);
@@ -394,17 +571,20 @@ export default function GraphPage() {
 
     useEffect(() => { tourIdxRef.current = tourIdx; }, [tourIdx]);
 
-    function zoomIn()    { if (svgRef.current && zoomRef.current) d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 1.3); }
-    function zoomOut()   { if (svgRef.current && zoomRef.current) d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 0.7); }
-    function zoomReset() { if (svgRef.current && zoomRef.current) d3.select(svgRef.current).transition().call(zoomRef.current.transform, d3.zoomIdentity); }
+    function activeEl() { return (useCanvas ? canvasRef.current : svgRef.current) as Element | null; }
+    function zoomIn()    { const el = activeEl(); if (el && zoomRef.current) (d3.select(el) as any).transition().call(zoomRef.current.scaleBy, 1.3); }
+    function zoomOut()   { const el = activeEl(); if (el && zoomRef.current) (d3.select(el) as any).transition().call(zoomRef.current.scaleBy, 0.7); }
+    function zoomReset() { const el = activeEl(); if (el && zoomRef.current) (d3.select(el) as any).transition().call(zoomRef.current.transform, d3.zoomIdentity); }
 
     function zoomToNode(nodeId: string, delay = 900) {
         setTimeout(() => {
             const simNode = filteredNodesRef.current.find(n => n.id === nodeId) as SimNode | undefined;
-            if (!simNode?.x || !simNode?.y || !svgRef.current || !zoomRef.current) return;
-            const w = svgRef.current.clientWidth;
-            const h = svgRef.current.clientHeight;
-            d3.select(svgRef.current).transition().duration(700).call(
+            if (!simNode?.x || !simNode?.y || !zoomRef.current) return;
+            const el = activeEl();
+            if (!el) return;
+            const w = (el as HTMLElement).clientWidth;
+            const h = (el as HTMLElement).clientHeight;
+            (d3.select(el) as any).transition().duration(700).call(
                 zoomRef.current.transform,
                 d3.zoomIdentity
                     .translate(w / 2 - simNode.x * 1.6, h / 2 - simNode.y * 1.6)
@@ -538,7 +718,7 @@ export default function GraphPage() {
     const effectiveData = tourOpen && tourData ? tourData : data;
 
     useEffect(() => {
-        if (!effectiveData || !svgRef.current || !tooltipRef.current) return;
+        if (!effectiveData || !tooltipRef.current) return;
 
         const filteredNodes = effectiveData.nodes
             .filter(n => !tourOpen || nodeFilter === "全部" || (n.type || n.label) === nodeFilter)
@@ -556,16 +736,34 @@ export default function GraphPage() {
         filteredNodesRef.current = filteredNodes;
         filteredEdgesRef.current = filteredEdges;
 
-        zoomRef.current = drawGraph(
-            { nodes: filteredNodes, edges: filteredEdges },
-            svgRef.current,
-            tooltipRef.current,
-            setScale,
-            node => setSelectedNode(node),
-            highlightedIds,
-            tourOpen ? tourNodeIds    : undefined,
-            tourOpen ? tourCurrentId  : undefined,
-        );
+        const shouldCanvas = filteredNodes.length > 500;
+        setUseCanvas(shouldCanvas);
+
+        if (shouldCanvas) {
+            if (!canvasRef.current) return;
+            zoomRef.current = drawGraphCanvas(
+                { nodes: filteredNodes, edges: filteredEdges },
+                canvasRef.current,
+                tooltipRef.current,
+                setScale,
+                node => setSelectedNode(node),
+                highlightedIds,
+                tourOpen ? tourNodeIds   : undefined,
+                tourOpen ? tourCurrentId : undefined,
+            );
+        } else {
+            if (!svgRef.current) return;
+            zoomRef.current = drawGraph(
+                { nodes: filteredNodes, edges: filteredEdges },
+                svgRef.current,
+                tooltipRef.current,
+                setScale,
+                node => setSelectedNode(node),
+                highlightedIds,
+                tourOpen ? tourNodeIds   : undefined,
+                tourOpen ? tourCurrentId : undefined,
+            );
+        }
     }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, tourNodeIds, tourCurrentId, tourOpen]);
 
     // ── 漫游控制 ───────────────────────────────────────────────────────────────
@@ -820,7 +1018,14 @@ export default function GraphPage() {
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
                 <div className="flex-1 flex overflow-hidden min-h-0">
                     <div className="relative flex-1 overflow-hidden">
-                        <svg ref={svgRef} className="w-full h-full" />
+                        <svg    ref={svgRef}    className={`w-full h-full${useCanvas ? " hidden" : ""}`} />
+                        <canvas ref={canvasRef} className={`w-full h-full${useCanvas ? "" : " hidden"}`} />
+                        {useCanvas && (
+                            <div className="absolute top-3 left-3 px-2 py-1 bg-gray-900/80 border border-indigo-700/40
+                                            rounded-lg text-xs text-indigo-400 pointer-events-none z-10">
+                                Canvas 模式 · {filteredNodesRef.current.length} 节点
+                            </div>
+                        )}
 
                         {/* 节点数量面板 */}
                         {showLimits && (
