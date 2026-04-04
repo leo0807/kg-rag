@@ -7,7 +7,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import { useGlobalKeyboard } from "@/hooks/useKeyboard";
 import { Menu, X } from "lucide-react";
 
-const NO_SIDEBAR_PATHS = ["/login", "/register"];
+const NO_SIDEBAR_PATHS = ["/login"];
 
 export default function ConditionalLayout({
     children,
@@ -26,6 +26,29 @@ export default function ConditionalLayout({
         const token = localStorage.getItem("token");
         if (!token) router.push("/login");
     }, [pathname, showSidebar, router]);
+
+    // 全局 401 拦截：仅拦截 /api/ 请求，避免干扰 Next.js 内部请求（HMR/RSC/路由）
+    useEffect(() => {
+        const original = window.fetch;
+        window.fetch = async function (...args: Parameters<typeof fetch>) {
+            const url = typeof args[0] === "string" ? args[0]
+                : args[0] instanceof Request ? args[0].url : "";
+            // 只拦截业务 API 请求，内部 /_next/ 请求直接放行
+            if (!url.includes("/api/")) {
+                return original.apply(window, args);
+            }
+            const res = await original.apply(window, args);
+            if (res.status === 401) {
+                if (!url.includes("/api/auth/login") && !url.includes("/api/auth/refresh")) {
+                    localStorage.removeItem("token");
+                    localStorage.removeItem("user");
+                    window.location.href = "/login";
+                }
+            }
+            return res;
+        };
+        return () => { window.fetch = original; };
+    }, []);
 
     // 路由切换时关闭移动端菜单
     useEffect(() => { setMobileOpen(false); }, [pathname]);
