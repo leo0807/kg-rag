@@ -1,8 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
-import { BrainCircuit, Play, RefreshCw, AlertCircle, CheckCircle2, Clock, ChevronDown, ChevronUp } from "lucide-react";
-
-const API = "http://localhost:8000";
+import { BrainCircuit, Play, RefreshCw, AlertCircle, CheckCircle2, Clock, ChevronDown, ChevronUp, HelpCircle, X } from "lucide-react";
 
 interface GNNServiceStatus {
     loaded:     boolean;
@@ -44,13 +42,14 @@ export default function GNNAdminPage() {
     const [params,      setParams]      = useState(DEFAULT_PARAMS);
     const [showParams,  setShowParams]  = useState(false);
     const [pollTimer,   setPollTimer]   = useState<ReturnType<typeof setInterval> | null>(null);
+    const [showHelp,    setShowHelp]    = useState(false);
 
     const token = typeof window !== "undefined" ? localStorage.getItem("token") ?? "" : "";
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
     const fetchStatus = useCallback(async () => {
         try {
-            const r = await fetch(`${API}/api/gnn/status`, { headers });
+            const r = await fetch(`/api/gnn/status`, { headers });
             if (r.ok) setStatus(await r.json());
         } catch { /* ignore */ }
     }, []);
@@ -72,7 +71,7 @@ export default function GNNAdminPage() {
     async function handleTrain() {
         setTraining(true);
         try {
-            const r = await fetch(`${API}/api/gnn/train`, {
+            const r = await fetch(`/api/gnn/train`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify(params),
@@ -91,7 +90,7 @@ export default function GNNAdminPage() {
     async function handleRefresh() {
         setLoading(true);
         try {
-            const r = await fetch(`${API}/api/gnn/refresh`, { method: "POST", headers });
+            const r = await fetch(`/api/gnn/refresh`, { method: "POST", headers });
             if (r.ok) {
                 const s = await r.json();
                 setStatus(prev => prev ? { ...prev, service: s } : null);
@@ -109,15 +108,59 @@ export default function GNNAdminPage() {
         <div className="min-h-screen bg-gray-950 text-gray-100 p-6 space-y-6">
 
             {/* 标题 */}
-            <div className="flex items-center gap-3">
-                <BrainCircuit size={24} className="text-violet-400" />
-                <div>
-                    <h1 className="text-xl font-bold text-white">GNN 检索管理</h1>
-                    <p className="text-sm text-gray-400 mt-0.5">
-                        GraphSAGE 模型训练与 GNN 结构感知嵌入管理
-                    </p>
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <BrainCircuit size={24} className="text-violet-400" />
+                    <div>
+                        <h1 className="text-xl font-bold text-white">GNN 检索管理</h1>
+                        <p className="text-sm text-gray-400 mt-0.5">
+                            GraphSAGE 模型训练与 GNN 结构感知嵌入管理
+                        </p>
+                    </div>
                 </div>
+                <button
+                    onClick={() => setShowHelp(v => !v)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm
+                               text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700
+                               border border-gray-700 transition-colors"
+                >
+                    <HelpCircle size={14} />
+                    功能说明
+                </button>
             </div>
+
+            {/* 功能说明面板 */}
+            {showHelp && (
+                <div className="bg-violet-950/30 border border-violet-800/40 rounded-xl p-5 relative">
+                    <button
+                        onClick={() => setShowHelp(false)}
+                        className="absolute top-3 right-3 text-gray-500 hover:text-white transition-colors"
+                    >
+                        <X size={14} />
+                    </button>
+                    <h3 className="text-sm font-semibold text-violet-300 mb-2">这个页面是做什么的？</h3>
+                    <p className="text-sm text-gray-300 leading-relaxed mb-3">
+                        这是一个"让系统变得更聪明"的训练页面。系统在回答问题时，
+                        不仅会查找关键词，还会理解文档章节之间的关联关系——
+                        例如「前处理」和「后处理」章节通常相邻出现。
+                        GNN（图神经网络）训练就是让系统学习这些结构规律。
+                    </p>
+                    <div className="space-y-1.5 text-sm text-gray-400">
+                        <div className="flex items-start gap-2">
+                            <span className="text-violet-400 shrink-0 mt-0.5">①</span>
+                            <span>首次使用前点击「开始训练」，训练一次即可（大约 5–20 分钟）。</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                            <span className="text-violet-400 shrink-0 mt-0.5">②</span>
+                            <span>训练结束后无需任何操作，系统会自动使用新模型。</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                            <span className="text-violet-400 shrink-0 mt-0.5">③</span>
+                            <span>当文档库有大量新增或删除时，建议重新训练一次以保持准确性。</span>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* 嵌入状态卡 */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
@@ -147,7 +190,7 @@ export default function GNNAdminPage() {
                     <Stat label="训练损失"  value={meta.best_loss != null ? Number(meta.best_loss).toFixed(4) : "—"} />
                 </div>
 
-                {meta.trained_at && (
+                {!!meta.trained_at && (
                     <div className="text-xs text-gray-500 pt-1 border-t border-gray-800">
                         上次训练: {formatTs(meta.trained_at as number)} &nbsp;·&nbsp;
                         {String(meta.epochs_run)} 轮 &nbsp;·&nbsp;

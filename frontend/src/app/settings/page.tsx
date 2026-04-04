@@ -43,7 +43,6 @@ interface AuditRow {
     created_at: string;
 }
 
-const API = "http://localhost:8000";
 function getToken() {
     return localStorage.getItem("token") ?? "";
 }
@@ -66,6 +65,12 @@ export default function SettingsPage() {
         confirm: "",
     });
 
+    const [showCreate, setShowCreate] = useState(false);
+    const [createForm, setCreateForm] = useState({
+        username: "", password: "", full_name: "", department: "", email: "", is_admin: false,
+    });
+    const [creating, setCreating] = useState(false);
+
     useEffect(() => {
 
         const stored = localStorage.getItem("user");
@@ -82,33 +87,37 @@ export default function SettingsPage() {
     }, []);
 
     async function loadAuditLogs(page = 1) {
-        const res = await fetch(`${API}/api/users/audit-logs?page=${page}&per_page=15`, {
+        const res = await fetch(`/api/users/audit-logs?page=${page}&per_page=15`, {
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
+        if (!res.ok) return;
         const data = await res.json();
-        setAuditLogs(data.data);
-        setAuditTotal(data.total);
+        setAuditLogs(data.data ?? []);
+        setAuditTotal(data.total ?? 0);
         setAuditPage(page);
     }
 
     async function loadProfile() {
-        const res = await fetch(`${API}/api/auth/profile`, {
+        const res = await fetch(`/api/auth/profile`, {
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
+        if (!res.ok) return;
         setProfile(await res.json());
     }
 
     async function loadSettings() {
-        const res = await fetch(`${API}/api/settings/user`, {
+        const res = await fetch(`/api/settings/user`, {
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
+        if (!res.ok) return;
         setSettings(await res.json());
     }
 
     async function loadUsers() {
-        const res = await fetch(`${API}/api/users`, {
+        const res = await fetch(`/api/users`, {
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
+        if (!res.ok) return;
         setUsers(await res.json());
     }
 
@@ -124,7 +133,7 @@ export default function SettingsPage() {
 
     async function saveProfile() {
         if (!profile) return;
-        const res = await fetch(`${API}/api/auth/profile`, {
+        const res = await fetch(`/api/auth/profile`, {
             method: "PUT",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
             body: JSON.stringify(profile),
@@ -145,7 +154,7 @@ export default function SettingsPage() {
             showError("两次密码不一致");
             return;
         }
-        const res = await fetch(`${API}/api/auth/password`, {
+        const res = await fetch(`/api/auth/password`, {
             method: "PUT",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
             body: JSON.stringify({
@@ -164,7 +173,7 @@ export default function SettingsPage() {
 
     async function saveSettings() {
         if (!settings) return;
-        const res = await fetch(`${API}/api/settings/user`, {
+        const res = await fetch(`/api/settings/user`, {
             method: "PUT",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
             body: JSON.stringify({ settings }),
@@ -174,7 +183,7 @@ export default function SettingsPage() {
     }
 
     async function toggleUser(userId: string) {
-        const res = await fetch(`${API}/api/users/${userId}/toggle`, {
+        const res = await fetch(`/api/users/${userId}/toggle`, {
             method: "PUT",
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
@@ -182,8 +191,34 @@ export default function SettingsPage() {
         else showError("操作失败");
     }
 
+    async function createUser() {
+        if (!createForm.username || !createForm.password) {
+            showError("工号和密码为必填项");
+            return;
+        }
+        setCreating(true);
+        try {
+            const res = await fetch("/api/users", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
+                body: JSON.stringify(createForm),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                showError(data.detail || "创建失败");
+                return;
+            }
+            showMsg(`用户 ${data.username} 创建成功`);
+            setShowCreate(false);
+            setCreateForm({ username: "", password: "", full_name: "", department: "", email: "", is_admin: false });
+            await loadUsers();
+        } finally {
+            setCreating(false);
+        }
+    }
+
     async function toggleAdmin(userId: string) {
-        const res = await fetch(`${API}/api/users/${userId}/admin`, {
+        const res = await fetch(`/api/users/${userId}/admin`, {
             method: "PUT",
             headers: { "Authorization": `Bearer ${getToken()}` },
         });
@@ -202,7 +237,7 @@ export default function SettingsPage() {
     ];
 
     return (
-        <div className="p-8 max-w-3xl">
+        <div className="p-8 max-w-3xl mx-auto">
             <h1 className="text-2xl font-semibold text-white mb-6">设置</h1>
 
             {/* Tab 切换 */}
@@ -223,9 +258,12 @@ export default function SettingsPage() {
 
             {/* 消息提示 */}
             {msg && <div className="mb-4 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg text-sm text-green-400">{msg}</div>}
-            {error && <div className="mb-4 px-3 py-2 bg-red-500/10   border border-red-500/30   rounded-lg text-sm text-red-400"  >{error}</div>}
+            {error && <div className="mb-4 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400">{error}</div>}
 
             {/* 个人资料 */}
+            {tab === "profile" && !profile && (
+                <div className="text-sm text-gray-500">加载中…</div>
+            )}
             {tab === "profile" && profile && (
                 <div className="space-y-4 bg-gray-900 rounded-xl p-5 border border-gray-800">
                     <div className="grid grid-cols-2 gap-4">
@@ -285,6 +323,9 @@ export default function SettingsPage() {
             )}
 
             {/* 模型设置 */}
+            {tab === "model" && !settings && (
+                <div className="text-sm text-gray-500">加载中…</div>
+            )}
             {tab === "model" && settings && (
                 <div className="space-y-6">
                     <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
@@ -366,54 +407,173 @@ export default function SettingsPage() {
 
             {/* 用户管理（仅管理员） */}
             {tab === "admin" && (
-                <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b border-gray-800 text-gray-400 text-left">
-                                <th className="px-4 py-3">工号</th>
-                                <th className="px-4 py-3">姓名</th>
-                                <th className="px-4 py-3">部门</th>
-                                <th className="px-4 py-3">状态</th>
-                                <th className="px-4 py-3">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {users.map(u => (
-                                <tr key={u.user_id} className="border-b border-gray-800/50">
-                                    <td className="px-4 py-3 font-mono text-gray-300">{u.username}</td>
-                                    <td className="px-4 py-3 text-gray-300">
-                                        {u.full_name}
-                                        {u.is_admin && (
-                                            <span className="ml-2 px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 text-xs rounded">
-                                                管理员
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-gray-400">{u.department}</td>
-                                    <td className="px-4 py-3">
-                                        <span className={`px-2 py-0.5 rounded text-xs ${u.is_active
-                                            ? "bg-green-500/20 text-green-400"
-                                            : "bg-red-500/20 text-red-400"
-                                            }`}>
-                                            {u.is_active ? "启用" : "禁用"}
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-3">
-                                        <div className="flex gap-2">
-                                            <button onClick={() => toggleUser(u.user_id)}
-                                                className="px-2 py-1 bg-gray-800 text-gray-400 text-xs rounded hover:text-white">
-                                                {u.is_active ? "禁用" : "启用"}
-                                            </button>
-                                            <button onClick={() => toggleAdmin(u.user_id)}
-                                                className="px-2 py-1 bg-gray-800 text-gray-400 text-xs rounded hover:text-white">
-                                                {u.is_admin ? "撤销管理员" : "设为管理员"}
-                                            </button>
-                                        </div>
-                                    </td>
+                <div className="space-y-4">
+                    {/* 操作栏 */}
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-500">共 {users.length} 个用户</span>
+                        <button
+                            onClick={() => { setShowCreate(v => !v); setCreateForm({ username: "", password: "", full_name: "", department: "", email: "", is_admin: false }); }}
+                            className="px-4 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-500 transition-colors"
+                        >
+                            + 新建用户
+                        </button>
+                    </div>
+
+                    {/* 新建用户面板 */}
+                    {showCreate && (
+                        <div className="bg-gray-900 border border-indigo-700/50 rounded-xl p-5 space-y-4">
+                            <h3 className="text-sm font-semibold text-white">新建用户</h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1 block">工号 <span className="text-red-400">*</span></label>
+                                    <input
+                                        value={createForm.username}
+                                        onChange={e => setCreateForm(f => ({ ...f, username: e.target.value }))}
+                                        placeholder="6位数字工号"
+                                        maxLength={6}
+                                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200 outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1 block">初始密码 <span className="text-red-400">*</span></label>
+                                    <input
+                                        type="password"
+                                        value={createForm.password}
+                                        onChange={e => setCreateForm(f => ({ ...f, password: e.target.value }))}
+                                        placeholder="至少6位"
+                                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200 outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1 block">姓名</label>
+                                    <input
+                                        value={createForm.full_name}
+                                        onChange={e => setCreateForm(f => ({ ...f, full_name: e.target.value }))}
+                                        placeholder="真实姓名"
+                                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200 outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1 block">部门</label>
+                                    <input
+                                        value={createForm.department}
+                                        onChange={e => setCreateForm(f => ({ ...f, department: e.target.value }))}
+                                        placeholder="所在部门"
+                                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200 outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="text-xs text-gray-500 mb-1 block">邮箱</label>
+                                    <input
+                                        type="email"
+                                        value={createForm.email}
+                                        onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))}
+                                        placeholder="工作邮箱（选填）"
+                                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200 outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* 权限 */}
+                            <div className="pt-1">
+                                <label className="text-xs text-gray-500 mb-2 block">用户权限</label>
+                                <div className="flex gap-3">
+                                    {[
+                                        { value: false, label: "普通用户", desc: "可查询、浏览文档" },
+                                        { value: true,  label: "管理员",   desc: "全部权限 + 用户管理" },
+                                    ].map(opt => (
+                                        <label
+                                            key={String(opt.value)}
+                                            className={`flex items-start gap-2.5 flex-1 p-3 rounded-lg border cursor-pointer transition-colors ${
+                                                createForm.is_admin === opt.value
+                                                    ? "border-indigo-600 bg-indigo-600/10"
+                                                    : "border-gray-700 hover:border-gray-600"
+                                            }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="is_admin"
+                                                checked={createForm.is_admin === opt.value}
+                                                onChange={() => setCreateForm(f => ({ ...f, is_admin: opt.value }))}
+                                                className="mt-0.5 accent-indigo-600"
+                                            />
+                                            <div>
+                                                <div className="text-sm text-gray-200">{opt.label}</div>
+                                                <div className="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex gap-2 pt-1">
+                                <button
+                                    onClick={createUser}
+                                    disabled={creating}
+                                    className="px-5 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-500 disabled:opacity-40"
+                                >
+                                    {creating ? "创建中..." : "创建用户"}
+                                </button>
+                                <button
+                                    onClick={() => setShowCreate(false)}
+                                    className="px-4 py-2 bg-gray-800 text-gray-400 text-sm rounded-lg hover:text-white"
+                                >
+                                    取消
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 用户列表 */}
+                    <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-gray-800 text-gray-400 text-left">
+                                    <th className="px-4 py-3">工号</th>
+                                    <th className="px-4 py-3">姓名</th>
+                                    <th className="px-4 py-3">部门</th>
+                                    <th className="px-4 py-3">权限</th>
+                                    <th className="px-4 py-3">状态</th>
+                                    <th className="px-4 py-3">操作</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {users.map(u => (
+                                    <tr key={u.user_id} className="border-b border-gray-800/50 hover:bg-gray-800/20">
+                                        <td className="px-4 py-3 font-mono text-gray-300">{u.username}</td>
+                                        <td className="px-4 py-3 text-gray-300">{u.full_name || "—"}</td>
+                                        <td className="px-4 py-3 text-gray-400">{u.department || "—"}</td>
+                                        <td className="px-4 py-3">
+                                            <span className={`px-2 py-0.5 rounded text-xs ${u.is_admin
+                                                ? "bg-indigo-500/20 text-indigo-400"
+                                                : "bg-gray-700 text-gray-400"}`}>
+                                                {u.is_admin ? "管理员" : "普通用户"}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <span className={`px-2 py-0.5 rounded text-xs ${u.is_active
+                                                ? "bg-green-500/20 text-green-400"
+                                                : "bg-red-500/20 text-red-400"}`}>
+                                                {u.is_active ? "启用" : "禁用"}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex gap-2">
+                                                <button onClick={() => toggleUser(u.user_id)}
+                                                    className="px-2 py-1 bg-gray-800 text-gray-400 text-xs rounded hover:text-white transition-colors">
+                                                    {u.is_active ? "禁用" : "启用"}
+                                                </button>
+                                                <button onClick={() => toggleAdmin(u.user_id)}
+                                                    className="px-2 py-1 bg-gray-800 text-gray-400 text-xs rounded hover:text-white transition-colors">
+                                                    {u.is_admin ? "撤销管理员" : "设为管理员"}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
 
