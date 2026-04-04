@@ -189,6 +189,7 @@ export default function QueryPage() {
     const [pendingImages,  setPendingImages]  = useState<string[]>([]);
     const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
     const [causalChain,    setCausalChain]    = useState<CausalChainData | null>(null);
+    const [quoteSource,    setQuoteSource]    = useState<SourceSection | null>(null);
     const [netToast, setNetToast] = useState<{ type: NetToastType; label: string } | null>(null);
     const answerRef    = useRef("");
     const bottomRef    = useRef<HTMLDivElement>(null);
@@ -245,10 +246,15 @@ export default function QueryPage() {
     async function handleSubmit() {
         if ((!input.trim() && pendingImages.length === 0) || loading || streaming) return;
 
-        const question = input.trim();
+        // 如果有引用章节，将引用信息拼入问题，帮助模型定位上下文
+        const citation = quoteSource
+            ? `> 引用章节：${quoteSource.doc_id} §${quoteSource.number}《${quoteSource.title}》\n\n`
+            : "";
+        const question = citation + input.trim();
         const images   = [...pendingImages];
         setInput("");
         setPendingImages([]);
+        setQuoteSource(null);
         setReasoningSteps([]);
         setCausalChain(null);
 
@@ -412,6 +418,11 @@ export default function QueryPage() {
         });
     }
 
+    function handleQuoteSource(source: SourceSection) {
+        setQuoteSource(source);
+        handleSourceClick(source.chunk_id); // 同时记录隐式反馈
+    }
+
     function exportConversation() {
         if (!activeConv || activeConv.messages.length === 0) return;
         const lines = [
@@ -520,6 +531,7 @@ export default function QueryPage() {
                                             images={msg.images}
                                             streaming={streaming && msg.id === streamingMsgId}
                                             onSourceClick={handleSourceClick}
+                                            onQuoteSource={handleQuoteSource}
                                             onBranch={msg.role === "assistant" && !streaming
                                                 ? () => handleBranch(i)
                                                 : undefined}
@@ -541,12 +553,14 @@ export default function QueryPage() {
                     streaming={streaming}
                     historyLen={historyLen}
                     pendingImages={pendingImages}
+                    quoteSource={quoteSource}
                     onChange={setInput}
                     onStrategy={setStrategy}
                     onSubmit={handleSubmit}
                     onClear={clearConversation}
                     onAddImages={imgs => setPendingImages(prev => [...prev, ...imgs])}
                     onRemoveImage={idx => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
+                    onClearQuote={() => setQuoteSource(null)}
                 />
             </div>
         </div>

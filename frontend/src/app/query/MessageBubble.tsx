@@ -2,6 +2,7 @@
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ExternalLink, Reply } from "lucide-react";
 import { SourceSection } from "./types";
 import SourceGraph from "./SourceGraph";
 
@@ -14,10 +15,11 @@ interface Props {
     images?: string[];
     streaming?: boolean;
     onSourceClick?: (chunkId: string) => void;
+    onQuoteSource?: (source: SourceSection) => void;
     onBranch?: () => void;
 }
 
-export default function MessageBubble({ role, content, sources, images, streaming, onSourceClick, onBranch }: Props) {
+export default function MessageBubble({ role, content, sources, images, streaming, onSourceClick, onQuoteSource, onBranch }: Props) {
     if (role === "user") {
         return (
             <div className="flex justify-end mb-6">
@@ -101,28 +103,43 @@ export default function MessageBubble({ role, content, sources, images, streamin
                             <div className="text-xs text-gray-600 mb-2">引用来源</div>
                             <div className="flex flex-wrap gap-2">
                                 {sources.map((s, idx) => (
-                                    <Link
-                                        key={s.chunk_id}
-                                        href={`/library/${s.doc_id}`}
-                                        onClick={() => onSourceClick?.(s.chunk_id)}
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-1
-                               bg-gray-800 hover:bg-gray-700 rounded-lg
-                               border border-gray-700 hover:border-indigo-500
-                               transition-colors cursor-pointer"
-                                    >
-                                        {/* 排名徽章 */}
-                                        <span className="w-4 h-4 rounded-full flex items-center justify-center
-                                                         text-[10px] font-bold text-gray-900 flex-shrink-0"
-                                              style={{ backgroundColor: RANK_COLORS[idx] ?? "#6b7280" }}>
-                                            {idx + 1}
-                                        </span>
-                                        <span className="text-xs font-mono text-indigo-400">
-                                            {s.doc_id} §{s.number}
-                                        </span>
-                                        <span className="text-xs text-gray-400 max-w-[120px] truncate">
-                                            {s.title}
-                                        </span>
-                                    </Link>
+                                    <div key={s.chunk_id} className="inline-flex items-center group">
+                                        {/* 引用按钮 */}
+                                        <button
+                                            onClick={() => {
+                                                onSourceClick?.(s.chunk_id);
+                                                onQuoteSource?.(s);
+                                            }}
+                                            title="点击追问此章节"
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1
+                                                       bg-gray-800 hover:bg-indigo-900/40 rounded-l-lg
+                                                       border border-gray-700 hover:border-indigo-500
+                                                       transition-colors"
+                                        >
+                                            <span className="w-4 h-4 rounded-full flex items-center justify-center
+                                                             text-[10px] font-bold text-gray-900 flex-shrink-0"
+                                                  style={{ backgroundColor: RANK_COLORS[idx] ?? "#6b7280" }}>
+                                                {idx + 1}
+                                            </span>
+                                            <span className="text-xs font-mono text-indigo-400">
+                                                {s.doc_id} §{s.number}
+                                            </span>
+                                            <span className="text-xs text-gray-400 max-w-[120px] truncate">
+                                                {s.title}
+                                            </span>
+                                            <Reply size={10} className="text-gray-600 group-hover:text-indigo-400 transition-colors flex-shrink-0" />
+                                        </button>
+                                        {/* 跳转原文链接 */}
+                                        <Link
+                                            href={`/library/${s.doc_id}`}
+                                            title="查看原文"
+                                            className="px-1.5 py-1 border border-l-0 border-gray-700
+                                                       hover:border-indigo-500 rounded-r-lg
+                                                       text-gray-600 hover:text-indigo-400 transition-colors"
+                                        >
+                                            <ExternalLink size={10} />
+                                        </Link>
+                                    </div>
                                 ))}
                             </div>
                             {/* 来源图谱 */}

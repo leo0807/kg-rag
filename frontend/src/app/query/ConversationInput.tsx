@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useEffect, useCallback } from "react";
-import { Send, RotateCcw, Paperclip, X } from "lucide-react";
-import { Strategy } from "./types";
+import { Send, RotateCcw, Paperclip, X, Reply } from "lucide-react";
+import { Strategy, SourceSection } from "./types";
 
 const strategies: { value: Strategy; label: string; title: string }[] = [
     { value: "parallel",       label: "并行",   title: "全文 + 向量 RRF 融合" },
@@ -18,22 +18,30 @@ interface Props {
     streaming: boolean;
     historyLen: number;
     pendingImages: string[];
+    quoteSource?: SourceSection | null;
     onChange: (v: string) => void;
     onStrategy: (s: Strategy) => void;
     onSubmit: () => void;
     onClear: () => void;
     onAddImages: (imgs: string[]) => void;
     onRemoveImage: (idx: number) => void;
+    onClearQuote?: () => void;
 }
 
 export default function ConversationInput({
     value, strategy, loading, streaming, historyLen, pendingImages,
-    onChange, onStrategy, onSubmit, onClear, onAddImages, onRemoveImage,
+    quoteSource, onChange, onStrategy, onSubmit, onClear,
+    onAddImages, onRemoveImage, onClearQuote,
 }: Props) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => { textareaRef.current?.focus(); }, []);
+
+    // 有引用时自动聚焦输入框
+    useEffect(() => {
+        if (quoteSource) textareaRef.current?.focus();
+    }, [quoteSource]);
 
     function handleKeyDown(e: React.KeyboardEvent) {
         if (e.key === "Enter" && !e.shiftKey && !loading && !streaming) {
@@ -99,6 +107,29 @@ export default function ConversationInput({
                     </button>
                 )}
             </div>
+
+            {/* 引用来源 chip */}
+            {quoteSource && (
+                <div className="mb-2 px-3 py-2 bg-indigo-950/60 border border-indigo-700/50
+                                rounded-xl flex items-start gap-2.5">
+                    <Reply size={13} className="text-indigo-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                        <div className="text-xs text-indigo-300 font-medium leading-snug">
+                            追问引用 · <span className="font-mono">{quoteSource.doc_id} §{quoteSource.number}</span>
+                        </div>
+                        <div className="text-xs text-indigo-400/70 truncate mt-0.5">
+                            {quoteSource.title}
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClearQuote}
+                        className="text-indigo-600 hover:text-indigo-300 transition-colors shrink-0 mt-0.5"
+                        title="取消引用"
+                    >
+                        <X size={12} />
+                    </button>
+                </div>
+            )}
 
             {/* 图片预览区 */}
             {pendingImages.length > 0 && (
