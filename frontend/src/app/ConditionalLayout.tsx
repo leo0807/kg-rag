@@ -28,24 +28,28 @@ export default function ConditionalLayout({
     }, [pathname, showSidebar, router]);
 
     // 全局 401 拦截：仅拦截 /api/ 请求，避免干扰 Next.js 内部请求（HMR/RSC/路由）
+    // 注意：外层使用普通函数（非 async），确保非 API 请求返回原始 Promise，
+    // 不引入额外的微任务延迟，避免破坏 Turbopack 路由参数初始化时序。
     useEffect(() => {
         const original = window.fetch;
-        window.fetch = async function (...args: Parameters<typeof fetch>) {
+        window.fetch = function (...args: Parameters<typeof fetch>): Promise<Response> {
             const url = typeof args[0] === "string" ? args[0]
                 : args[0] instanceof Request ? args[0].url : "";
-            // 只拦截业务 API 请求，内部 /_next/ 请求直接放行
+            // 非 API 请求：直接返回原始 Promise，零额外开销
             if (!url.includes("/api/")) {
                 return original.apply(window, args);
             }
-            const res = await original.apply(window, args);
-            if (res.status === 401) {
-                if (!url.includes("/api/auth/login") && !url.includes("/api/auth/refresh")) {
+            // API 请求：检查 401 并跳转登录
+            return original.apply(window, args).then(res => {
+                if (res.status === 401
+                    && !url.includes("/api/auth/login")
+                    && !url.includes("/api/auth/refresh")) {
                     localStorage.removeItem("token");
                     localStorage.removeItem("user");
                     window.location.href = "/login";
                 }
-            }
-            return res;
+                return res;
+            });
         };
         return () => { window.fetch = original; };
     }, []);
