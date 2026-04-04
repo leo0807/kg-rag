@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { Download } from "lucide-react";
 import SkeletonCard from "@/components/SkeletonCard";
+import NetToast from "@/components/NetToast";
+import type { NetToastType } from "@/components/NetToast";
 import ConversationSidebar from "./ConversationSidebar";
 import MessageBubble from "./MessageBubble";
 import ConversationInput from "./ConversationInput";
@@ -187,8 +189,18 @@ export default function QueryPage() {
     const [pendingImages,  setPendingImages]  = useState<string[]>([]);
     const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
     const [causalChain,    setCausalChain]    = useState<CausalChainData | null>(null);
-    const answerRef = useRef("");
-    const bottomRef = useRef<HTMLDivElement>(null);
+    const [netToast, setNetToast] = useState<{ type: NetToastType; label: string } | null>(null);
+    const answerRef    = useRef("");
+    const bottomRef    = useRef<HTMLDivElement>(null);
+    const toastTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    function showNetToast(type: NetToastType, label: string, autoDismissMs?: number) {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        setNetToast({ type, label });
+        if (autoDismissMs) {
+            toastTimer.current = setTimeout(() => setNetToast(null), autoDismissMs);
+        }
+    }
 
     // Refs 用于在 visibilitychange 回调中读取最新值，避免闭包过期
     const activeIdRef       = useRef<string | null>(activeId);
@@ -216,6 +228,19 @@ export default function QueryPage() {
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [activeConv?.messages.length, streaming]);
+
+    // 网络在线/离线检测
+    useEffect(() => {
+        const handleOffline = () => showNetToast("offline", "网络已断开");
+        const handleOnline  = () => showNetToast("online",  "网络已恢复", 3000);
+        window.addEventListener("offline", handleOffline);
+        window.addEventListener("online",  handleOnline);
+        return () => {
+            window.removeEventListener("offline", handleOffline);
+            window.removeEventListener("online",  handleOnline);
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     async function handleSubmit() {
         if ((!input.trim() && pendingImages.length === 0) || loading || streaming) return;
@@ -256,47 +281,76 @@ export default function QueryPage() {
         answerRef.current = "";
 
         const history = (activeConv?.messages ?? []).map(m => ({ role: m.role, content: m.content }));
+
+        // 定期将流式内容写入对话记录
+        const intervalId = setInterval(() => {
+            updateConversation(convId!, newMsgs.map(m =>
+                m.id === aiMsgId ? { ...m, content: answerRef.current } : m
+            ));
+        }, 150);
+
+        let sources: SourceSection[] = [];
+        let streamCausalChain: CausalChainData | null = null;
+
+        // SSE 流读取 + 指数退避重连
+        const MAX_RETRIES = 3;
+        let retryDelay    = 1000;
+
         try {
-            const token = localStorage.getItem("token") ?? "";
-            const res = await fetch("http://localhost:8000/api/query/stream", {
-                method:  "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-                body:    JSON.stringify({ question, strategy, history, images }),
-            });
-
-            if (!res.ok) throw new Error("请求失败");
-            setLoading(false);
-            setStreaming(true);
-
-            const reader  = res.body!.getReader();
-            const decoder = new TextDecoder();
-            let sources: SourceSection[] = [];
-            let streamCausalChain: CausalChainData | null = null;
-
-            const intervalId = setInterval(() => {
-                updateConversation(convId!, newMsgs.map(m =>
-                    m.id === aiMsgId ? { ...m, content: answerRef.current } : m
-                ));
-            }, 150);
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                for (const line of decoder.decode(value).split("\n")) {
-                    if (!line.startsWith("data: ")) continue;
-                    const data = line.slice(6);
-                    if (data === "[DONE]") break;
-                    try {
-                        const event = JSON.parse(data);
-                        if (event.type === "sources")          sources = event.content;
-                        else if (event.type === "delta")       answerRef.current += event.content;
-                        else if (event.type === "steps")       setReasoningSteps(event.content || []);
-                        else if (event.type === "causal_chain") {
-                            streamCausalChain = event.content;
-                            setCausalChain(event.content);
-                        }
-                    } catch { }
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+                if (attempt > 0) {
+                    showNetToast("reconnecting", `连接中断，${retryDelay / 1000}s 后重试 (${attempt}/${MAX_RETRIES})…`);
+                    await new Promise(r => setTimeout(r, retryDelay));
+                    retryDelay = Math.min(retryDelay * 2, 8000);
+                    answerRef.current = ""; // 重置内容，重新生成
+                    showNetToast("reconnecting", "正在重连…");
                 }
+
+                let streamDone = false;
+                try {
+                    const token = localStorage.getItem("token") ?? "";
+                    const res = await fetch("http://localhost:8000/api/query/stream", {
+                        method:  "POST",
+                        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+                        body:    JSON.stringify({ question, strategy, history, images }),
+                    });
+                    if (!res.ok) throw new Error("请求失败");
+
+                    if (attempt === 0) {
+                        setLoading(false);
+                        setStreaming(true);
+                    } else {
+                        showNetToast("online", "已重连", 3000);
+                    }
+
+                    const reader  = res.body!.getReader();
+                    const decoder = new TextDecoder();
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        for (const line of decoder.decode(value).split("\n")) {
+                            if (!line.startsWith("data: ")) continue;
+                            const data = line.slice(6);
+                            if (data === "[DONE]") break;
+                            try {
+                                const event = JSON.parse(data);
+                                if (event.type === "sources")           sources = event.content;
+                                else if (event.type === "delta")        answerRef.current += event.content;
+                                else if (event.type === "steps")        setReasoningSteps(event.content || []);
+                                else if (event.type === "causal_chain") {
+                                    streamCausalChain = event.content;
+                                    setCausalChain(event.content);
+                                }
+                            } catch { }
+                        }
+                    }
+                    streamDone = true;
+                } catch {
+                    if (attempt >= MAX_RETRIES) throw new Error("网络异常，已达最大重试次数");
+                }
+
+                if (streamDone) break;
             }
 
             clearInterval(intervalId);
@@ -311,6 +365,7 @@ export default function QueryPage() {
             await updateConversation(convId!, finalMsgs);
 
         } catch (e) {
+            clearInterval(intervalId);
             setLoading(false);
             setStreaming(false);
             setStreamingMsgId(null);
@@ -378,6 +433,13 @@ export default function QueryPage() {
 
     return (
         <div className="flex h-full bg-gray-950">
+            {netToast && (
+                <NetToast
+                    type={netToast.type}
+                    label={netToast.label}
+                    onClose={() => setNetToast(null)}
+                />
+            )}
             <ConversationSidebar
                 conversations={conversations}
                 activeId={activeId}
