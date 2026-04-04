@@ -66,6 +66,89 @@ async def query_stream(
             except Exception as e:
                 logger.warning("多跳流式推理失败，降级: %s", e)
 
+        # ── 反事实图查询 ─────────────────────────────────────────────
+        if req.strategy == "counterfactual":
+            try:
+                from ...services.counterfactual import prepare_counterfactual
+                yield f"data: {json.dumps({'type': 'status', 'content': '分析因果链...'}, ensure_ascii=False)}\n\n"
+                cf_sections, causal_chain, cf_messages = prepare_counterfactual(
+                    req.question, driver, top_k=top_k
+                )
+                # 注入多轮对话历史（system + history + 当前用户消息）
+                if req.history:
+                    history_msgs = [
+                        {"role": h.get("role", "user"), "content": h.get("content", "")}
+                        for h in req.history[-10:]
+                        if h.get("content", "").strip()
+                    ]
+                    # cf_messages = [system, user]; 在 system 和 user 之间插入历史
+                    cf_messages = [cf_messages[0]] + history_msgs + [cf_messages[-1]]
+                yield f"data: {json.dumps({'type': 'causal_chain', 'content': causal_chain}, ensure_ascii=False)}\n\n"
+                sources_cf = [
+                    {
+                        "chunk_id": s["chunk_id"], "doc_id": s["doc_id"],
+                        "number":   s.get("number") or "", "title": s.get("title") or "",
+                        "score":    0.0,
+                    }
+                    for s in cf_sections
+                ]
+                yield f"data: {json.dumps({'type': 'sources', 'content': sources_cf}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'status', 'content': '推理中...'}, ensure_ascii=False)}\n\n"
+
+                full_answer   = ""
+                prompt_tokens = 0
+                compl_tokens  = 0
+                try:
+                    async with httpx.AsyncClient(timeout=90) as client:
+                        async with client.stream(
+                            "POST",
+                            f"{settings.LLM_API_URL.rstrip('/')}/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {settings.LLM_API_KEY}",
+                                "Content-Type":  "application/json",
+                            },
+                            json={
+                                "model":          settings.LLM_MODEL,
+                                "messages":       cf_messages,
+                                "stream":         True,
+                                "stream_options": {"include_usage": True},
+                            },
+                        ) as response:
+                            async for line in response.aiter_lines():
+                                if not line or not line.startswith("data: "):
+                                    continue
+                                data = line[6:]
+                                if data == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(data)
+                                    if chunk.get("usage") and not chunk.get("choices"):
+                                        usage = chunk["usage"]
+                                        prompt_tokens = usage.get("prompt_tokens", 0)
+                                        compl_tokens  = usage.get("completion_tokens", 0)
+                                        continue
+                                    delta = chunk["choices"][0]["delta"].get("content", "")
+                                    if delta:
+                                        full_answer += delta
+                                        yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
+                                except Exception:
+                                    pass
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+
+                latency_ms = int((time.time() - t_start) * 1000)
+                send_generation(
+                    name="graphrag-stream", model=settings.LLM_MODEL,
+                    input_messages=[{"role": "user", "content": req.question}],
+                    output=full_answer, prompt_tokens=prompt_tokens, completion_tokens=compl_tokens,
+                    latency_ms=latency_ms, strategy="counterfactual",
+                    user_id=user_id, department=department, question_preview=req.question,
+                )
+                yield "data: [DONE]\n\n"
+                return
+            except Exception as e:
+                logger.warning("反事实查询失败，降级到标准检索: %s", e)
+
         sections, ft_score_map = do_retrieval(driver, req.question, req.strategy, top_k)
 
         sources = [

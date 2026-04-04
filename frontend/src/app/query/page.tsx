@@ -7,12 +7,18 @@ import ConversationSidebar from "./ConversationSidebar";
 import MessageBubble from "./MessageBubble";
 import ConversationInput from "./ConversationInput";
 import { useConversations } from "./useConversations";
-import { Message, SourceSection, Strategy } from "./types";
+import { Message, SourceSection, Strategy, CausalChainData } from "./types";
 
 const SUGGESTED = [
     "液压导管修理需要什么工具",
     "CPS1220 的技术要求是什么",
     "收压接头的安装步骤有哪些",
+];
+
+const COUNTERFACTUAL_EXAMPLES = [
+    "如果去掉热处理工序，铝合金零件还能满足强度要求吗？",
+    "省略打孔前脱脂步骤，铆钉连接处是否仍满足密封标准？",
+    "不用扭矩扳手装配螺栓，能否满足力矩要求？",
 ];
 
 // ── 多跳推理链路展示组件 ───────────────────────────────────────────────────────
@@ -64,6 +70,108 @@ function ReasoningChain({ steps }: { steps: ReasoningStep[] }) {
     );
 }
 
+// ── 反事实因果链展示组件 ──────────────────────────────────────────────────────
+function CausalChainPanel({ data }: { data: CausalChainData }) {
+    const [open, setOpen] = useState(true);
+    const intent = data.intent;
+    const typeLabel: Record<string, string> = {
+        Process: "工序", Tool: "工具", Material: "材料", Constraint: "约束",
+    };
+
+    return (
+        <div className="mb-4 border border-amber-800/40 rounded-xl overflow-hidden bg-amber-950/10">
+            <button
+                onClick={() => setOpen(v => !v)}
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-amber-900/10 transition-colors"
+            >
+                <svg className={`w-3 h-3 transition-transform text-amber-500 ${open ? "rotate-90" : ""}`}
+                    viewBox="0 0 12 12" fill="currentColor"><path d="M4 2l5 4-5 4V2z" /></svg>
+                <span className="text-xs text-amber-400 font-medium">反事实因果链分析</span>
+                {intent.removed_name && (
+                    <span className="ml-1 px-1.5 py-0.5 bg-amber-800/30 text-amber-300 text-xs rounded">
+                        去掉：{intent.removed_name}
+                    </span>
+                )}
+                <span className="ml-auto text-xs text-amber-700">
+                    {data.affected_sections.length} 个受影响章节
+                </span>
+            </button>
+
+            {open && (
+                <div className="px-4 pb-4 space-y-3">
+                    {/* 意图摘要 */}
+                    <div className="flex flex-wrap gap-2 pt-1 text-xs">
+                        {intent.removed_name && (
+                            <span className="px-2 py-1 bg-red-900/30 border border-red-800/40 text-red-400 rounded-lg">
+                                ❌ 移除 {typeLabel[intent.removed_type] || ""} · {intent.removed_name}
+                            </span>
+                        )}
+                        {intent.subject && (
+                            <span className="px-2 py-1 bg-gray-800 text-gray-400 rounded-lg">
+                                主体：{intent.subject}
+                            </span>
+                        )}
+                        {intent.requirement && (
+                            <span className="px-2 py-1 bg-gray-800 text-gray-400 rounded-lg">
+                                目标：{intent.requirement}
+                            </span>
+                        )}
+                    </div>
+
+                    {/* 受影响章节 + 约束 */}
+                    {data.affected_sections.length > 0 && (
+                        <div>
+                            <div className="text-xs text-gray-500 mb-1.5">受影响章节与约束</div>
+                            <div className="space-y-1.5">
+                                {data.affected_sections.slice(0, 5).map(sec => (
+                                    <div key={sec.chunk_id}
+                                        className="flex items-start gap-2 bg-gray-900/60 rounded-lg px-3 py-2">
+                                        <span className="text-xs text-amber-600 shrink-0 mt-0.5">⚠</span>
+                                        <div className="min-w-0">
+                                            <span className="text-xs text-indigo-400 font-mono mr-1">
+                                                {sec.doc_id} §{sec.number}
+                                            </span>
+                                            <span className="text-xs text-gray-300">{sec.title}</span>
+                                            {sec.constraints.length > 0 && (
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                    {sec.constraints.slice(0, 3).map((c, i) => (
+                                                        <span key={i}
+                                                            className="text-xs bg-amber-900/20 border border-amber-800/30 text-amber-400 px-1.5 py-0.5 rounded">
+                                                            {(c.description || c.type || "").trim()}
+                                                            {c.value && ` ${c.value}${c.value_max ? "~" + c.value_max : ""} ${c.unit || ""}`.trim()}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 替代方案 */}
+                    <div>
+                        <div className="text-xs text-gray-500 mb-1.5">替代方案</div>
+                        {data.alternatives.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                                {data.alternatives.map((alt, i) => (
+                                    <span key={i}
+                                        className="text-xs bg-emerald-900/20 border border-emerald-800/30 text-emerald-400 px-2 py-0.5 rounded-lg">
+                                        ✓ {alt}
+                                    </span>
+                                ))}
+                            </div>
+                        ) : (
+                            <span className="text-xs text-gray-600">图谱中未发现已知替代方案</span>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function QueryPage() {
     const {
         conversations, activeId, activeConv,
@@ -78,6 +186,7 @@ export default function QueryPage() {
     const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
     const [pendingImages,  setPendingImages]  = useState<string[]>([]);
     const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
+    const [causalChain,    setCausalChain]    = useState<CausalChainData | null>(null);
     const answerRef = useRef("");
     const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -116,6 +225,7 @@ export default function QueryPage() {
         setInput("");
         setPendingImages([]);
         setReasoningSteps([]);
+        setCausalChain(null);
 
         let convId = activeId;
         if (!convId) {
@@ -161,6 +271,7 @@ export default function QueryPage() {
             const reader  = res.body!.getReader();
             const decoder = new TextDecoder();
             let sources: SourceSection[] = [];
+            let streamCausalChain: CausalChainData | null = null;
 
             const intervalId = setInterval(() => {
                 updateConversation(convId!, newMsgs.map(m =>
@@ -177,9 +288,13 @@ export default function QueryPage() {
                     if (data === "[DONE]") break;
                     try {
                         const event = JSON.parse(data);
-                        if (event.type === "sources")     sources = event.content;
-                        else if (event.type === "delta")  answerRef.current += event.content;
-                        else if (event.type === "steps")  setReasoningSteps(event.content || []);
+                        if (event.type === "sources")          sources = event.content;
+                        else if (event.type === "delta")       answerRef.current += event.content;
+                        else if (event.type === "steps")       setReasoningSteps(event.content || []);
+                        else if (event.type === "causal_chain") {
+                            streamCausalChain = event.content;
+                            setCausalChain(event.content);
+                        }
                     } catch { }
                 }
             }
@@ -189,7 +304,9 @@ export default function QueryPage() {
             setStreamingMsgId(null);
 
             const finalMsgs = newMsgs.map(m =>
-                m.id === aiMsgId ? { ...m, content: answerRef.current, sources } : m
+                m.id === aiMsgId
+                    ? { ...m, content: answerRef.current, sources, causalChain: streamCausalChain ?? undefined }
+                    : m
             );
             await updateConversation(convId!, finalMsgs);
 
@@ -289,12 +406,12 @@ export default function QueryPage() {
                 <div className="flex-1 overflow-auto px-4 py-6">
                     <div className="max-w-3xl mx-auto">
                         {!activeConv || historyLen === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-64 gap-4">
+                            <div className="flex flex-col items-center justify-center min-h-64 gap-5 py-10">
                                 <div className="text-5xl">✈️</div>
                                 <div className="text-gray-500 text-sm">开始提问关于航空工艺规范的问题</div>
                                 <div className="flex flex-wrap gap-2 justify-center">
                                     {SUGGESTED.map(q => (
-                                        <button key={q} onClick={() => setInput(q)}
+                                        <button key={q} onClick={() => { setInput(q); }}
                                             className="px-3 py-1.5 bg-gray-900 border border-gray-700
                                                        text-xs text-gray-400 rounded-xl
                                                        hover:border-indigo-500 hover:text-white transition-colors">
@@ -302,23 +419,50 @@ export default function QueryPage() {
                                         </button>
                                     ))}
                                 </div>
+                                {/* 反事实示例 */}
+                                <div className="w-full max-w-md">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className="text-xs text-amber-600 font-medium">反事实假设推理示例</span>
+                                        <span className="text-xs text-gray-600">— 选择"反事实"策略后尝试</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        {COUNTERFACTUAL_EXAMPLES.map(q => (
+                                            <button key={q}
+                                                onClick={() => { setInput(q); setStrategy("counterfactual"); }}
+                                                className="px-3 py-2 bg-amber-950/20 border border-amber-800/30
+                                                           text-xs text-amber-400/80 rounded-xl text-left
+                                                           hover:border-amber-600/50 hover:text-amber-300 transition-colors">
+                                                {q}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         ) : (
                             <>
                                 <ReasoningChain steps={reasoningSteps} />
                                 {activeConv.messages.map((msg, i) => (
-                                    <MessageBubble
-                                        key={msg.id}
-                                        role={msg.role}
-                                        content={msg.content}
-                                        sources={msg.sources}
-                                        images={msg.images}
-                                        streaming={streaming && msg.id === streamingMsgId}
-                                        onSourceClick={handleSourceClick}
-                                        onBranch={msg.role === "assistant" && !streaming
-                                            ? () => handleBranch(i)
-                                            : undefined}
-                                    />
+                                    <div key={msg.id}>
+                                        {/* 反事实因果链面板：显示在触发它的 assistant 消息上方 */}
+                                        {msg.role === "assistant" && (
+                                            msg.causalChain
+                                                ? <CausalChainPanel data={msg.causalChain} />
+                                                : streaming && msg.id === streamingMsgId && causalChain
+                                                    ? <CausalChainPanel data={causalChain} />
+                                                    : null
+                                        )}
+                                        <MessageBubble
+                                            role={msg.role}
+                                            content={msg.content}
+                                            sources={msg.sources}
+                                            images={msg.images}
+                                            streaming={streaming && msg.id === streamingMsgId}
+                                            onSourceClick={handleSourceClick}
+                                            onBranch={msg.role === "assistant" && !streaming
+                                                ? () => handleBranch(i)
+                                                : undefined}
+                                        />
+                                    </div>
                                 ))}
                             </>
                         )}
