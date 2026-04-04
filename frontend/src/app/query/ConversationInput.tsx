@@ -3,11 +3,12 @@ import { useRef, useEffect, useCallback } from "react";
 import { Send, RotateCcw, Paperclip, X } from "lucide-react";
 import { Strategy } from "./types";
 
-const strategies: { value: Strategy; label: string }[] = [
-    { value: "parallel", label: "并行" },
-    { value: "sequential", label: "串行" },
-    { value: "graph_augmented", label: "图谱" },
-    { value: "multi_hop", label: "多跳" },
+const strategies: { value: Strategy; label: string; title: string }[] = [
+    { value: "parallel",       label: "并行",   title: "全文 + 向量 RRF 融合" },
+    { value: "sequential",     label: "串行",   title: "全文优先，精确查询" },
+    { value: "graph_augmented",label: "图谱",   title: "向量召回 + 图谱扩展" },
+    { value: "multi_hop",      label: "多跳",   title: "多跳推理，复杂因果" },
+    { value: "counterfactual", label: "反事实", title: "假设推理：去掉 X 后还能满足 Y 吗？" },
 ];
 
 interface Props {
@@ -73,9 +74,11 @@ export default function ConversationInput({
             <div className="flex items-center gap-2 mb-3">
                 <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-lg p-0.5">
                     {strategies.map(s => (
-                        <button key={s.value} onClick={() => onStrategy(s.value)}
+                        <button key={s.value} onClick={() => onStrategy(s.value)} title={s.title}
                             className={`px-2.5 py-1 rounded text-xs transition-colors ${strategy === s.value
-                                    ? "bg-indigo-600 text-white"
+                                    ? s.value === "counterfactual"
+                                        ? "bg-amber-600 text-white"
+                                        : "bg-indigo-600 text-white"
                                     : "text-gray-500 hover:text-gray-300"
                                 }`}>
                             {s.label}

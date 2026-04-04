@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Search, Trash2, Merge, RefreshCw, Filter } from "lucide-react";
+import { Search, Trash2, Merge, RefreshCw, Filter, HelpCircle, X } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 
 type EntityType = "Tool" | "Material" | "Process";
@@ -30,6 +30,7 @@ export default function EntityAuditPage() {
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [mergeTarget, setMergeTarget] = useState("");
     const [merging, setMerging]   = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -101,7 +102,7 @@ export default function EntityAuditPage() {
         <div className="flex flex-col h-full bg-gray-950">
             {/* Header */}
             <div className="px-6 py-4 border-b border-gray-800">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3">
                     <div>
                         <h1 className="text-lg font-semibold text-white">实体审核</h1>
                         <p className="text-xs text-gray-500 mt-0.5">
@@ -114,8 +115,53 @@ export default function EntityAuditPage() {
                                 {t} {counts[t] || 0}
                             </span>
                         ))}
+                        <button
+                            onClick={() => setShowHelp(v => !v)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs
+                                       text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700
+                                       border border-gray-700 transition-colors ml-2"
+                        >
+                            <HelpCircle size={13} />
+                            功能说明
+                        </button>
                     </div>
                 </div>
+
+                {/* 功能说明面板 */}
+                {showHelp && (
+                    <div className="mb-3 bg-indigo-950/30 border border-indigo-800/40 rounded-xl p-4 relative">
+                        <button
+                            onClick={() => setShowHelp(false)}
+                            className="absolute top-3 right-3 text-gray-500 hover:text-white transition-colors"
+                        >
+                            <X size={13} />
+                        </button>
+                        <h3 className="text-xs font-semibold text-indigo-300 mb-2">这个页面是做什么的？</h3>
+                        <p className="text-xs text-gray-300 leading-relaxed mb-2">
+                            系统在读取文档时会自动识别出专业名词，例如工具名称、材料名称和工艺操作。
+                            但自动识别难免会产生重复或拼写不一的条目（如"扭矩扳手"和"扭力扳手"其实是同一件工具）。
+                            本页面让管理员能够整理这些条目，从而提升问答的准确性。
+                        </p>
+                        <div className="space-y-1 text-xs text-gray-400">
+                            <div className="flex items-start gap-2">
+                                <span className="text-indigo-400 shrink-0">•</span>
+                                <span><span className="text-emerald-400">Tool（工具）</span>：扳手、夹具、量具等操作工具</span>
+                            </div>
+                            <div className="flex items-start gap-2">
+                                <span className="text-indigo-400 shrink-0">•</span>
+                                <span><span className="text-orange-400">Material（材料）</span>：金属板材、密封剂、涂层等原材料</span>
+                            </div>
+                            <div className="flex items-start gap-2">
+                                <span className="text-indigo-400 shrink-0">•</span>
+                                <span><span className="text-purple-400">Process（工艺）</span>：热处理、铆接、涂装等工艺步骤</span>
+                            </div>
+                            <div className="flex items-start gap-2 mt-1.5">
+                                <span className="text-indigo-400 shrink-0">•</span>
+                                <span>勾选多个条目后可以「合并」为统一名称；对错误条目可以直接「删除」。</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Controls */}
                 <div className="flex flex-wrap items-center gap-3">

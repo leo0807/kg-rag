@@ -43,7 +43,7 @@ export default function SearchPage() {
     }
 
     return (
-        <div className="p-8 max-w-3xl min-h-screen bg-gray-950">
+        <div className="p-8 max-w-3xl mx-auto">
             <h1 className="text-2xl font-semibold text-white mb-6">全局搜索</h1>
 
             <div className="flex gap-2 mb-6">

@@ -28,20 +28,29 @@ export default function LibraryPage() {
     const [q, setQ] = useState("");
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState(false);
 
     useEffect(() => {
         setLoading(true);
+        setFetchError(false);
         const params = new URLSearchParams({
             page: String(page),
             per_page: "20",
             q: search,
         });
         fetch(`/api/documents?${params}`)
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) throw new Error("请求失败");
+                return r.json();
+            })
             .then((data: PagedResponse) => {
                 setDocs(data.data);
                 setTotal(data.total);
                 setPages(data.pages);
+                setLoading(false);
+            })
+            .catch(() => {
+                setFetchError(true);
                 setLoading(false);
             });
     }, [page, search]);
@@ -53,7 +62,7 @@ export default function LibraryPage() {
     }
 
     return (
-        <div className="p-8 max-w-4xl min-h-screen bg-gray-950">
+        <div className="p-8 max-w-6xl mx-auto">
             <div className="flex items-center justify-between mb-6">
                 <h1 className="text-2xl font-semibold text-white">
                     文档库
@@ -92,9 +101,15 @@ export default function LibraryPage() {
                 </form>
             </div>
 
+            {fetchError && (
+                <div className="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400">
+                    加载失败，请刷新页面重试
+                </div>
+            )}
+
             {loading ? (
                 <SkeletonTable rows={10} />
-            ) : (
+            ) : !fetchError && (
                 <>
                     <table className="w-full text-sm">
                         <thead>
@@ -107,6 +122,13 @@ export default function LibraryPage() {
                             </tr>
                         </thead>
                         <tbody>
+                            {docs.length === 0 && (
+                                <tr>
+                                    <td colSpan={5} className="py-12 text-center text-sm text-gray-500">
+                                        {search ? `未找到与"${search}"相关的文档` : "暂无文档"}
+                                    </td>
+                                </tr>
+                            )}
                             {docs.map(doc => (
                                 <tr key={doc.doc_id} className="border-b border-gray-800/50">
                                     <td className="py-3 pr-6 font-mono text-indigo-400">
