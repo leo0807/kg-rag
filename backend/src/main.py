@@ -59,6 +59,32 @@ async def lifespan(app: FastAPI):
 
     await init_tables()
 
+    # 首次启动：若无任何用户，自动创建默认管理员账号
+    try:
+        import uuid
+        from sqlalchemy import select as sa_select
+        from .db.session import AsyncSessionLocal
+        from .db.models import User
+        from .auth.password import hash_password
+
+        async with AsyncSessionLocal() as _db:
+            first_user = (await _db.execute(sa_select(User).limit(1))).scalar_one_or_none()
+            if not first_user:
+                _db.add(User(
+                    id         = str(uuid.uuid4()),
+                    username   = "000001",
+                    email      = "admin@internal",
+                    hashed_pw  = hash_password("admin123"),
+                    full_name  = "默认管理员",
+                    department = "",
+                    is_admin   = True,
+                    is_active  = True,
+                ))
+                await _db.commit()
+                logger.info("已创建默认管理员账号 工号=000001 密码=admin123，请登录后及时修改密码")
+    except Exception as e:
+        logger.warning("默认管理员账号初始化失败（不影响主流程）: %s", e)
+
     # 确保 Neo4j 全文索引存在
     try:
         driver = get_driver()
@@ -243,6 +269,26 @@ async def health(driver: Driver = Depends(get_driver)):
         "time":    int(time.time()),
     }
 
+def _is_logo(img) -> bool:
+    """
+    判断提取的图片是否为 Logo/装饰图，用于排除非内容图片。
+    判断依据：
+    1. 宽高比极大（横幅/页眉 Logo，width/height > 4）
+    2. 宽高比极小（竖版标志，height/width > 4）
+    3. 尺寸偏小（100-150px 区间，装饰性图标）
+    4. 出现在前两页且宽高比 > 3（封面/扉页 Logo）
+    """
+    w, h = img.width, max(img.height, 1)
+    aspect = w / h
+    if aspect > 4.0 or aspect < 0.25:
+        return True
+    if w < 150 and h < 150:
+        return True
+    if img.page <= 2 and aspect > 3.0:
+        return True
+    return False
+
+
 @app.post("/api/preview")
 async def preview(file: UploadFile = File(...)):
     tmp_path = UPLOAD_DIR / file.filename
@@ -323,7 +369,7 @@ async def ingest(
         from .services.entity_writer       import link_image_tools
 
         images = extract_images_from_pdf(str(tmp_path), doc.doc_id)
-        images = [img for img in images if img.page > 2 and img.width > 200]
+        images = [img for img in images if not _is_logo(img)]
 
         if images:
             await progress("images", f"分析 {len(images)} 张图片...")
