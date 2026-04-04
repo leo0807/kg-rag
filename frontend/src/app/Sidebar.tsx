@@ -6,20 +6,21 @@ import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
 import {
     LogOut, Upload, BookOpen, Search, MessageSquare,
-    Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch, BrainCircuit,
+    Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch, BrainCircuit, BarChart2,
 } from "lucide-react";
 
 const navItems = [
-    { href: "/ingest",          label: "导入文件",   shortcut: "",   Icon: Upload       },
-    { href: "/library",         label: "文档库",     shortcut: "⌘B", Icon: BookOpen     },
-    { href: "/search",          label: "全局搜索",   shortcut: "⌘K", Icon: Search       },
-    { href: "/query",           label: "智能问答",   shortcut: "⌘/", Icon: MessageSquare},
-    { href: "/graph",           label: "图谱可视化", shortcut: "",   Icon: Network      },
-    { href: "/timeline",        label: "版本时间线", shortcut: "",   Icon: GitBranch    },
-    { href: "/compare",         label: "文档对比",   shortcut: "",   Icon: GitCompare   },
-    { href: "/admin/entities",  label: "实体审核",   shortcut: "",   Icon: ShieldCheck  },
-    { href: "/admin/gnn",       label: "GNN 训练",   shortcut: "",   Icon: BrainCircuit },
-    { href: "/settings",        label: "设置",       shortcut: "",   Icon: Settings     },
+    { href: "/ingest",              label: "导入文件",   shortcut: "",   Icon: Upload       },
+    { href: "/library",             label: "文档库",     shortcut: "⌘B", Icon: BookOpen     },
+    { href: "/search",              label: "全局搜索",   shortcut: "⌘K", Icon: Search       },
+    { href: "/query",               label: "智能问答",   shortcut: "⌘/", Icon: MessageSquare},
+    { href: "/graph",               label: "图谱可视化", shortcut: "",   Icon: Network      },
+    { href: "/timeline",            label: "版本时间线", shortcut: "",   Icon: GitBranch    },
+    { href: "/compare",             label: "文档对比",   shortcut: "",   Icon: GitCompare   },
+    { href: "/admin/entities",      label: "实体审核",   shortcut: "",   Icon: ShieldCheck  },
+    { href: "/admin/gnn",           label: "GNN 训练",   shortcut: "",   Icon: BrainCircuit },
+    { href: "/admin/analytics",     label: "活跃度报表", shortcut: "",   Icon: BarChart2    },
+    { href: "/settings",            label: "设置",       shortcut: "",   Icon: Settings     },
 ];
 
 interface UserInfo { username: string; full_name: string; department: string; }
