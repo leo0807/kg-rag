@@ -460,7 +460,10 @@ export default function GraphPage() {
             limit_entity: String(limits.entity),
             doc_id:       docFilter,
         });
-        fetch(`${API}/api/graph?${params}`).then(r => r.json()).then(setData);
+        fetch(`${API}/api/graph?${params}`)
+            .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+            .then(setData)
+            .catch(() => {});
     }, [limits, docFilter]);
 
     useEffect(() => {
