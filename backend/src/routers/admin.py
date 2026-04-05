@@ -152,7 +152,7 @@ async def llm_cost_report(
     from ..db.session import AsyncSessionLocal
     from ..db.models import LLMUsage
 
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    since = datetime.utcnow() - timedelta(days=days)
 
     async with AsyncSessionLocal() as db:
         # ── 汇总表（按指定维度）──────────────────────────────────────────────
@@ -226,8 +226,9 @@ async def _build_activity_report(days: int) -> dict:
     """构建用户活跃度报表数据（内部复用函数）"""
     from ..db.models import LLMUsage, Conversation, User as UserModel
 
-    since = datetime.now(timezone.utc) - timedelta(days=days)
-    until = datetime.now(timezone.utc)
+    # PostgreSQL stores TIMESTAMP WITHOUT TIME ZONE — pass naive datetimes
+    since = datetime.utcnow() - timedelta(days=days)
+    until = datetime.utcnow()
     weeks = max(days / 7, 1)
 
     async with AsyncSessionLocal() as db:
