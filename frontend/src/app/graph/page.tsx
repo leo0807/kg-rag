@@ -98,13 +98,14 @@ type NodeFilter = typeof NODE_TYPES[number];
 type EdgeFilter = typeof EDGE_TYPES[number];
 interface Limits { doc: number; sec: number; entity: number; }
 
-function nodeRadius(d: SimNode): number {
+function nodeRadius(d: SimNode, heatNorm = 0): number {
     const t = d.type || d.label;
     if (t === "Document")   return 36;
     if (t === "Image")      return 18;
     if (t === "Constraint") return 14;
     if (t === "Tool" || t === "Material" || t === "Process") return 16;
-    return 22;
+    // Section: base 22, scale up to 38 by heat
+    return Math.round(22 + heatNorm * 16);
 }
 
 // ── Canvas 渲染（节点数 > 500 时自动启用） ───────────────────────────────────
@@ -115,6 +116,7 @@ function drawGraphCanvas(
     onScaleChange: (s: number) => void,
     onNodeClick: (node: GraphNode) => void,
     highlightedIds: Set<string>,
+    heatMap: Map<string, number>,
     tourNodeIds?: Set<string>,
     tourCurrentId?: string,
 ): d3.ZoomBehavior<HTMLCanvasElement, unknown> {
@@ -187,13 +189,24 @@ function drawGraphCanvas(
         // Nodes
         for (const n of nodes) {
             if (n.x == null) continue;
-            const r           = nodeRadius(n);
+            const heatNorm    = heatMap.get(n.id) ?? 0;
+            const r           = nodeRadius(n, heatNorm);
             const color       = NODE_COLOR[n.type || n.label] ?? "#6b7280";
             const isCurrent   = n.id === tourCurrentId;
             const inPath      = tourNodeIds?.has(n.id) ?? false;
             const opacity     = tourMode ? (isCurrent ? 1 : inPath ? 0.72 : 0.1) : 0.95;
             const isHighlight = highlightedIds.has(n.id);
+            const isHot       = !tourMode && heatNorm > 0.15 && (n.type || n.label) === "Section";
 
+            // Heat glow ring (amber, outermost)
+            if (isHot) {
+                ctx.globalAlpha = 0.25 + heatNorm * 0.45;
+                ctx.strokeStyle = "#f59e0b";
+                ctx.lineWidth   = 1.5 + heatNorm * 3;
+                ctx.beginPath();
+                ctx.arc(n.x!, n.y!, r + 7, 0, 2 * Math.PI);
+                ctx.stroke();
+            }
             // Tour glow ring
             if (tourMode && isCurrent) {
                 ctx.globalAlpha = 0.75;
@@ -289,6 +302,7 @@ function drawGraph(
     onScaleChange: (s: number) => void,
     onNodeClick: (node: GraphNode) => void,
     highlightedIds: Set<string>,
+    heatMap: Map<string, number>,
     tourNodeIds?: Set<string>,
     tourCurrentId?: string,
 ): d3.ZoomBehavior<SVGSVGElement, unknown> {
@@ -330,7 +344,7 @@ function drawGraph(
         .force("link",    d3.forceLink(data.edges).id((d: any) => d.id).distance(linkDistance))
         .force("charge",  d3.forceManyBody().strength(chargeStrength))
         .force("center",  d3.forceCenter(width / 2, height / 2))
-        .force("collide", d3.forceCollide<SimNode>().radius(d => nodeRadius(d) + 8).strength(0.8))
+        .force("collide", d3.forceCollide<SimNode>().radius(d => nodeRadius(d, heatMap.get(d.id) ?? 0) + 8).strength(0.8))
         .alphaDecay(0.03)
         .velocityDecay(0.4);
 
@@ -375,11 +389,22 @@ function drawGraph(
         onNodeClick(d as GraphNode);
     });
 
+    // Heat glow ring for hot Section nodes (outermost, amber)
+    if (!tourMode) {
+        node.filter(d => (d.type || d.label) === "Section" && (heatMap.get(d.id) ?? 0) > 0.15)
+            .append("circle")
+            .attr("r",              d => nodeRadius(d, heatMap.get(d.id) ?? 0) + 7)
+            .attr("fill",           "none")
+            .attr("stroke",         "#f59e0b")
+            .attr("stroke-width",   d => 1.5 + (heatMap.get(d.id) ?? 0) * 3)
+            .attr("stroke-opacity", d => 0.25 + (heatMap.get(d.id) ?? 0) * 0.45);
+    }
+
     // Tour: glow ring for current stop node
     if (tourMode && tourCurrentId) {
         node.filter(d => d.id === tourCurrentId)
             .append("circle")
-            .attr("r",              d => nodeRadius(d) + 11)
+            .attr("r",              d => nodeRadius(d, heatMap.get(d.id) ?? 0) + 11)
             .attr("fill",           "none")
             .attr("stroke",         "#fbbf24")
             .attr("stroke-width",   3.5)
@@ -390,7 +415,7 @@ function drawGraph(
     if (!tourMode) {
         node.filter(d => highlightedIds.has(d.id))
             .append("circle")
-            .attr("r",              d => nodeRadius(d) + 6)
+            .attr("r",              d => nodeRadius(d, heatMap.get(d.id) ?? 0) + 6)
             .attr("fill",           "none")
             .attr("stroke",         "#f97316")
             .attr("stroke-width",   2.5)
@@ -398,7 +423,7 @@ function drawGraph(
     }
 
     node.append("circle")
-        .attr("r",    d => nodeRadius(d))
+        .attr("r",    d => nodeRadius(d, heatMap.get(d.id) ?? 0))
         .attr("fill", d => NODE_COLOR[d.type || d.label] ?? "#6b7280")
         .attr("opacity", d => {
             if (!tourMode) return 0.95;
@@ -537,6 +562,7 @@ export default function GraphPage() {
     const pendingNodeIdRef  = useRef("");
 
     const [data,           setData]           = useState<GraphData | null>(null);
+    const [heatMap,        setHeatMap]        = useState<Map<string, number>>(new Map());
     const [scale,          setScale]          = useState(1);
     const [nodeFilter,     setNodeFilter]     = useState<NodeFilter>("全部");
     const [edgeFilter,     setEdgeFilter]     = useState<EdgeFilter>("全部关系");
@@ -653,6 +679,17 @@ export default function GraphPage() {
             .catch(() => {});
     }, []);
 
+    // ── 热力数据（30天，背景加载，失败时静默降级）────────────────────────────
+    useEffect(() => {
+        fetch(`${API}/api/graph/hot-nodes?days=30&top_k=200`)
+            .then(r => r.ok ? r.json() : null)
+            .then((data: { nodes: Array<{chunk_id: string; heat_norm: number}> } | null) => {
+                if (!data?.nodes?.length) return;
+                setHeatMap(new Map(data.nodes.map(n => [n.chunk_id, n.heat_norm])));
+            })
+            .catch(() => {});
+    }, []);
+
     const handleSearch = useCallback((q: string) => {
         setSearchQuery(q);
         if (!q.trim() || !data) { setHighlightedIds(new Set()); return; }
@@ -748,6 +785,7 @@ export default function GraphPage() {
                 setScale,
                 node => setSelectedNode(node),
                 highlightedIds,
+                heatMap,
                 tourOpen ? tourNodeIds   : undefined,
                 tourOpen ? tourCurrentId : undefined,
             );
@@ -760,11 +798,12 @@ export default function GraphPage() {
                 setScale,
                 node => setSelectedNode(node),
                 highlightedIds,
+                heatMap,
                 tourOpen ? tourNodeIds   : undefined,
                 tourOpen ? tourCurrentId : undefined,
             );
         }
-    }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, tourNodeIds, tourCurrentId, tourOpen]);
+    }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, heatMap, tourNodeIds, tourCurrentId, tourOpen]);
 
     // ── 漫游控制 ───────────────────────────────────────────────────────────────
     async function startTour() {
@@ -1064,6 +1103,27 @@ export default function GraphPage() {
                                         </div>
                                     ))}
                                 </div>
+                                {heatMap.size > 0 && (
+                                    <div className="mt-3 pt-2.5 border-t border-gray-800">
+                                        <div className="text-xs text-gray-500 mb-2">查询热力</div>
+                                        <div className="flex items-center gap-2">
+                                            <div className="flex gap-0.5">
+                                                {[0.2, 0.5, 1].map(v => (
+                                                    <div key={v} className="rounded-full border border-amber-500/60"
+                                                        style={{
+                                                            width: Math.round(8 + v * 12),
+                                                            height: Math.round(8 + v * 12),
+                                                            backgroundColor: `rgba(245,158,11,${0.15 + v * 0.25})`,
+                                                        }} />
+                                                ))}
+                                            </div>
+                                            <span className="text-xs text-gray-400">低 → 高</span>
+                                        </div>
+                                        <div className="text-xs text-gray-600 mt-1">
+                                            {heatMap.size} 个热点章节
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 

@@ -550,7 +550,7 @@ python -m pytest tests/ -v
 - [ ] **图谱备份与时间点恢复**：APScheduler 定时任务（每日凌晨 2:00）触发 `neo4j-admin dump` 快照，压缩归档至对象存储（MinIO / S3），保留最近 30 天；`POST /api/admin/graph/restore?snapshot_id=` 支持回滚至任意历史快照，恢复前自动创建当前状态备份，满足等保三级审计留痕要求
 
 **查询运营分析**
-- [ ] **查询热力分析**：统计哪些 Section 节点作为检索来源被引用最频繁（基于 `query_feedback` 的 `clicked_source` 事件 + 流式返回的 sources 列表），`GET /api/admin/analytics/hot-nodes?top_k=20&days=30` 输出热点节点排行，热力值反映在可视化图谱的节点大小/亮度上，指导图谱扩充优先级
+- [x] **查询热力分析**：统计哪些 Section 节点作为检索来源被引用最频繁（基于 `query_feedback` 的 `clicked_source` 事件 + 流式返回的 sources 列表），`GET /api/admin/analytics/hot-nodes?top_k=20&days=30` 输出热点节点排行，热力值反映在可视化图谱的节点大小/亮度上，指导图谱扩充优先级
 - [ ] **检索策略效果对比**：按策略（parallel / graph_augmented / multi_hop / sequential）分组统计平均端到端延迟、👍 好评率、平均返回来源数量、LLM token 消耗，`GET /api/admin/analytics/strategy-stats?days=30`；结果表格辅助调整"自动策略选择"的路由规则
 - [ ] **零结果查询监控**：记录 `sources` 为空的查询词，`GET /api/admin/analytics/empty-queries?days=7` 输出高频零结果词表（知识盲区），每周自动邮件推送至文档管理员，指导下一批 PDF 优先入库范围
 - [x] **用户活跃度报表**：按用户 / 部门统计 DAU、周查询量、平均会话轮数、最常用检索策略，`GET /api/admin/analytics/user-activity?days=30`；支持导出 CSV，对接企业 BI 工具（如 Metabase / Superset）

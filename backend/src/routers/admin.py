@@ -387,6 +387,89 @@ async def _build_activity_report(days: int) -> dict:
     }
 
 
+@router.get("/analytics/hot-nodes")
+async def hot_nodes_report(
+    top_k: int = 20,
+    days:  int = 30,
+    _: User = Depends(_require_admin),
+):
+    """
+    查询热点 Section 节点排行。
+    热力值 = 被引用次数 + 被点击次数 × 3（点击信号权重更高）。
+    数据来源：query_feedback 表的 sources 字段 + clicked_source 详情事件。
+    """
+    import json as _json
+    from ..routers.feedback import QueryFeedback
+
+    since = datetime.utcnow() - timedelta(days=days)
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(QueryFeedback.sources, QueryFeedback.detail)
+            .where(QueryFeedback.created_at >= since)
+        )
+        rows = result.all()
+
+    cited:   dict[str, int]  = {}
+    clicked: dict[str, int]  = {}
+    meta:    dict[str, dict] = {}   # chunk_id → {doc_id, title, number}
+
+    for sources_json, detail in rows:
+        try:
+            sources = _json.loads(sources_json or "[]")
+            for s in sources:
+                cid = s.get("chunk_id")
+                if not cid:
+                    continue
+                cited[cid] = cited.get(cid, 0) + 1
+                if cid not in meta:
+                    meta[cid] = {
+                        "doc_id": s.get("doc_id", ""),
+                        "title":  s.get("title",  ""),
+                        "number": s.get("number", ""),
+                    }
+        except Exception:
+            pass
+        if detail and detail.startswith("clicked_source:"):
+            cid = detail[len("clicked_source:"):]
+            if cid:
+                clicked[cid] = clicked.get(cid, 0) + 1
+
+    all_ids = set(cited) | set(clicked)
+    if not all_ids:
+        return {
+            "period": {"days": days, "since": since.isoformat()},
+            "nodes":  [],
+        }
+
+    heat: dict[str, float] = {
+        cid: cited.get(cid, 0) + clicked.get(cid, 0) * 3.0
+        for cid in all_ids
+    }
+    max_heat = max(heat.values())
+    ranked = sorted(all_ids, key=lambda k: heat[k], reverse=True)[:top_k]
+
+    nodes = []
+    for rank, cid in enumerate(ranked, start=1):
+        m = meta.get(cid, {})
+        nodes.append({
+            "rank":          rank,
+            "chunk_id":      cid,
+            "doc_id":        m.get("doc_id", ""),
+            "title":         m.get("title",  ""),
+            "number":        m.get("number", ""),
+            "cited_count":   cited.get(cid, 0),
+            "clicked_count": clicked.get(cid, 0),
+            "heat_score":    round(heat[cid], 2),
+            "heat_norm":     round(heat[cid] / max_heat, 4),
+        })
+
+    return {
+        "period": {"days": days, "since": since.isoformat()},
+        "nodes":  nodes,
+    }
+
+
 @router.get("/analytics/user-activity")
 async def user_activity_report(
     days: int = 30,

@@ -85,6 +85,60 @@ async def _stream_explanation(topic: str, node: dict) -> AsyncIterator[str]:
         yield fallback
 
 
+@router.get("/graph/hot-nodes")
+async def graph_hot_nodes(days: int = 30, top_k: int = 200):
+    """
+    返回热点 Section 节点的归一化热力值，供图谱可视化使用（无需鉴权）。
+    热力值 = cited_count + clicked_count × 3，归一化到 [0, 1]。
+    """
+    import json as _json
+    from datetime import datetime, timedelta
+    from sqlalchemy import select
+    from ..routers.feedback import QueryFeedback
+    from ..db.session import AsyncSessionLocal
+
+    since = datetime.utcnow() - timedelta(days=days)
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(QueryFeedback.sources, QueryFeedback.detail)
+            .where(QueryFeedback.created_at >= since)
+        )
+        rows = result.all()
+
+    cited:   dict[str, int] = {}
+    clicked: dict[str, int] = {}
+
+    for sources_json, detail in rows:
+        try:
+            for s in _json.loads(sources_json or "[]"):
+                cid = s.get("chunk_id")
+                if cid:
+                    cited[cid] = cited.get(cid, 0) + 1
+        except Exception:
+            pass
+        if detail and detail.startswith("clicked_source:"):
+            cid = detail[len("clicked_source:"):]
+            if cid:
+                clicked[cid] = clicked.get(cid, 0) + 1
+
+    all_ids = set(cited) | set(clicked)
+    if not all_ids:
+        return {"nodes": [], "max_heat": 0}
+
+    heat = {cid: cited.get(cid, 0) + clicked.get(cid, 0) * 3.0 for cid in all_ids}
+    max_heat = max(heat.values())
+    ranked   = sorted(all_ids, key=lambda k: heat[k], reverse=True)[:top_k]
+
+    return {
+        "nodes": [
+            {"chunk_id": cid, "heat_score": heat[cid], "heat_norm": round(heat[cid] / max_heat, 4)}
+            for cid in ranked
+        ],
+        "max_heat": max_heat,
+    }
+
+
 @router.get("/graph")
 async def get_graph(
     limit_doc:    int = 50,
