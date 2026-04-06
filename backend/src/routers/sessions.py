@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends
 from neo4j import Driver
 from pydantic import BaseModel
 from ..core.database import get_driver
+from ..auth.deps import get_current_user
+from ..db.models import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["sessions"])
@@ -20,7 +22,10 @@ class SessionCreate(BaseModel):
 
 
 @router.get("/sessions")
-async def list_sessions(driver: Driver = Depends(get_driver)):
+async def list_sessions(
+    driver: Driver = Depends(get_driver),
+    _user:  User   = Depends(get_current_user),
+):
     with driver.session() as session:
         result = session.run("""
             MATCH (s:QuerySession)
@@ -39,6 +44,7 @@ async def list_sessions(driver: Driver = Depends(get_driver)):
 async def create_session(
     req:    SessionCreate,
     driver: Driver = Depends(get_driver),
+    _user:  User   = Depends(get_current_user),
 ):
     import json, time
     with driver.session() as session:
@@ -62,6 +68,7 @@ async def create_session(
 async def delete_session(
     session_id: str,
     driver:     Driver = Depends(get_driver),
+    _user:      User   = Depends(get_current_user),
 ):
     with driver.session() as session:
         session.run("""

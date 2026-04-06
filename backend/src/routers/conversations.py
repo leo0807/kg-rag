@@ -84,6 +84,31 @@ async def create_conversation(
     }
 
 
+@router.get("/{conv_id}")
+async def get_conversation(
+    conv_id: str,
+    db:      AsyncSession = Depends(get_db),
+    user:    User         = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Conversation).where(
+            Conversation.id      == conv_id,
+            Conversation.user_id == user.id,   # 强制隔离：只能读取自己的会话
+        )
+    )
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(404, "会话不存在")
+    return {
+        "id":         conv.id,
+        "title":      conv.title,
+        "messages":   json.loads(conv.messages),
+        "strategy":   conv.strategy,
+        "created_at": conv.created_at.isoformat(),
+        "updated_at": conv.updated_at.isoformat(),
+    }
+
+
 @router.put("/{conv_id}")
 async def update_conversation(
     conv_id: str,
