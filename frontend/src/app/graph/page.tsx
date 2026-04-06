@@ -295,6 +295,266 @@ function drawGraphCanvas(
     return zoom;
 }
 
+// ── Heatmap 渲染（节点数 > 5000 时降级：按文档聚类）──────────────────────
+function drawGraphHeatmap(
+    data: GraphData,
+    canvasEl: HTMLCanvasElement,
+    heatMap: Map<string, number>,
+    onDocClick: (docId: string) => void,
+): d3.ZoomBehavior<HTMLCanvasElement, unknown> {
+    const dpr    = window.devicePixelRatio || 1;
+    const width  = canvasEl.clientWidth;
+    const height = canvasEl.clientHeight;
+    canvasEl.width  = width  * dpr;
+    canvasEl.height = height * dpr;
+    const ctx = canvasEl.getContext("2d")!;
+    ctx.scale(dpr, dpr);
+
+    // Group sections by doc_id
+    interface ClusterItem {
+        docId: string; name: string;
+        count: number; maxHeat: number;
+        cx: number; cy: number; r: number;
+    }
+    const clusterMap = new Map<string, { count: number; maxHeat: number; name: string }>();
+    data.nodes.forEach(n => {
+        if ((n.type || n.label) !== "Section") return;
+        const docId = n.doc_id || "unknown";
+        const heat  = heatMap.get(n.id) ?? 0;
+        if (!clusterMap.has(docId)) clusterMap.set(docId, { count: 0, maxHeat: 0, name: docId });
+        const c = clusterMap.get(docId)!;
+        c.count++;
+        c.maxHeat = Math.max(c.maxHeat, heat);
+    });
+    data.nodes.forEach(n => {
+        if ((n.type || n.label) !== "Document") return;
+        const docId = n.doc_id || n.id;
+        if (clusterMap.has(docId)) clusterMap.get(docId)!.name = n.name || docId;
+    });
+
+    const items = [...clusterMap.entries()];
+    const cols  = Math.max(1, Math.ceil(Math.sqrt(items.length)));
+    const rows  = Math.ceil(items.length / cols);
+    const cellW = width  / cols;
+    const cellH = height / rows;
+
+    const positioned: ClusterItem[] = items.map(([docId, info], i) => ({
+        docId,
+        name:    info.name,
+        count:   info.count,
+        maxHeat: info.maxHeat,
+        cx: cellW * (i % cols + 0.5),
+        cy: cellH * (Math.floor(i / cols) + 0.5),
+        r:  Math.max(20, Math.min(Math.sqrt(info.count) * 9, Math.min(cellW, cellH) * 0.38)),
+    }));
+
+    let transform = d3.zoomIdentity;
+
+    function draw() {
+        ctx.clearRect(0, 0, width, height);
+        ctx.save();
+        ctx.translate(transform.x, transform.y);
+        ctx.scale(transform.k, transform.k);
+
+        positioned.forEach(item => {
+            const heat = item.maxHeat;
+            if (heat > 0.1) {
+                ctx.beginPath();
+                ctx.arc(item.cx, item.cy, item.r + 7, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(245,158,11,${0.25 + heat * 0.5})`;
+                ctx.lineWidth   = 1.5 + heat * 3;
+                ctx.stroke();
+            }
+            ctx.beginPath();
+            ctx.arc(item.cx, item.cy, item.r, 0, Math.PI * 2);
+            ctx.fillStyle   = heat > 0.1 ? `rgba(245,158,11,${0.25 + heat * 0.45})` : "rgba(99,102,241,0.35)";
+            ctx.strokeStyle = heat > 0.1 ? "#f59e0b" : "#6366f1";
+            ctx.lineWidth   = 1.5;
+            ctx.fill();
+            ctx.stroke();
+
+            const fs = Math.max(10, Math.min(14, item.r * 0.38));
+            ctx.fillStyle    = "rgba(255,255,255,0.9)";
+            ctx.font         = `bold ${fs}px sans-serif`;
+            ctx.textAlign    = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(String(item.count), item.cx, item.cy);
+
+            const lfs   = Math.max(9, Math.min(11, item.r * 0.22));
+            const label = item.name.length > 14 ? item.name.slice(0, 14) + "…" : item.name;
+            ctx.font      = `${lfs}px sans-serif`;
+            ctx.fillStyle = "rgba(255,255,255,0.55)";
+            ctx.fillText(label, item.cx, item.cy + item.r + 13);
+        });
+        ctx.restore();
+    }
+
+    draw();
+
+    const zoom = d3.zoom<HTMLCanvasElement, unknown>()
+        .scaleExtent([MIN_SCALE, MAX_SCALE])
+        .on("zoom", event => { transform = event.transform; draw(); });
+    d3.select(canvasEl).call(zoom);
+    d3.select(canvasEl).call(zoom.transform, d3.zoomIdentity);
+
+    d3.select(canvasEl).on("click.heatmap", (event: MouseEvent) => {
+        const inv = transform.invert([event.offsetX, event.offsetY]);
+        const mx = inv[0], my = inv[1];
+        for (const item of positioned) {
+            const dx = mx - item.cx, dy = my - item.cy;
+            if (dx * dx + dy * dy <= item.r * item.r) { onDocClick(item.docId); return; }
+        }
+    });
+
+    return zoom;
+}
+
+// ── WebGL 渲染（节点数 1001-5000，PixiJS v7）─────────────────────────────
+async function drawGraphWebGL(
+    PIXI: typeof import("pixi.js"),
+    data: GraphData,
+    canvasEl: HTMLCanvasElement,
+    tooltipEl: HTMLDivElement,
+    onScaleChange: (s: number) => void,
+    onNodeClick: (node: GraphNode) => void,
+    highlightedIds: Set<string>,
+    heatMap: Map<string, number>,
+): Promise<{ zoom: d3.ZoomBehavior<HTMLCanvasElement, unknown>; destroy: () => void }> {
+    const width  = canvasEl.clientWidth;
+    const height = canvasEl.clientHeight;
+
+    const app = new PIXI.Application({
+        view:            canvasEl,
+        width,
+        height,
+        backgroundColor: 0x030712,
+        antialias:       true,
+        resolution:      window.devicePixelRatio || 1,
+        autoDensity:     true,
+    });
+
+    const edgeGfx   = new PIXI.Graphics();
+    const nodeLayer = new PIXI.Container();
+    (app.stage as any).addChild(edgeGfx);
+    (app.stage as any).addChild(nodeLayer);
+
+    const nodes = data.nodes as SimNode[];
+    nodes.forEach(n => {
+        if (n.x === undefined) { n.x = width / 2 + (Math.random() - 0.5) * 200; }
+        if (n.y === undefined) { n.y = height / 2 + (Math.random() - 0.5) * 200; }
+    });
+
+    const nc = nodes.length;
+
+    // Texture cache keyed by hex color + radius
+    const texCache = new Map<string, any>();
+    function getTex(color: string, r: number): any {
+        const key = `${color}|${r}`;
+        if (!texCache.has(key)) {
+            const g = new PIXI.Graphics();
+            g.beginFill(parseInt(color.replace("#", ""), 16));
+            g.drawCircle(r + 1, r + 1, r);
+            g.endFill();
+            texCache.set(key, app.renderer.generateTexture(g));
+        }
+        return texCache.get(key)!;
+    }
+
+    // Sprites
+    const sprites = new Map<string, any>();
+    nodes.forEach(n => {
+        const type  = n.type || n.label;
+        const color = NODE_COLOR[type] ?? "#6b7280";
+        const heat  = heatMap.get(n.id) ?? 0;
+        const r     = nodeRadius(n, heat);
+        const sp    = new PIXI.Sprite(getTex(color, r));
+        sp.anchor.set(0.5);
+        sp.x = n.x!;
+        sp.y = n.y!;
+        sp.alpha = highlightedIds.size === 0 || highlightedIds.has(n.id) ? 1 : 0.25;
+        sp.eventMode = "static";
+        sp.cursor    = "pointer";
+        sp.on("pointerdown", () => onNodeClick(n));
+        (nodeLayer as any).addChild(sp);
+        sprites.set(n.id, sp);
+    });
+
+    // D3 simulation
+    const simulation = d3.forceSimulation(nodes)
+        .force("link",    d3.forceLink(data.edges).id((d: any) => d.id).distance(nc > 500 ? 45 : 90))
+        .force("charge",  d3.forceManyBody().strength(nc > 500 ? -60 : -200))
+        .force("center",  d3.forceCenter(width / 2, height / 2))
+        .force("collide", d3.forceCollide<SimNode>().radius(d => nodeRadius(d) + 3))
+        .alphaDecay(0.04)
+        .velocityDecay(0.45);
+
+    let tick = 0;
+    simulation.on("tick", () => {
+        tick++;
+        nodes.forEach(n => {
+            const sp = sprites.get(n.id);
+            if (sp) { sp.x = n.x!; sp.y = n.y!; }
+        });
+        if (tick % 2 === 0) {
+            edgeGfx.clear();
+            edgeGfx.lineStyle(0.6, 0x4b5563, 0.5);
+            data.edges.forEach(e => {
+                const s = e.source as SimNode, t = e.target as SimNode;
+                if (s.x != null && t.x != null) {
+                    edgeGfx.moveTo(s.x, s.y!);
+                    edgeGfx.lineTo(t.x, t.y!);
+                }
+            });
+        }
+    });
+
+    // d3-zoom → PixiJS stage
+    const zoom = d3.zoom<HTMLCanvasElement, unknown>()
+        .scaleExtent([MIN_SCALE, MAX_SCALE])
+        .on("zoom", event => {
+            const t = event.transform;
+            app.stage.x = t.x; app.stage.y = t.y;
+            app.stage.scale.set(t.k);
+            onScaleChange(t.k);
+        });
+    d3.select(canvasEl).call(zoom);
+    d3.select(canvasEl).call(zoom.transform, d3.zoomIdentity);
+
+    // Tooltip
+    d3.select(canvasEl).on("mousemove.wtooltip", (event: MouseEvent) => {
+        const tr = d3.zoomTransform(canvasEl);
+        const mx = (event.offsetX - tr.x) / tr.k;
+        const my = (event.offsetY - tr.y) / tr.k;
+        let found: SimNode | null = null;
+        for (const n of nodes) {
+            const r = nodeRadius(n, heatMap.get(n.id) ?? 0);
+            const dx = (n.x ?? 0) - mx, dy = (n.y ?? 0) - my;
+            if (dx * dx + dy * dy <= r * r) { found = n; break; }
+        }
+        if (found) {
+            tooltipEl.classList.remove("hidden");
+            tooltipEl.style.left = (event.clientX + 12) + "px";
+            tooltipEl.style.top  = (event.clientY - 8)  + "px";
+            const desc = (found as any).description || (found as any).content;
+            tooltipEl.innerHTML = desc
+                ? `<div class="font-medium">${found.name}</div><div class="text-gray-400 mt-1 max-w-xs">${String(desc).slice(0, 80)}…</div>`
+                : found.name;
+        } else {
+            tooltipEl.classList.add("hidden");
+        }
+    });
+    d3.select(canvasEl).on("mouseleave.wtooltip", () => tooltipEl.classList.add("hidden"));
+
+    function destroy() {
+        simulation.stop();
+        d3.select(canvasEl).on("mousemove.wtooltip", null).on("mouseleave.wtooltip", null);
+        d3.select(canvasEl).on("click.heatmap",  null);
+        try { app.destroy(false, { children: true, texture: true, baseTexture: true }); } catch { /* ignore */ }
+    }
+
+    return { zoom, destroy };
+}
+
 function drawGraph(
     data: GraphData,
     svgEl: SVGSVGElement,
@@ -548,13 +808,17 @@ function NodeDetailSidebar({ node, onClose }: { node: GraphNode; onClose: () => 
     );
 }
 
+type RenderMode = "svg" | "canvas" | "webgl" | "heatmap";
+
 // ── 主页面 ────────────────────────────────────────────────────────────────────
 export default function GraphPage() {
-    const svgRef     = useRef<SVGSVGElement>(null);
-    const canvasRef  = useRef<HTMLCanvasElement>(null);
-    const tooltipRef = useRef<HTMLDivElement>(null);
-    const zoomRef    = useRef<any>(null);
-    const [useCanvas, setUseCanvas] = useState(false);
+    const svgRef         = useRef<SVGSVGElement>(null);
+    const canvasRef      = useRef<HTMLCanvasElement>(null);
+    const webglRef       = useRef<HTMLCanvasElement>(null);
+    const tooltipRef     = useRef<HTMLDivElement>(null);
+    const zoomRef        = useRef<any>(null);
+    const pixiDestroyRef = useRef<(() => void) | null>(null);
+    const [renderMode, setRenderMode] = useState<RenderMode>("svg");
 
     const filteredNodesRef  = useRef<GraphNode[]>([]);
     const filteredEdgesRef  = useRef<GraphEdge[]>([]);
@@ -597,7 +861,11 @@ export default function GraphPage() {
 
     useEffect(() => { tourIdxRef.current = tourIdx; }, [tourIdx]);
 
-    function activeEl() { return (useCanvas ? canvasRef.current : svgRef.current) as Element | null; }
+    function activeEl() {
+        if (renderMode === "webgl")   return webglRef.current  as Element | null;
+        if (renderMode === "svg")     return svgRef.current    as Element | null;
+        return canvasRef.current as Element | null; // canvas or heatmap
+    }
     function zoomIn()    { const el = activeEl(); if (el && zoomRef.current) (d3.select(el) as any).transition().call(zoomRef.current.scaleBy, 1.3); }
     function zoomOut()   { const el = activeEl(); if (el && zoomRef.current) (d3.select(el) as any).transition().call(zoomRef.current.scaleBy, 0.7); }
     function zoomReset() { const el = activeEl(); if (el && zoomRef.current) (d3.select(el) as any).transition().call(zoomRef.current.transform, d3.zoomIdentity); }
@@ -773,15 +1041,53 @@ export default function GraphPage() {
         filteredNodesRef.current = filteredNodes;
         filteredEdgesRef.current = filteredEdges;
 
-        const shouldCanvas = filteredNodes.length > 500;
-        setUseCanvas(shouldCanvas);
+        // Tear down any prior PixiJS instance
+        if (pixiDestroyRef.current) { pixiDestroyRef.current(); pixiDestroyRef.current = null; }
 
-        if (shouldCanvas) {
+        const nc = filteredNodes.length;
+        const mode: RenderMode =
+            nc > 5000 ? "heatmap" :
+            nc > 1000 ? "webgl"   :
+            nc > 500  ? "canvas"  : "svg";
+        setRenderMode(mode);
+
+        let canceled = false;
+
+        if (mode === "heatmap") {
+            if (!canvasRef.current) return;
+            zoomRef.current = drawGraphHeatmap(
+                { nodes: filteredNodes, edges: filteredEdges },
+                canvasRef.current,
+                heatMap,
+                docId => { window.location.href = `/library/${docId}`; },
+            );
+        } else if (mode === "webgl") {
+            if (!webglRef.current || !tooltipRef.current) return;
+            const wRef = webglRef.current;
+            const tRef = tooltipRef.current;
+            import("pixi.js").then(PIXI => {
+                if (canceled) return;
+                drawGraphWebGL(
+                    PIXI,
+                    { nodes: filteredNodes, edges: filteredEdges },
+                    wRef,
+                    tRef,
+                    setScale,
+                    node => setSelectedNode(node),
+                    highlightedIds,
+                    heatMap,
+                ).then(({ zoom, destroy }) => {
+                    if (canceled) { destroy(); return; }
+                    zoomRef.current        = zoom;
+                    pixiDestroyRef.current = destroy;
+                }).catch(() => {});
+            }).catch(() => {});
+        } else if (mode === "canvas") {
             if (!canvasRef.current) return;
             zoomRef.current = drawGraphCanvas(
                 { nodes: filteredNodes, edges: filteredEdges },
                 canvasRef.current,
-                tooltipRef.current,
+                tooltipRef.current!,
                 setScale,
                 node => setSelectedNode(node),
                 highlightedIds,
@@ -794,7 +1100,7 @@ export default function GraphPage() {
             zoomRef.current = drawGraph(
                 { nodes: filteredNodes, edges: filteredEdges },
                 svgRef.current,
-                tooltipRef.current,
+                tooltipRef.current!,
                 setScale,
                 node => setSelectedNode(node),
                 highlightedIds,
@@ -803,6 +1109,11 @@ export default function GraphPage() {
                 tourOpen ? tourCurrentId : undefined,
             );
         }
+
+        return () => {
+            canceled = true;
+            if (pixiDestroyRef.current) { pixiDestroyRef.current(); pixiDestroyRef.current = null; }
+        };
     }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, heatMap, tourNodeIds, tourCurrentId, tourOpen]);
 
     // ── 漫游控制 ───────────────────────────────────────────────────────────────
@@ -1057,12 +1368,15 @@ export default function GraphPage() {
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
                 <div className="flex-1 flex overflow-hidden min-h-0">
                     <div className="relative flex-1 overflow-hidden">
-                        <svg    ref={svgRef}    className={`w-full h-full${useCanvas ? " hidden" : ""}`} />
-                        <canvas ref={canvasRef} className={`w-full h-full${useCanvas ? "" : " hidden"}`} />
-                        {useCanvas && (
+                        <svg    ref={svgRef}    className={`w-full h-full${renderMode === "svg" ? "" : " hidden"}`} />
+                        <canvas ref={canvasRef} className={`w-full h-full${renderMode === "canvas" || renderMode === "heatmap" ? "" : " hidden"}`} />
+                        <canvas ref={webglRef}  className={`w-full h-full${renderMode === "webgl" ? "" : " hidden"}`} />
+                        {renderMode !== "svg" && (
                             <div className="absolute top-3 left-3 px-2 py-1 bg-gray-900/80 border border-indigo-700/40
                                             rounded-lg text-xs text-indigo-400 pointer-events-none z-10">
-                                Canvas 模式 · {filteredNodesRef.current.length} 节点
+                                {renderMode === "webgl"   && `WebGL 模式 · ${filteredNodesRef.current.length} 节点`}
+                                {renderMode === "canvas"  && `Canvas 模式 · ${filteredNodesRef.current.length} 节点`}
+                                {renderMode === "heatmap" && `热力图模式 · ${filteredNodesRef.current.length} 节点（按文档聚类）`}
                             </div>
                         )}
 
