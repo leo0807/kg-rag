@@ -337,7 +337,7 @@ python -m pytest tests/ -v
 ### 多租户与访问控制
 
 - [ ] **文档权限模型**：为 Document 表添加 `owner_id` + `visibility`（private / department / public），用户只能检索有权限的文档
-- [ ] **对话隔离**：Conversation 查询时强制过滤 `user_id = current_user.id`，防止越权读取他人历史
+- [x] **对话隔离**：Conversation 查询时强制过滤 `user_id = current_user.id`，防止越权读取他人历史
 - [ ] **部门级知识库隔离**：支持按部门（department）划分文档访问范围，管理员可配置跨部门共享
 - [ ] **资源配额**：每用户每天查询次数上限（当前仅全局限流），存储配额（上传文档大小/数量），超限返回 429 并提示
 
@@ -502,7 +502,7 @@ python -m pytest tests/ -v
 - [ ] **Cypher 查询控制台**：专家用户可直接输入 Cypher 查询语句，结果实时渲染为交互图谱，支持图谱探索性分析
 - [ ] **节点注释与标注**：用户可对任意节点添加注释（`Note` 节点），`(Section)-[:HAS_NOTE {author, created_at}]->(Note)`，团队协作标注知识盲点或疑问
 - [x] **图谱快照与分享**：将当前图谱视图（含过滤、高亮状态）保存为 URL 可分享的快照，团队成员打开链接可复现完全相同的视图状态
-- [ ] **增量渲染与虚拟化**：节点超过 1000 时切换为 WebGL（Three.js / PixiJS）渲染，维持交互帧率 > 30fps；超过 5000 时降级为 Canvas 静态热力图
+- [x] **增量渲染与虚拟化**：节点超过 1000 时切换为 WebGL（Three.js / PixiJS）渲染，维持交互帧率 > 30fps；超过 5000 时降级为 Canvas 静态热力图
 - [x] **图谱漫游模式（Graph Tour）**：以某主题（如"液压系统安装"）为起点，AI 自动规划一条穿越相关节点的导览路径，逐步展开讲解每个节点的知识要点
 
 ---
