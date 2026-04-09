@@ -1,39 +1,8 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
 import { BrainCircuit, Play, RefreshCw, AlertCircle, CheckCircle2, Clock, ChevronDown, ChevronUp, HelpCircle, X } from "lucide-react";
-
-interface GNNServiceStatus {
-    loaded:     boolean;
-    num_nodes:  number;
-    emb_dim:    number;
-    metadata:   Record<string, unknown>;
-}
-
-interface TrainingStatus {
-    running:  boolean;
-    progress: string;
-    error:    string;
-}
-
-interface StatusResponse {
-    service:  GNNServiceStatus;
-    training: TrainingStatus;
-}
-
-const DEFAULT_PARAMS = {
-    epochs:      100,
-    lr:          0.001,
-    batch_size:  256,
-    dropout:     0.2,
-    temperature: 0.07,
-    patience:    15,
-    device:      "cpu",
-};
-
-function formatTs(ts: number): string {
-    if (!ts) return "—";
-    return new Date(ts * 1000).toLocaleString("zh-CN");
-}
+import { Stat, ParamInput } from "./components";
+import { StatusResponse, DEFAULT_PARAMS, formatTs } from "./types";
 
 export default function GNNAdminPage() {
     const [status,      setStatus]      = useState<StatusResponse | null>(null);
@@ -308,45 +277,3 @@ export default function GNNAdminPage() {
     );
 }
 
-function Stat({
-    label, value, icon, accent = "text-white",
-}: {
-    label: string;
-    value: string;
-    icon?: React.ReactNode;
-    accent?: string;
-}) {
-    return (
-        <div className="bg-gray-800/60 rounded-lg px-4 py-3">
-            <div className="text-xs text-gray-500 mb-1">{label}</div>
-            <div className={`font-semibold flex items-center gap-1.5 ${accent}`}>
-                {icon}
-                {value}
-            </div>
-        </div>
-    );
-}
-
-function ParamInput({
-    label, value, onChange, type = "text", ...rest
-}: {
-    label: string;
-    value: number | string;
-    onChange: (v: string) => void;
-    type?: string;
-    [k: string]: unknown;
-}) {
-    return (
-        <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-400">{label}</label>
-            <input
-                type={type}
-                value={value}
-                onChange={e => onChange(e.target.value)}
-                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5
-                           text-sm text-white focus:outline-none focus:border-violet-500"
-                {...rest}
-            />
-        </div>
-    );
-}

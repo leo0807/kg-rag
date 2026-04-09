@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { fetchApi } from "@/lib/api";
-import { ArrowLeft, FileText, X, Download, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { ArrowLeft, FileText, Download, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import PdfPanel from "./PdfPanel";
 
 interface UserInfo { username: string; full_name: string; department: string; }
 
@@ -265,66 +266,22 @@ export default function DocumentDetailPage() {
         </div>
     );
 
-    // ── PDF 预览面板（右侧）──────────────────────────────────────────────────
-    const pdfPanel = showPdf && pdfUrl && (
-        <div className="flex flex-col border-l border-gray-800 bg-gray-900" style={{ width: "58%" }}>
-            {/* PDF 工具栏 */}
-            <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 border-b border-gray-800 bg-gray-950">
-                <FileText size={14} className="text-gray-500 shrink-0" />
-                <span className="text-xs text-gray-400 truncate flex-1 font-mono">
-                    {doc.doc_id} — 原文 PDF
-                </span>
-                <a href={pdfUrl} download
-                    className="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
-                    title="下载 PDF">
-                    <Download size={13} />
-                </a>
-                <button
-                    onClick={() => setShowPdf(false)}
-                    className="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
-                    title="关闭预览"
-                >
-                    <X size={14} />
-                </button>
-            </div>
-
-            {/* iframe + 水印覆盖层 */}
-            <div className="relative flex-1">
-                {pdfLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
-                        <Loader2 size={24} className="animate-spin text-gray-600" />
-                    </div>
-                )}
-                <iframe
-                    src={`${pdfUrl}#toolbar=1&view=FitH`}
-                    className="w-full h-full border-0"
-                    title={`${doc.doc_id} PDF 预览`}
-                    onLoadStart={() => setPdfLoading(true)}
-                    onLoad={() => setPdfLoading(false)}
-                />
-                {/* 水印：pointer-events:none 不影响 PDF 交互 */}
-                {watermarkUrl && (
-                    <div
-                        className="absolute inset-0 pointer-events-none z-20"
-                        style={{
-                            backgroundImage:  watermarkUrl,
-                            backgroundRepeat: "repeat",
-                            backgroundSize:   "280px 140px",
-                        }}
-                    />
-                )}
-            </div>
-        </div>
-    );
-
     // ── 整体布局 ─────────────────────────────────────────────────────────────
-    if (showPdf) {
+    if (showPdf && pdfUrl) {
         return (
             <div className="flex h-full overflow-hidden">
                 <div className="flex flex-col overflow-hidden" style={{ width: "42%" }}>
                     {docPanel}
                 </div>
-                {pdfPanel}
+                <PdfPanel
+                    docId={doc.doc_id}
+                    pdfUrl={pdfUrl}
+                    pdfLoading={pdfLoading}
+                    watermarkUrl={watermarkUrl}
+                    onLoadStart={() => setPdfLoading(true)}
+                    onLoad={() => setPdfLoading(false)}
+                    onClose={() => setShowPdf(false)}
+                />
             </div>
         );
     }
