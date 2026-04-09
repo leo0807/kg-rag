@@ -6,6 +6,7 @@ import { fetchApi } from "@/lib/api";
 import { ArrowLeft, FileText, Download, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import PdfPanel from "./PdfPanel";
 import { DrawingsTab } from "./DrawingsTab";
+import { ReprocessPanel } from "./ReprocessPanel";
 
 interface UserInfo { username: string; full_name: string; department: string; }
 
@@ -81,7 +82,7 @@ export default function DocumentDetailPage() {
     const [showPdf,        setShowPdf]       = useState(false);
     const [pdfLoading,     setPdfLoading]    = useState(false);
     const [watermarkUrl,   setWatermarkUrl]  = useState("");
-    const [activeTab,      setActiveTab]     = useState<"sections" | "drawings">("sections");
+    const [activeTab,      setActiveTab]     = useState<"sections" | "drawings" | "reprocess">("sections");
 
     useEffect(() => {
         if (!docId) return;
@@ -131,7 +132,6 @@ export default function DocumentDetailPage() {
           )
         : doc.sections;
 
-    // ── 文档信息面板（左侧或全宽）────────────────────────────────────────────
     const docPanel = (
         <div className={`bg-gray-950 overflow-y-auto ${showPdf ? "flex-1 min-w-0" : "p-8 max-w-3xl min-h-screen"}`}>
             <div className={showPdf ? "px-6 pt-5 pb-4" : "mb-6"}>
@@ -193,7 +193,6 @@ export default function DocumentDetailPage() {
                 </div>
             </div>
 
-            {/* 引用文件 */}
             {doc.refs.length > 0 && (
                 <div className={showPdf ? "px-6 py-4 border-b border-gray-800" : "mb-8"}>
                     <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">引用文件</div>
@@ -212,8 +211,8 @@ export default function DocumentDetailPage() {
             {/* 选项卡：章节 / 图纸 */}
             <div className={showPdf ? "px-6 pt-3" : "mt-2"}>
                 <div className="flex items-center gap-1 border-b border-gray-800 mb-4">
-                    {([["sections", `章节目录 (${doc.sections.length})`], ["drawings", "工程图纸"]] as const).map(([tab, label]) => (
-                        <button key={tab} onClick={() => setActiveTab(tab as "sections" | "drawings")}
+                    {([["sections", `章节目录 (${doc.sections.length})`], ["drawings", "工程图纸"], ["reprocess", "重新处理"]] as const).map(([tab, label]) => (
+                        <button key={tab} onClick={() => setActiveTab(tab as "sections" | "drawings" | "reprocess")}
                             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === tab ? "border-indigo-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}>
                             {label}
                         </button>
@@ -273,7 +272,8 @@ export default function DocumentDetailPage() {
                     </>
                 )}
 
-                {activeTab === "drawings" && <DrawingsTab docId={docId} />}
+                {activeTab === "drawings"   && <DrawingsTab docId={docId} />}
+                {activeTab === "reprocess"  && <ReprocessPanel docId={docId} />}
             </div>
         </div>
     );

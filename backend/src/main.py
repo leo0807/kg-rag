@@ -31,6 +31,7 @@ from .routers.admin_activity     import router as admin_activity_router
 from .routers.admin_analytics    import router as admin_analytics_router
 from .routers.gnn                import router as gnn_router
 from .routers.visual_qc          import router as visual_qc_router
+from .routers.reprocess          import router as reprocess_router
 
 from .services.health import health_monitor
 
@@ -111,6 +112,7 @@ app.include_router(admin_activity_router)
 app.include_router(admin_analytics_router)
 app.include_router(gnn_router)
 app.include_router(visual_qc_router)
+app.include_router(reprocess_router)
 
 # 挂载 uploads 目录为静态文件（图片预览）
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
