@@ -1021,9 +1021,9 @@ SPLADE 是介于 BM25 和稠密向量之间的检索范式，既有稀疏可解�
 
 面向车间的 AI 质量检测，将检测结果反哺知识图谱。
 
-- [ ] 集成 **YOLOv11** 或 **RT-DETR** 用于工件缺陷检测（划痕、裂纹、孔位偏差）
-- [ ] 检测到缺陷时，自动查询知识图谱"该缺陷类型对应哪个工艺步骤的 Hazard 节点"，返回整改建议
-- [ ] 缺陷样本写入图谱 `Defect` 节点，与 `Process` / `Material` 关联，积累缺陷模式知识库
+- [x] 集成 **YOLOv11**（ultralytics>=8.2）用于工件缺陷检测（划痕、裂纹、孔位偏差等），VLM 作为无权重 fallback
+- [x] 检测到缺陷时，自动查询知识图谱中的 Hazard 节点，返回整改建议（`GET /api/qc/hazards/{defect_type}`）
+- [x] 缺陷写入图谱 `Defect` 节点，通过 `DETECTED_IN→Image`、`RELATED_TO→Process` 关联，积累缺陷模式知识库
 
 **语音交互界面（Voice Interface）**
 

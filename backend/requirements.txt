@@ -2,6 +2,8 @@
 paddlepaddle>=2.6.0
 paddleocr>=2.8.0
 pymupdf>=1.24.0
+# 视觉质量检测（可选，YOLOv11 缺陷检测）
+ultralytics>=8.2.0
 
 annotated-doc==0.0.4
 annotated-types==0.7.0
