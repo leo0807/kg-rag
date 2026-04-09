@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { fetchApi } from "@/lib/api";
 import { ArrowLeft, FileText, Download, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import PdfPanel from "./PdfPanel";
+import { DrawingsTab } from "./DrawingsTab";
 
 interface UserInfo { username: string; full_name: string; department: string; }
 
@@ -80,6 +81,7 @@ export default function DocumentDetailPage() {
     const [showPdf,        setShowPdf]       = useState(false);
     const [pdfLoading,     setPdfLoading]    = useState(false);
     const [watermarkUrl,   setWatermarkUrl]  = useState("");
+    const [activeTab,      setActiveTab]     = useState<"sections" | "drawings">("sections");
 
     useEffect(() => {
         if (!docId) return;
@@ -207,61 +209,71 @@ export default function DocumentDetailPage() {
                 </div>
             )}
 
-            {/* 章节列表 */}
-            <div className={showPdf ? "px-6 py-4" : ""}>
-                <div className="flex items-center justify-between mb-3">
-                    <div className="text-xs text-gray-500 uppercase tracking-wider">
-                        章节目录 · {doc.sections.length} 个
-                        {sectionSearch && ` · 匹配 ${visibleSections.length} 个`}
-                    </div>
-                    <input
-                        value={sectionSearch}
-                        onChange={e => setSectionSearch(e.target.value)}
-                        placeholder="搜索章节..."
-                        className="px-2.5 py-1 bg-gray-900 border border-gray-700 rounded
-                                   text-xs text-gray-200 outline-none focus:border-indigo-500
-                                   placeholder-gray-500 w-36"
-                    />
+            {/* 选项卡：章节 / 图纸 */}
+            <div className={showPdf ? "px-6 pt-3" : "mt-2"}>
+                <div className="flex items-center gap-1 border-b border-gray-800 mb-4">
+                    {([["sections", `章节目录 (${doc.sections.length})`], ["drawings", "工程图纸"]] as const).map(([tab, label]) => (
+                        <button key={tab} onClick={() => setActiveTab(tab as "sections" | "drawings")}
+                            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === tab ? "border-indigo-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}>
+                            {label}
+                        </button>
+                    ))}
                 </div>
 
-                <div className="space-y-0.5">
-                    {visibleSections.map(section => {
-                        const isExpanded = expandedChunk === section.chunk_id;
-                        const isLoading  = loadingChunk  === section.chunk_id;
-                        const content    = sectionContent[section.chunk_id];
-                        return (
-                            <div key={section.chunk_id}>
-                                <button
-                                    onClick={() => toggleSection(section.chunk_id)}
-                                    className="w-full flex items-baseline gap-3 px-3 py-2.5
-                                               rounded-lg hover:bg-gray-900 transition-colors text-left group"
-                                >
-                                    <span className="text-xs font-mono text-gray-500 w-12 shrink-0">
-                                        {section.number}
-                                    </span>
-                                    <span className="text-sm text-gray-300 flex-1 min-w-0">
-                                        {highlight(section.title, sectionSearch)}
-                                    </span>
-                                    <span className="text-gray-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {isLoading
-                                            ? <Loader2 size={12} className="animate-spin" />
-                                            : isExpanded
-                                                ? <ChevronUp size={12} />
-                                                : <ChevronDown size={12} />
-                                        }
-                                    </span>
-                                </button>
-                                {isExpanded && content && (
-                                    <div className="mx-3 mb-2 px-4 py-3 bg-gray-900 rounded-lg
-                                                    border border-gray-800 text-sm text-gray-400
-                                                    leading-relaxed whitespace-pre-wrap">
-                                        {content.content}
-                                    </div>
-                                )}
+                {/* 章节列表 */}
+                {activeTab === "sections" && (
+                    <>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="text-xs text-gray-500">
+                                {sectionSearch && `匹配 ${visibleSections.length} 个`}
                             </div>
-                        );
-                    })}
-                </div>
+                            <input
+                                value={sectionSearch}
+                                onChange={e => setSectionSearch(e.target.value)}
+                                placeholder="搜索章节..."
+                                className="px-2.5 py-1 bg-gray-900 border border-gray-700 rounded
+                                           text-xs text-gray-200 outline-none focus:border-indigo-500
+                                           placeholder-gray-500 w-36"
+                            />
+                        </div>
+                        <div className="space-y-0.5">
+                            {visibleSections.map(section => {
+                                const isExpanded = expandedChunk === section.chunk_id;
+                                const isLoading  = loadingChunk  === section.chunk_id;
+                                const content    = sectionContent[section.chunk_id];
+                                return (
+                                    <div key={section.chunk_id}>
+                                        <button
+                                            onClick={() => toggleSection(section.chunk_id)}
+                                            className="w-full flex items-baseline gap-3 px-3 py-2.5
+                                                       rounded-lg hover:bg-gray-900 transition-colors text-left group"
+                                        >
+                                            <span className="text-xs font-mono text-gray-500 w-12 shrink-0">
+                                                {section.number}
+                                            </span>
+                                            <span className="text-sm text-gray-300 flex-1 min-w-0">
+                                                {highlight(section.title, sectionSearch)}
+                                            </span>
+                                            <span className="text-gray-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {isLoading
+                                                    ? <Loader2 size={12} className="animate-spin" />
+                                                    : isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                                                }
+                                            </span>
+                                        </button>
+                                        {isExpanded && content && (
+                                            <div className="mx-3 mb-2 px-4 py-3 bg-gray-900 rounded-lg border border-gray-800 text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">
+                                                {content.content}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </>
+                )}
+
+                {activeTab === "drawings" && <DrawingsTab docId={docId} />}
             </div>
         </div>
     );

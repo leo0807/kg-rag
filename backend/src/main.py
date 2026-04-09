@@ -151,14 +151,7 @@ async def health():
     }
 
 def _is_logo(img) -> bool:
-    """
-    判断提取的图片是否为 Logo/装饰图，用于排除非内容图片。
-    判断依据：
-    1. 宽高比极大（横幅/页眉 Logo，width/height > 4）
-    2. 宽高比极小（竖版标志，height/width > 4）
-    3. 尺寸偏小（100-150px 区间，装饰性图标）
-    4. 出现在前两页且宽高比 > 3（封面/扉页 Logo）
-    """
+    """判断图片是否为 Logo/装饰图（宽高比极端 / 尺寸过小 / 封面横幅）"""
     w, h = img.width, max(img.height, 1)
     aspect = w / h
     if aspect > 4.0 or aspect < 0.25:
@@ -271,18 +264,28 @@ async def ingest(
                     logger.info("图片已有 VLM 分析，跳过: %s", img.path)
                     continue
                 analysis = analyze_image(img.path, img.caption, doc.doc_id)
+                # 图纸专项分析（仅对可能是工程图纸的图片额外调用）
+                drawing = {}
+                from .services.drawing_analyzer import analyze_drawing, is_likely_drawing
+                if is_likely_drawing(analysis):
+                    try:
+                        drawing = analyze_drawing(img.path, img.caption, doc.doc_id)
+                    except Exception as de:
+                        logger.warning("图纸分析失败: %s", de)
                 analyzed.append({
                     "image_id": img.image_id,
                     "page":     img.page,
                     "path":     img.path,
                     "caption":  img.caption,
                     "analysis": analysis,
+                    "drawing":  drawing,
                 })
             write_images_to_graph(driver, doc.doc_id, analyzed)
-            # 将图片识别到的工具链接到 Tool 节点
+            from .services.entity_writer import write_drawing_constraints
             for item in analyzed:
-                tools = item.get("analysis", {}).get("tools", [])
-                link_image_tools(driver, item["image_id"], tools)
+                link_image_tools(driver, item["image_id"], item.get("analysis", {}).get("tools", []))
+                if anns := item.get("drawing", {}).get("annotations", []):
+                    write_drawing_constraints(driver, item["image_id"], doc.doc_id, anns)
             logger.info("多模态写入完成 doc_id=%s images=%d", doc.doc_id, len(analyzed))
     except Exception as e:
         logger.warning("多模态处理失败（不影响主流程）: %s", e)

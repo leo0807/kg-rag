@@ -150,6 +150,60 @@ def write_constraints(driver: Driver, doc_id: str, constraint_data: list[dict]) 
     logger.info("约束写入完成 doc_id=%s constraints=%d", doc_id, total)
 
 
+def write_drawing_constraints(
+    driver:      Driver,
+    image_id:    str,
+    doc_id:      str,
+    annotations: list[dict],
+) -> None:
+    """
+    将图纸标注（公差/尺寸）写入 Constraint 节点。
+    建立关系：
+      (Image)-[:HAS_ANNOTATION]->(Constraint)
+      (Section)-[:HAS_CONSTRAINT]->(Constraint)  ← 通过 Image 反向关联 Section
+    """
+    total = 0
+    with driver.session() as session:
+        for ann in annotations:
+            raw = ann.get("raw", "").strip()
+            if not raw and not ann.get("value"):
+                continue
+            cid = f"{image_id}_{ann.get('type','other')}_{raw[:20]}"
+            session.run("""
+                MATCH (i:Image {image_id: $image_id})
+                MERGE (con:Constraint {constraint_id: $cid})
+                SET con.type        = $type,
+                    con.value       = $value,
+                    con.value_max   = $value_max,
+                    con.value_min   = $value_min,
+                    con.unit        = $unit,
+                    con.description = $parameter,
+                    con.standard    = $raw,
+                    con.doc_id      = $doc_id,
+                    con.source      = 'drawing'
+                MERGE (i)-[:HAS_ANNOTATION]->(con)
+            """,
+                image_id  = image_id,
+                cid       = cid,
+                type      = ann.get("type", "other"),
+                value     = ann.get("value", ""),
+                value_max = ann.get("value_max", ""),
+                value_min = ann.get("value_min", ""),
+                unit      = ann.get("unit", ""),
+                parameter = ann.get("parameter", ""),
+                raw       = raw,
+                doc_id    = doc_id,
+            )
+            # 将约束同时关联至拥有该图片的 Section
+            session.run("""
+                MATCH (s:Section)-[:HAS_IMAGE]->(i:Image {image_id: $image_id})
+                MATCH (con:Constraint {constraint_id: $cid})
+                MERGE (s)-[:HAS_CONSTRAINT]->(con)
+            """, image_id=image_id, cid=cid)
+            total += 1
+    logger.info("图纸约束写入完成 image_id=%s constraints=%d", image_id, total)
+
+
 def link_image_tools(driver: Driver, image_id: str, tools: list[str]) -> None:
     """将图片分析出的工具链接到 Tool 节点，并建立工具间存在性"""
     if not tools:

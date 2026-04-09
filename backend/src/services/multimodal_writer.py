@@ -30,27 +30,38 @@ def write_images_to_graph(
         for img in images:
             analysis = img.get("analysis", {})
 
-            # 写入 Image 节点
+            drawing = img.get("drawing", {})
+            # 写入 Image 节点（含图纸专项字段）
             session.run("""
                 MERGE (i:Image {image_id: $image_id})
-                SET i.doc_id      = $doc_id,
-                    i.page        = $page,
-                    i.path        = $path,
-                    i.caption     = $caption,
-                    i.description = $description,
-                    i.keywords    = $keywords,
-                    i.dimensions  = $dimensions,
-                    i.tools       = $tools
+                SET i.doc_id             = $doc_id,
+                    i.page               = $page,
+                    i.path               = $path,
+                    i.caption            = $caption,
+                    i.description        = $description,
+                    i.keywords           = $keywords,
+                    i.dimensions         = $dimensions,
+                    i.tools              = $tools,
+                    i.is_drawing         = $is_drawing,
+                    i.part_numbers       = $part_numbers,
+                    i.annotations        = $annotations,
+                    i.assembly_relations = $assembly_relations,
+                    i.drawing_summary    = $drawing_summary
             """,
-                image_id    = img["image_id"],
-                doc_id      = doc_id,
-                page        = img["page"],
-                path        = img["path"],
-                caption     = img.get("caption", ""),
-                description = analysis.get("description", ""),
-                keywords    = json.dumps(analysis.get("keywords", []), ensure_ascii=False),
-                dimensions  = json.dumps(analysis.get("dimensions", []), ensure_ascii=False),
-                tools       = json.dumps(analysis.get("tools", []), ensure_ascii=False),
+                image_id          = img["image_id"],
+                doc_id            = doc_id,
+                page              = img["page"],
+                path              = img["path"],
+                caption           = img.get("caption", ""),
+                description       = analysis.get("description", ""),
+                keywords          = json.dumps(analysis.get("keywords", []), ensure_ascii=False),
+                dimensions        = json.dumps(analysis.get("dimensions", []), ensure_ascii=False),
+                tools             = json.dumps(analysis.get("tools", []), ensure_ascii=False),
+                is_drawing        = drawing.get("is_drawing", False),
+                part_numbers      = json.dumps(drawing.get("part_numbers", []), ensure_ascii=False),
+                annotations       = json.dumps(drawing.get("annotations", []), ensure_ascii=False),
+                assembly_relations= json.dumps(drawing.get("assembly_relations", []), ensure_ascii=False),
+                drawing_summary   = drawing.get("summary", ""),
             )
 
             # 关联到文档
