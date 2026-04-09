@@ -536,3 +536,125 @@ async def user_activity_csv(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── 检索策略效果对比 ───────────────────────────────────────────────────────────
+
+_STRATEGY_LABEL: dict[str, str] = {
+    "parallel":        "并行检索",
+    "sequential":      "顺序检索",
+    "graph_augmented": "图谱增强",
+    "multi_hop":       "多跳推理",
+    "gnn":             "GNN 检索",
+}
+
+
+@router.get("/analytics/strategy-stats")
+async def strategy_stats(
+    days: int = 30,
+    _: User = Depends(_require_admin),
+):
+    """
+    检索策略效果对比报表（管理员）。
+    数据来源：
+      - LLMUsage    → 延迟（ms）、token 消耗、调用次数
+      - QueryFeedback → 👍 好评率、平均返回来源数
+    辅助调整"自动策略选择"的路由规则。
+    """
+    import json as _json
+    from ..db.models import LLMUsage
+    from ..routers.feedback import QueryFeedback
+
+    since = datetime.utcnow() - timedelta(days=days)
+
+    async with AsyncSessionLocal() as db:
+        # ── LLMUsage：延迟 / token / 费用（按策略聚合）─────────────────
+        usage_result = await db.execute(
+            select(
+                LLMUsage.strategy,
+                func.count(LLMUsage.id).label("call_count"),
+                func.avg(LLMUsage.latency_ms).label("avg_latency_ms"),
+                func.avg(LLMUsage.prompt_tokens + LLMUsage.completion_tokens).label("avg_tokens"),
+                func.sum(LLMUsage.prompt_tokens + LLMUsage.completion_tokens).label("total_tokens"),
+                func.avg(LLMUsage.cost_usd).label("avg_cost_usd"),
+                func.sum(LLMUsage.cost_usd).label("total_cost_usd"),
+            )
+            .where(LLMUsage.created_at >= since)
+            .where(LLMUsage.strategy != "")
+            .group_by(LLMUsage.strategy)
+        )
+        usage_by_strategy = {r.strategy: r for r in usage_result.all()}
+
+        # ── QueryFeedback：评分 + 来源数（按策略聚合，Python 侧计算）───
+        fb_result = await db.execute(
+            select(
+                QueryFeedback.strategy,
+                QueryFeedback.rating,
+                QueryFeedback.sources,
+            )
+            .where(QueryFeedback.created_at >= since)
+        )
+        fb_rows = fb_result.all()
+
+    # 在 Python 侧聚合 feedback（sources 是 JSON 字符串，不跨库依赖 json_array_length）
+    fb_agg: dict[str, dict] = {}
+    for strategy, rating, sources_json in fb_rows:
+        key = strategy or "parallel"
+        if key not in fb_agg:
+            fb_agg[key] = {"positive": 0, "negative": 0, "explicit": 0, "src_counts": []}
+        agg = fb_agg[key]
+        if rating == 1:
+            agg["positive"] += 1
+            agg["explicit"] += 1
+        elif rating == -1:
+            agg["negative"] += 1
+            agg["explicit"] += 1
+        # 来源数量：所有反馈行（含隐式）都有 sources
+        try:
+            srcs = _json.loads(sources_json or "[]")
+            if isinstance(srcs, list):
+                agg["src_counts"].append(len(srcs))
+        except Exception:
+            pass
+
+    # 合并并生成结果行
+    all_strategies = set(usage_by_strategy) | set(fb_agg)
+    rows: list[dict] = []
+
+    for strategy in sorted(all_strategies):
+        u   = usage_by_strategy.get(strategy)
+        fb  = fb_agg.get(strategy, {})
+        explicit    = fb.get("explicit", 0)
+        positive    = fb.get("positive", 0)
+        src_counts  = fb.get("src_counts", [])
+
+        rows.append({
+            "strategy":         strategy,
+            "label":            _STRATEGY_LABEL.get(strategy, strategy),
+            # 调用量
+            "call_count":       int(u.call_count) if u else 0,
+            # 延迟
+            "avg_latency_ms":   round(float(u.avg_latency_ms)) if u and u.avg_latency_ms else None,
+            # Token 消耗
+            "avg_tokens":       round(float(u.avg_tokens)) if u and u.avg_tokens else None,
+            "total_tokens":     int(u.total_tokens) if u and u.total_tokens else 0,
+            # 费用
+            "avg_cost_usd":     round(float(u.avg_cost_usd), 6) if u and u.avg_cost_usd else None,
+            "total_cost_usd":   round(float(u.total_cost_usd), 4) if u and u.total_cost_usd else 0.0,
+            # 用户反馈
+            "explicit_ratings": explicit,
+            "positive_count":   positive,
+            "negative_count":   fb.get("negative", 0),
+            "positive_rate":    round(positive / explicit, 4) if explicit > 0 else None,
+            # 来源数
+            "feedback_count":   len(src_counts),
+            "avg_source_count": round(sum(src_counts) / len(src_counts), 1) if src_counts else None,
+        })
+
+    # 按调用次数降序，方便直接看最常用策略排在前面
+    rows.sort(key=lambda x: x["call_count"], reverse=True)
+
+    return {
+        "period":     {"days": days, "since": since.isoformat()},
+        "strategies": rows,
+    }
