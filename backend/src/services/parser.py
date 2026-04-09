@@ -223,11 +223,20 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
 
 def parse(pdf_path: Path) -> dict:
     # 解析整个 PDF，返回元数据 + 所有章节
+    # 扫描版 PDF 自动路由到 OCR 增强解析器
+    try:
+        from .ocr_engine import is_available as ocr_available, pdf_has_scanned_pages
+        if ocr_available() and pdf_has_scanned_pages(str(pdf_path)):
+            from .ocr_parser import parse_with_ocr
+            return parse_with_ocr(pdf_path)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("OCR 路由失败，降级到标准解析: %s", e)
+
     meta = extract_meta(pdf_path)
     sections = extract_sections(pdf_path, meta["doc_id"])
     refs = extract_refs(sections)
 
-    # ** 是字典解包，把一个字典的所有键值对展开到另一个字典里：
     if not meta["doc_id"]:
         raise ValueError(
             f"无法提取文档编号（封面和文件名均无法识别）: {pdf_path.name}"

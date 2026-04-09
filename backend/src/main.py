@@ -151,16 +151,9 @@ async def health():
     }
 
 def _is_logo(img) -> bool:
-    """判断图片是否为 Logo/装饰图（宽高比极端 / 尺寸过小 / 封面横幅）"""
     w, h = img.width, max(img.height, 1)
     aspect = w / h
-    if aspect > 4.0 or aspect < 0.25:
-        return True
-    if w < 150 and h < 150:
-        return True
-    if img.page <= 2 and aspect > 3.0:
-        return True
-    return False
+    return aspect > 4.0 or aspect < 0.25 or (w < 150 and h < 150) or (img.page <= 2 and aspect > 3.0)
 
 
 @app.post("/api/preview")
@@ -191,22 +184,13 @@ async def ingest(
 
     await progress("checking", "检查是否已入库...")
     with driver.session() as session:
-        result = session.run("""
-            MATCH (d:Document {name: $doc_id})
-            WHERE d.title IS NOT NULL
-            RETURN count(d) AS cnt
-        """, doc_id=doc.doc_id)
-        record = result.single()
-        already_exists = record and record["cnt"] > 0
-
-    if already_exists:
+        rec = session.run(
+            "MATCH (d:Document {name: $doc_id}) WHERE d.title IS NOT NULL RETURN count(d) AS cnt",
+            doc_id=doc.doc_id,
+        ).single()
+    if rec and rec["cnt"] > 0:
         await progress("done", f"{doc.doc_id} 已入库，跳过")
-        return {
-            "status":   "skipped",
-            "doc_id":   doc.doc_id,
-            "message":  f"{doc.doc_id} 已入库，跳过",
-            "sections": doc.total_sections,
-        }
+        return {"status": "skipped", "doc_id": doc.doc_id, "message": f"{doc.doc_id} 已入库，跳过", "sections": doc.total_sections}
 
     await progress("writing", f"写入图谱，共 {doc.total_sections} 个章节...")
     write_document(doc)
@@ -233,6 +217,19 @@ async def ingest(
         write_constraints(driver, doc.doc_id, constraint_data)
     except Exception as e:
         logger.warning("实体/约束提取失败（不影响主流程）: %s", e)
+
+    # ── 表格约束提取（PP-Structure）────────────────────────
+    await progress("tables", "提取技术规范表格...")
+    try:
+        from .services.table_extractor import extract_all_tables, is_available as tables_available
+        from .services.entity_writer   import write_constraints as _wc
+        if tables_available():
+            table_cons = extract_all_tables(str(tmp_path), doc.doc_id, section_dicts)
+            if table_cons:
+                _wc(driver, doc.doc_id, table_cons)
+                logger.info("表格约束写入 %d 条", len(table_cons))
+    except Exception as e:
+        logger.warning("表格提取失败（不影响主流程）: %s", e)
 
     # ── 多模态：提取并分析图片 ────────────────────────────
     await progress("images", "提取图片中...")

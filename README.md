@@ -1007,9 +1007,9 @@ SPLADE 是介于 BM25 和稠密向量之间的检索范式，既有稀疏可解�
 
 当前 pdfplumber 依赖数字化 PDF，对扫描版文档效果差。
 
-- [ ] 集成 **Surya OCR**（state-of-the-art 多语言 OCR，支持中文工程图纸）或 **PaddleOCR 3.0**
-- [ ] 版面分析（Layout Analysis）：识别页面中的"正文/表格/公式/图示"区域，分别用不同解析策略处理
-- [ ] **表格提取**：集成 Microsoft Table Transformer，将技术规范中的参数表（如力矩范围表）提取为结构化 JSON 写入 `Constraint` 节点
+- [x] 集成 **PaddleOCR 3.0**（多语言 OCR，支持中文工程图纸）；扫描页自动检测并路由到 OCR 解析器
+- [x] 版面分析（Layout Analysis）：PP-Structure 识别页面中的"正文/表格/图示"区域，分别用不同解析策略处理
+- [x] **表格提取**：PP-Structure 表格区域 → HTML 解析 → 参数/值/单位列识别 → 写入 `Constraint` 节点（`source='table'`）
 
 **工程图纸理解（Technical Drawing AI）**
 

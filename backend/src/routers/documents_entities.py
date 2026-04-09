@@ -187,3 +187,25 @@ async def reanalyze_document(doc_id: str, driver: Driver = Depends(get_driver)):
 
     asyncio.create_task(_reanalyze())
     return {"doc_id": doc_id, "status": "reanalyze_started", "message": "重新分析已在后台启动"}
+
+
+@router.get("/documents/{doc_id}/tables")
+async def get_document_tables(doc_id: str, driver: Driver = Depends(get_driver)):
+    """查询从表格中提取的约束节点（source='table'）"""
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (s:Section {doc_id: $doc_id})-[:HAS_CONSTRAINT]->(c:Constraint {source: 'table'})
+            RETURN c.constraint_id AS constraint_id,
+                   c.type         AS type,
+                   c.description  AS description,
+                   c.value        AS value,
+                   c.value_min    AS value_min,
+                   c.value_max    AS value_max,
+                   c.unit         AS unit,
+                   s.chunk_id     AS chunk_id,
+                   s.number       AS section_number,
+                   s.title        AS section_title
+            ORDER BY s.number, c.type
+        """, doc_id=doc_id)
+        constraints = [dict(r) for r in result]
+    return {"doc_id": doc_id, "constraints": constraints, "total": len(constraints)}
