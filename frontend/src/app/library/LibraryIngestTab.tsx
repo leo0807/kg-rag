@@ -1,145 +1,296 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { fetchApi, ApiError } from "@/lib/api";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Upload, X, RotateCcw, Square, FileText, CheckCircle2, AlertCircle, Clock, Loader2 } from "lucide-react";
+import { ApiError } from "@/lib/api";
 
-interface IngestResult { doc_id: string; sections: number; status: string; message?: string; }
-interface Stats { total: number; documents: number; sections: number; }
+// ── 类型 ──────────────────────────────────────────────────────────────────────
+
+type ItemStatus = "pending" | "uploading" | "done" | "skipped" | "error" | "interrupted";
+
 interface FileItem {
-    file:      File;
-    status:    "pending" | "uploading" | "done" | "skipped" | "error";
-    result?:   IngestResult;
-    error?:    string;
+    id:        string;
+    name:      string;
+    size:      number;
+    status:    ItemStatus;
+    file?:     File;          // 刷新后丢失
     progress?: string;
+    docId?:    string;
+    sections?: number;
+    error?:    string;
 }
+
+interface PersistedItem {
+    id: string; name: string; size: number; status: ItemStatus;
+    docId?: string; sections?: number; error?: string;
+}
+
+interface Stats { total: number; documents: number; sections: number; }
+
+const SESSION_KEY = "ingest_session_v2";
+
+// ── localStorage 持久化 ───────────────────────────────────────────────────────
+
+function saveSession(items: FileItem[]) {
+    const persisted: PersistedItem[] = items.map(({ id, name, size, status, docId, sections, error }) => ({
+        id, name, size,
+        status: status === "uploading" ? "interrupted" : status,
+        docId, sections, error,
+    }));
+    localStorage.setItem(SESSION_KEY, JSON.stringify(persisted));
+}
+
+function loadSession(): FileItem[] {
+    try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) return [];
+        const parsed: PersistedItem[] = JSON.parse(raw);
+        return parsed.map(p => ({ ...p }));
+    } catch { return []; }
+}
+
+function uid() { return Math.random().toString(36).slice(2, 10); }
+function fmtSize(b: number) { return b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${(b / 1024).toFixed(1)} KB`; }
+
+const STATUS_ICON: Record<ItemStatus, React.ReactNode> = {
+    done:        <CheckCircle2 size={14} className="text-emerald-400" />,
+    skipped:     <CheckCircle2 size={14} className="text-gray-500" />,
+    error:       <AlertCircle  size={14} className="text-red-400" />,
+    interrupted: <Clock        size={14} className="text-amber-400" />,
+    uploading:   <Loader2      size={14} className="text-indigo-400 animate-spin" />,
+    pending:     <FileText     size={14} className="text-gray-400" />,
+};
 
 interface Props { onDone?: () => void; }
 
 export function LibraryIngestTab({ onDone }: Props) {
-    const [files,    setFiles]    = useState<FileItem[]>([]);
+    const [items,    setItems]    = useState<FileItem[]>([]);
     const [dragging, setDragging] = useState(false);
     const [stats,    setStats]    = useState<Stats | null>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
+    const [running,  setRunning]  = useState(false);
+    const abortRef  = useRef<AbortController | null>(null);
+    const inputRef  = useRef<HTMLInputElement>(null);
 
+    // 初始化：恢复上次会话
     useEffect(() => {
+        setItems(loadSession());
         fetch("/api/stats").then(r => r.json()).then(setStats).catch(() => {});
     }, []);
 
-    function addFiles(newFiles: FileList | null) {
+    // 每次 items 变化持久化
+    useEffect(() => { if (items.length) saveSession(items); }, [items]);
+
+    // ── 文件管理 ──────────────────────────────────────────────────────────────
+
+    const addFiles = useCallback((newFiles: FileList | null) => {
         if (!newFiles) return;
-        const items: FileItem[] = Array.from(newFiles)
-            .filter(f => f.name.endsWith(".pdf"))
-            .map(f => ({ file: f, status: "pending" }));
-        setFiles(prev => [...prev, ...items]);
-    }
+        setItems(prev => {
+            const next = [...prev];
+            Array.from(newFiles).forEach(f => {
+                const suffix = f.name.split(".").pop()?.toLowerCase() ?? "";
+                if (!["pdf", "docx"].includes(suffix)) return;
+                // 匹配已有同名项（恢复断点）
+                const existing = next.find(it => it.name === f.name &&
+                    (it.status === "interrupted" || it.status === "error" || it.status === "pending"));
+                if (existing) { existing.file = f; existing.status = "pending"; existing.error = undefined; }
+                else next.push({ id: uid(), name: f.name, size: f.size, status: "pending", file: f });
+            });
+            return next;
+        });
+    }, []);
 
-    async function uploadAll() {
+    const removeItem = (id: string) => setItems(prev => prev.filter(it => it.id !== id));
+    const clearDone = () => setItems(prev => {
+        const next = prev.filter(it => it.status !== "done" && it.status !== "skipped");
+        if (!next.length) localStorage.removeItem(SESSION_KEY);
+        return next;
+    });
+    const retryItem = (id: string) =>
+        setItems(prev => prev.map(it => it.id === id ? { ...it, status: "pending", error: undefined } : it));
+
+    // ── 上传 ──────────────────────────────────────────────────────────────────
+
+    const uploadAll = async () => {
+        setRunning(true);
+        abortRef.current = new AbortController();
+        const { signal } = abortRef.current;
+
         let doneCount = 0;
-        let errorCount = 0;
 
-        for (let i = 0; i < files.length; i++) {
-            if (files[i].status !== "pending") continue;
+        for (let i = 0; i < items.length; i++) {
+            if (signal.aborted) break;
+            const item = items[i];
+            if (item.status !== "pending" || !item.file) continue;
+
             const clientId = `${Date.now()}_${i}`;
             const ws = new WebSocket(`ws://localhost:8000/ws/ingest/${clientId}`);
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, progress: data.detail } : f));
+            ws.onmessage = (ev) => {
+                const d = JSON.parse(ev.data);
+                setItems(prev => prev.map(it => it.id === item.id ? { ...it, progress: d.detail } : it));
             };
-            setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: "uploading" } : f));
+
+            setItems(prev => prev.map(it => it.id === item.id ? { ...it, status: "uploading", progress: "" } : it));
+
             try {
                 const fd = new FormData();
-                fd.append("file", files[i].file);
-                const data = await fetchApi<IngestResult>(`/api/ingest?client_id=${clientId}`, { method: "POST", body: fd });
+                fd.append("file", item.file);
+                const token = localStorage.getItem("token") ?? "";
+                const res = await fetch(`/api/ingest?client_id=${clientId}`, {
+                    method: "POST", body: fd, signal,
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                });
                 ws.close();
-                setFiles(prev => prev.map((f, idx) =>
-                    idx === i ? { ...f, status: data.status === "skipped" ? "skipped" : "done", result: data, progress: "" } : f
-                ));
-                if (data.status !== "skipped") doneCount++;
-            } catch (e) {
+                if (!res.ok) throw new ApiError(res.status, await res.text());
+                const data = await res.json();
+                const st: ItemStatus = data.status === "skipped" ? "skipped" : "done";
+                setItems(prev => prev.map(it => it.id === item.id
+                    ? { ...it, status: st, docId: data.doc_id, sections: data.sections, progress: "" } : it));
+                if (st === "done") doneCount++;
+            } catch (e: unknown) {
                 ws.close();
-                const message = e instanceof ApiError ? e.message : "上传失败";
-                setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: "error", error: message, progress: "" } : f));
-                errorCount++;
+                const interrupted = (e instanceof DOMException && e.name === "AbortError");
+                setItems(prev => prev.map(it => it.id === item.id ? {
+                    ...it,
+                    status:  interrupted ? "interrupted" : "error",
+                    error:   interrupted ? undefined : (e instanceof ApiError ? e.message : "上传失败"),
+                    progress: "",
+                } : it));
+                if (interrupted) break;
             }
         }
 
-        if (errorCount === 0 && doneCount > 0) {
+        setRunning(false);
+        abortRef.current = null;
+        if (doneCount > 0) {
             fetch("/api/stats").then(r => r.json()).then(setStats).catch(() => {});
-            setTimeout(() => { setFiles([]); onDone?.(); }, 1500);
+            onDone?.();
         }
-    }
+    };
 
-    const pendingCount = files.filter(f => f.status === "pending").length;
+    const abort = () => { abortRef.current?.abort(); };
+
+    // ── 统计 ──────────────────────────────────────────────────────────────────
+
+    const counts = {
+        pending:     items.filter(it => it.status === "pending").length,
+        uploading:   items.filter(it => it.status === "uploading").length,
+        done:        items.filter(it => it.status === "done" || it.status === "skipped").length,
+        error:       items.filter(it => it.status === "error").length,
+        interrupted: items.filter(it => it.status === "interrupted").length,
+        noFile:      items.filter(it => (it.status === "pending" || it.status === "interrupted") && !it.file).length,
+    };
+    const canUpload = counts.pending > 0 && counts.pending > counts.noFile && !running;
+
+    // ── 渲染 ──────────────────────────────────────────────────────────────────
 
     return (
-        <div className="max-w-2xl space-y-5">
-            {/* 统计卡片 */}
+        <div className="space-y-4 max-w-3xl">
+            {/* 图谱统计 */}
             {stats && (
                 <div className="flex gap-3">
-                    {[
-                        { label: "已入库文档", value: stats.documents },
-                        { label: "章节总数",   value: stats.sections  },
-                        { label: "图谱节点",   value: stats.total     },
-                    ].map(({ label, value }) => (
-                        <div key={label} className="flex-1 px-4 py-3 bg-gray-900 border border-gray-800 rounded-lg">
-                            <div className="text-xs text-gray-500 mb-1">{label}</div>
-                            <div className="text-2xl font-semibold text-white">{value}</div>
+                    {([["已入库文档", stats.documents], ["章节总数", stats.sections], ["图谱节点", stats.total]] as [string, number][]).map(([l, v]) => (
+                        <div key={l} className="flex-1 px-4 py-3 bg-gray-900 border border-gray-800 rounded-lg">
+                            <div className="text-xs text-gray-500 mb-1">{l}</div>
+                            <div className="text-xl font-semibold text-white">{v}</div>
                         </div>
                     ))}
                 </div>
             )}
 
-            {/* 拖拽区域 */}
+            {/* 拖拽区 */}
             <div
                 onDragOver={e => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); }}
-                onClick={() => inputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors duration-200
-                    ${dragging ? "border-indigo-500 bg-indigo-500/10" : "border-gray-700 hover:border-gray-500 bg-gray-900"}`}
+                onClick={() => !running && inputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl text-center transition-colors duration-200
+                    ${items.length ? "py-5" : "py-12"}
+                    ${dragging ? "border-indigo-500 bg-indigo-500/10" : "border-gray-700 hover:border-gray-500 bg-gray-900"}
+                    ${running ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
             >
-                <div className="text-4xl mb-3">📄</div>
-                <div className="text-gray-300 text-sm">拖拽 PDF 文件到此处，或点击选择</div>
-                <div className="text-gray-500 text-xs mt-1">支持同时选择多个文件</div>
+                <Upload size={20} className="mx-auto mb-2 text-gray-500" />
+                <div className="text-gray-300 text-sm">拖拽 PDF / DOCX 文件到此处，或点击选择</div>
+                <div className="text-gray-600 text-xs mt-1">支持同时选择多个文件</div>
             </div>
-            <input ref={inputRef} type="file" accept=".pdf" multiple className="hidden" onChange={e => addFiles(e.target.files)} />
+            <input ref={inputRef} type="file" accept=".pdf,.docx" multiple className="hidden"
+                onChange={e => { addFiles(e.target.files); e.target.value = ""; }} />
 
-            {/* 文件列表 */}
-            {files.length > 0 && (
-                <div className="space-y-2">
-                    {files.map((item, i) => (
-                        <div key={i} className="flex items-center gap-3 px-4 py-3 bg-gray-900 rounded-lg border border-gray-800">
-                            <span className="text-lg">
-                                {item.status === "done" ? "✅" : item.status === "skipped" ? "⏭️" :
-                                 item.status === "error" ? "❌" : item.status === "uploading" ? "⏳" : "📄"}
-                            </span>
-                            <div className="flex-1 min-w-0">
-                                <div className="text-sm text-gray-200 truncate">{item.file.name}</div>
-                                <div className="text-xs text-gray-500 mt-0.5">
-                                    {item.status === "done" && item.result
-                                        ? `${item.result.doc_id} · ${item.result.sections} 个章节`
-                                        : item.status === "skipped" && item.result
-                                            ? `${item.result.doc_id} · 已入库，跳过`
-                                            : item.status === "error" ? item.error
-                                            : item.status === "uploading" ? (item.progress || "上传中...")
-                                            : `${(item.file.size / 1024).toFixed(1)} KB`}
-                                </div>
-                            </div>
-                            {item.status === "pending" && (
-                                <button onClick={() => setFiles(prev => prev.filter((_, idx) => idx !== i))}
-                                    className="text-gray-600 hover:text-gray-400 text-sm">✕</button>
-                            )}
-                        </div>
-                    ))}
+            {/* 队列摘要条 */}
+            {items.length > 0 && (
+                <div className="flex items-center gap-4 text-xs text-gray-500">
+                    {counts.pending > 0    && <span className="text-gray-300">{counts.pending} 待上传</span>}
+                    {counts.uploading > 0  && <span className="text-indigo-400 flex items-center gap-1"><Loader2 size={11} className="animate-spin" />{counts.uploading} 上传中</span>}
+                    {counts.done > 0       && <span className="text-emerald-400">{counts.done} 已完成</span>}
+                    {counts.interrupted > 0 && <span className="text-amber-400">{counts.interrupted} 已中断</span>}
+                    {counts.error > 0      && <span className="text-red-400">{counts.error} 失败</span>}
+                    {counts.noFile > 0     && <span className="text-amber-400">↑ {counts.noFile} 项需重新选择文件</span>}
+                    <span className="flex-1" />
+                    {counts.done > 0 && <button onClick={clearDone} className="text-gray-600 hover:text-gray-300 transition-colors">清除完成项</button>}
+                    <button onClick={() => { setItems([]); localStorage.removeItem(SESSION_KEY); }}
+                        className="text-gray-600 hover:text-red-400 transition-colors">清空全部</button>
                 </div>
             )}
 
-            {/* 上传按钮 */}
-            {pendingCount > 0 && (
-                <button onClick={uploadAll}
-                    className="px-5 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-500">
-                    上传 {pendingCount} 个文件并写入图谱
-                </button>
+            {/* 文件列表 */}
+            {items.length > 0 && (
+                <div className="border border-gray-800 rounded-xl overflow-hidden">
+                    <div className="divide-y divide-gray-800/60 max-h-96 overflow-y-auto">
+                        {items.map(item => (
+                            <div key={item.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-900/50">
+                                <span className="flex-shrink-0">{STATUS_ICON[item.status]}</span>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm text-gray-200 truncate">{item.name}</span>
+                                        {!item.file && (item.status === "pending" || item.status === "interrupted") && (
+                                            <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-400 flex-shrink-0">需重选文件</span>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-0.5">
+                                        {item.status === "uploading"   && (item.progress || "上传中...")}
+                                        {item.status === "done"        && `${item.docId} · ${item.sections} 个章节`}
+                                        {item.status === "skipped"     && `${item.docId} · 已入库，跳过`}
+                                        {item.status === "error"       && <span className="text-red-400">{item.error}</span>}
+                                        {item.status === "interrupted" && <span className="text-amber-400">已中断，可重新上传</span>}
+                                        {item.status === "pending"     && fmtSize(item.size)}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    {item.status === "error" && (
+                                        <button onClick={() => retryItem(item.id)} title="重试"
+                                            className="p-1 text-gray-500 hover:text-indigo-400 transition-colors">
+                                            <RotateCcw size={13} />
+                                        </button>
+                                    )}
+                                    {(item.status === "pending" || item.status === "interrupted" || item.status === "error") && (
+                                        <button onClick={() => removeItem(item.id)} title="移除"
+                                            className="p-1 text-gray-600 hover:text-red-400 transition-colors">
+                                            <X size={13} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* 操作按钮 */}
+            {(canUpload || running) && (
+                <div className="flex gap-2">
+                    {!running && (
+                        <button onClick={uploadAll}
+                            className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-500 transition-colors">
+                            <Upload size={13} />
+                            上传 {counts.pending - counts.noFile} 个文件并写入图谱
+                        </button>
+                    )}
+                    {running && (
+                        <button onClick={abort}
+                            className="flex items-center gap-2 px-4 py-2 border border-red-700 text-red-400 text-sm rounded-lg hover:bg-red-900/20 transition-colors">
+                            <Square size={13} />中止上传
+                        </button>
+                    )}
+                </div>
             )}
         </div>
     );

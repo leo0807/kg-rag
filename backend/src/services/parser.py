@@ -222,8 +222,14 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
     return sections
 
 def parse(pdf_path: Path) -> dict:
-    # 解析整个 PDF，返回元数据 + 所有章节
-    # 扫描版 PDF 自动路由到 OCR 增强解析器
+    """解析文档，按扩展名路由到对应解析器"""
+    suffix = pdf_path.suffix.lower()
+
+    if suffix == ".docx":
+        from .docx_parser import parse_docx
+        return parse_docx(pdf_path)
+
+    # ── PDF 解析（含 OCR 自动路由）────────────────────────────────────────────
     try:
         from .ocr_engine import is_available as ocr_available, pdf_has_scanned_pages
         if ocr_available() and pdf_has_scanned_pages(str(pdf_path)):

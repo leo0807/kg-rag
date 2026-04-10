@@ -157,10 +157,8 @@ async def health():
     }
 
 def _is_logo(img) -> bool:
-    w, h = img.width, max(img.height, 1)
-    aspect = w / h
+    w, h = img.width, max(img.height, 1); aspect = w / h
     return aspect > 4.0 or aspect < 0.25 or (w < 150 and h < 150) or (img.page <= 2 and aspect > 3.0)
-
 
 @app.post("/api/preview")
 async def preview(file: UploadFile = File(...)):
@@ -181,11 +179,14 @@ async def ingest(
         if client_id:
             await send_progress(client_id, {"step": step, "detail": detail})
 
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".pdf", ".docx"}:
+        raise HTTPException(status_code=400, detail="仅支持 PDF 和 DOCX 格式")
     tmp_path = UPLOAD_DIR / file.filename
     with tmp_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    await progress("parsing", "解析 PDF 中...")
+    await progress("parsing", "解析文档中...")
     doc = parse(tmp_path)
 
     await progress("checking", "检查是否已入库...")
@@ -294,8 +295,4 @@ async def ingest(
         logger.warning("多模态处理失败（不影响主流程）: %s", e)
 
     await progress("done", f"{doc.doc_id} 写入完成")
-    return {
-        "status":   "OK",
-        "doc_id":   doc.doc_id,
-        "sections": doc.total_sections,
-    }
+    return {"status": "OK", "doc_id": doc.doc_id, "sections": doc.total_sections}
