@@ -169,7 +169,6 @@ async def preview(file: UploadFile = File(...)):
     return parse(tmp_path)
 
 @app.post("/api/ingest")
-@limiter.limit("10/minute")
 async def ingest(
     request:   Request,
     file:      UploadFile = File(...),

@@ -11,6 +11,7 @@ interface Stats { total: number; documents: number; sections: number; }
 interface Props { onDone?: () => void; }
 
 const SESSION_KEY = "ingest_session_v2";
+const CONCURRENCY = 3;
 
 function saveSession(items: FileItem[]) {
     const persisted: PersistedItem[] = items.map(({ id, name, size, status, docId, sections, error }) => ({
@@ -42,6 +43,11 @@ const STATUS_ICON: Record<ItemStatus, React.ReactNode> = {
     pending:     <FileText     size={14} className="text-gray-400" />,
 };
 
+function wsUrl(clientId: string) {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}/ws/ingest/${clientId}`;
+}
+
 export function LibraryIngestTab({ onDone }: Props) {
     const [items,    setItems]    = useState<FileItem[]>([]);
     const [dragging, setDragging] = useState(false);
@@ -50,20 +56,15 @@ export function LibraryIngestTab({ onDone }: Props) {
     const abortRef  = useRef<AbortController | null>(null);
     const inputRef  = useRef<HTMLInputElement>(null);
 
-    // 初始化：恢复上次会话
     useEffect(() => {
         setItems(loadSession());
         fetch("/api/stats").then(r => r.json()).then(setStats).catch(() => {});
     }, []);
 
-    // 每次 items 变化持久化
     useEffect(() => { if (items.length) saveSession(items); }, [items]);
-
-    // ── 文件管理 ──────────────────────────────────────────────────────────────
 
     const addFiles = useCallback((newFiles: FileList | File[] | null) => {
         if (!newFiles) return;
-        // 立即转成 Array，避免 FileList 在 e.target.value="" 后被清空
         const fileArray = Array.from(newFiles).filter(f => {
             const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
             return ["pdf", "docx"].includes(ext);
@@ -90,56 +91,64 @@ export function LibraryIngestTab({ onDone }: Props) {
     const retryItem = (id: string) =>
         setItems(prev => prev.map(it => it.id === id ? { ...it, status: "pending", error: undefined } : it));
 
-    // ── 上传 ──────────────────────────────────────────────────────────────────
+    const uploadOne = async (item: FileItem, signal: AbortSignal): Promise<boolean> => {
+        if (signal.aborted || !item.file) return false;
+        const clientId = `${Date.now()}_${uid()}`;
+        const ws = new WebSocket(wsUrl(clientId));
+        ws.onmessage = (ev) => {
+            const d = JSON.parse(ev.data);
+            setItems(prev => prev.map(it => it.id === item.id ? { ...it, progress: d.detail } : it));
+        };
+        setItems(prev => prev.map(it => it.id === item.id ? { ...it, status: "uploading", progress: "" } : it));
+        try {
+            const fd = new FormData();
+            fd.append("file", item.file);
+            const token = localStorage.getItem("token") ?? "";
+            const res = await fetch(`/api/ingest?client_id=${clientId}`, {
+                method: "POST", body: fd, signal,
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+            ws.close();
+            if (!res.ok) throw new ApiError(res.status, await res.text());
+            const data = await res.json();
+            const st: ItemStatus = data.status === "skipped" ? "skipped" : "done";
+            setItems(prev => prev.map(it => it.id === item.id
+                ? { ...it, status: st, docId: data.doc_id, sections: data.sections, progress: "" } : it));
+            return st === "done";
+        } catch (e: unknown) {
+            ws.close();
+            const interrupted = (e instanceof DOMException && e.name === "AbortError");
+            setItems(prev => prev.map(it => it.id === item.id ? {
+                ...it,
+                status:   interrupted ? "interrupted" : "error",
+                error:    interrupted ? undefined : (e instanceof ApiError ? e.message : "上传失败"),
+                progress: "",
+            } : it));
+            return false;
+        }
+    };
 
     const uploadAll = async () => {
         setRunning(true);
         abortRef.current = new AbortController();
         const { signal } = abortRef.current;
 
+        // Snapshot pending items at start
+        const queue = items.filter(it => it.status === "pending" && it.file);
+        let idx = 0;
         let doneCount = 0;
 
-        for (let i = 0; i < items.length; i++) {
-            if (signal.aborted) break;
-            const item = items[i];
-            if (item.status !== "pending" || !item.file) continue;
-
-            const clientId = `${Date.now()}_${i}`;
-            const ws = new WebSocket(`ws://localhost:8000/ws/ingest/${clientId}`);
-            ws.onmessage = (ev) => {
-                const d = JSON.parse(ev.data);
-                setItems(prev => prev.map(it => it.id === item.id ? { ...it, progress: d.detail } : it));
-            };
-
-            setItems(prev => prev.map(it => it.id === item.id ? { ...it, status: "uploading", progress: "" } : it));
-
-            try {
-                const fd = new FormData();
-                fd.append("file", item.file);
-                const token = localStorage.getItem("token") ?? "";
-                const res = await fetch(`/api/ingest?client_id=${clientId}`, {
-                    method: "POST", body: fd, signal,
-                    headers: token ? { Authorization: `Bearer ${token}` } : {},
-                });
-                ws.close();
-                if (!res.ok) throw new ApiError(res.status, await res.text());
-                const data = await res.json();
-                const st: ItemStatus = data.status === "skipped" ? "skipped" : "done";
-                setItems(prev => prev.map(it => it.id === item.id
-                    ? { ...it, status: st, docId: data.doc_id, sections: data.sections, progress: "" } : it));
-                if (st === "done") doneCount++;
-            } catch (e: unknown) {
-                ws.close();
-                const interrupted = (e instanceof DOMException && e.name === "AbortError");
-                setItems(prev => prev.map(it => it.id === item.id ? {
-                    ...it,
-                    status:  interrupted ? "interrupted" : "error",
-                    error:   interrupted ? undefined : (e instanceof ApiError ? e.message : "上传失败"),
-                    progress: "",
-                } : it));
-                if (interrupted) break;
+        const worker = async () => {
+            while (true) {
+                if (signal.aborted) break;
+                const i = idx++;
+                if (i >= queue.length) break;
+                const ok = await uploadOne(queue[i], signal);
+                if (ok) doneCount++;
             }
-        }
+        };
+
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
 
         setRunning(false);
         abortRef.current = null;
@@ -151,8 +160,6 @@ export function LibraryIngestTab({ onDone }: Props) {
 
     const abort = () => { abortRef.current?.abort(); };
 
-    // ── 统计 ──────────────────────────────────────────────────────────────────
-
     const counts = {
         pending:     items.filter(it => it.status === "pending").length,
         uploading:   items.filter(it => it.status === "uploading").length,
@@ -163,11 +170,8 @@ export function LibraryIngestTab({ onDone }: Props) {
     };
     const canUpload = counts.pending > 0 && counts.pending > counts.noFile && !running;
 
-    // ── 渲染 ──────────────────────────────────────────────────────────────────
-
     return (
         <div className="space-y-4 max-w-3xl">
-            {/* 图谱统计 */}
             {stats && (
                 <div className="flex gap-3">
                     {([["已入库文档", stats.documents], ["章节总数", stats.sections], ["图谱节点", stats.total]] as [string, number][]).map(([l, v]) => (
@@ -179,7 +183,6 @@ export function LibraryIngestTab({ onDone }: Props) {
                 </div>
             )}
 
-            {/* 拖拽区 */}
             <div
                 onDragOver={e => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
@@ -203,7 +206,6 @@ export function LibraryIngestTab({ onDone }: Props) {
             <input ref={inputRef} type="file" accept=".pdf,.docx" multiple className="hidden"
                 onChange={e => { addFiles(e.target.files); e.target.value = ""; }} />
 
-            {/* 队列摘要条 */}
             {items.length > 0 && (
                 <div className="flex items-center gap-4 text-xs text-gray-500">
                     {counts.pending > 0    && <span className="text-gray-300">{counts.pending} 待上传</span>}
@@ -219,7 +221,6 @@ export function LibraryIngestTab({ onDone }: Props) {
                 </div>
             )}
 
-            {/* 文件列表 */}
             {items.length > 0 && (
                 <div className="border border-gray-800 rounded-xl overflow-hidden">
                     <div className="divide-y divide-gray-800/60 max-h-96 overflow-y-auto">
@@ -262,7 +263,6 @@ export function LibraryIngestTab({ onDone }: Props) {
                 </div>
             )}
 
-            {/* 操作按钮 */}
             {(canUpload || running) && (
                 <div className="flex items-center gap-3">
                     {!running && (
@@ -276,7 +276,7 @@ export function LibraryIngestTab({ onDone }: Props) {
                         <>
                             <div className="flex items-center gap-2 text-sm text-indigo-400">
                                 <Loader2 size={14} className="animate-spin" />
-                                <span>正在写入图谱...</span>
+                                <span>正在写入图谱...（最多 {CONCURRENCY} 个并行）</span>
                             </div>
                             <button onClick={abort}
                                 className="flex items-center gap-1.5 px-3 py-2 border border-red-800 text-red-400 text-sm rounded-lg hover:bg-red-900/20 transition-colors">
