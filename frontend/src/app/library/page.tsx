@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import SkeletonTable from "@/components/ui/SkeletonTable";
+import { LibraryIngestTab }    from "./LibraryIngestTab";
 import { LibraryReprocessTab } from "./LibraryReprocessTab";
 
 interface Document {
@@ -30,8 +31,7 @@ export default function LibraryPage() {
     const [loading,    setLoading]    = useState(true);
     const [fetchError, setFetchError] = useState(false);
     const [isAdmin,    setIsAdmin]    = useState(false);
-    const [activeTab,  setActiveTab]  = useState<"list" | "reprocess">("list");
-
+    const [activeTab,  setActiveTab]  = useState<"list" | "ingest" | "reprocess">("list");
     useEffect(() => { setIsAdmin(getIsAdmin()); }, []);
 
     useEffect(() => {
@@ -60,8 +60,7 @@ export default function LibraryPage() {
                         <span className="ml-3 text-sm text-gray-400 font-normal">{total} 个文档</span>
                     )}
                 </h1>
-                {activeTab === "list" && (
-                    <form onSubmit={handleSearch} className="flex gap-2">
+                {activeTab === "list" && (<form onSubmit={handleSearch} className="flex gap-2">
                         <input value={q} onChange={e => setQ(e.target.value)}
                             placeholder="搜索规范编号或标题..."
                             className="px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm
@@ -86,6 +85,10 @@ export default function LibraryPage() {
                     className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === "list" ? "border-indigo-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}>
                     文档列表
                 </button>
+                <button onClick={() => setActiveTab("ingest")}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === "ingest" ? "border-indigo-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}>
+                    导入文件
+                </button>
                 {isAdmin && (
                     <button onClick={() => setActiveTab("reprocess")}
                         className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === "reprocess" ? "border-indigo-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}>
@@ -94,6 +97,7 @@ export default function LibraryPage() {
                 )}
             </div>
 
+            {activeTab === "ingest" && <LibraryIngestTab onDone={() => { setActiveTab("list"); setPage(1); setSearch(""); }} />}
             {activeTab === "reprocess" && isAdmin && <LibraryReprocessTab />}
 
             {activeTab === "list" && (

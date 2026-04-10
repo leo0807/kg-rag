@@ -5,12 +5,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
 import {
-    LogOut, Upload, BookOpen, Search, MessageSquare,
+    LogOut, BookOpen, Search, MessageSquare,
     Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch, BrainCircuit, BarChart2,
 } from "lucide-react";
 
 const navItems = [
-    { href: "/ingest",              label: "导入文件",   shortcut: "",   Icon: Upload       },
     { href: "/library",             label: "文档库",     shortcut: "⌘B", Icon: BookOpen     },
     { href: "/search",              label: "全局搜索",   shortcut: "⌘K", Icon: Search       },
     { href: "/query",               label: "智能问答",   shortcut: "⌘/", Icon: MessageSquare},
