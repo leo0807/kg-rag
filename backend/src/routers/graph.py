@@ -72,6 +72,17 @@ async def get_graph(
     doc_id:       str = "",       # 按文档 doc_id 筛选
     driver: Driver = Depends(get_driver),
 ):
+    import json as _json, hashlib
+    _cache_key = "graph:" + hashlib.md5(f"{limit_doc}:{limit_sec}:{limit_img}:{limit_entity}:{doc_id}".encode()).hexdigest()[:12]
+    try:
+        from ..services.cache import get_redis
+        _rc = get_redis()
+        _cached = _rc.get(_cache_key)
+        if _cached:
+            return _json.loads(_cached)
+    except Exception:
+        _rc = None
+
     with driver.session() as session:
         doc_filter = "WHERE $doc_id = '' OR d.name = $doc_id" if doc_id else ""
 
@@ -277,4 +288,9 @@ async def get_graph(
             LIMIT 100
         """)
 
-    return {"nodes": nodes, "edges": edges}
+    _result = {"nodes": nodes, "edges": edges}
+    try:
+        if _rc: _rc.setex(_cache_key, 60, _json.dumps(_result, default=str))
+    except Exception:
+        pass
+    return _result

@@ -9,20 +9,30 @@ router = APIRouter(prefix="/api", tags=["documents"])
 
 @router.get("/stats")
 async def stats(driver: Driver = Depends(get_driver)):
+    import json as _json
+    try:
+        from ..services.cache import get_redis
+        r = get_redis()
+        cached = r.get("neo4j:stats")
+        if cached:
+            return _json.loads(cached)
+    except Exception:
+        r = None
     with driver.session() as session:
         result = session.run("""
             MATCH (n)
-            RETURN 
+            RETURN
                 count(n) AS total,
                 sum(CASE WHEN n:Document AND n.title IS NOT NULL THEN 1 ELSE 0 END) AS documents,
                 sum(CASE WHEN n:Section THEN 1 ELSE 0 END) AS sections
         """)
         record = result.single()
-        return {
-            "total":     record["total"],
-            "documents": record["documents"],
-            "sections":  record["sections"],
-        }
+        data = {"total": record["total"], "documents": record["documents"], "sections": record["sections"]}
+    try:
+        if r: r.setex("neo4j:stats", 60, _json.dumps(data))
+    except Exception:
+        pass
+    return data
 
 @router.get("/documents")
 async def list_documents(
@@ -31,6 +41,17 @@ async def list_documents(
     q:        str    = "",
     driver:   Driver = Depends(get_driver),
 ):
+    import json as _json
+    cache_key = f"docs:{page}:{per_page}:{q}"
+    _rc = None
+    try:
+        from ..services.cache import get_redis
+        _rc = get_redis()
+        cached = _rc.get(cache_key)
+        if cached:
+            return _json.loads(cached)
+    except Exception:
+        pass
     skip = (page - 1) * per_page
 
     with driver.session() as session:
@@ -54,12 +75,11 @@ async def list_documents(
         result = session.run(f"""
             MATCH (d:Document)
             {where_clause}
-            OPTIONAL MATCH (d)-[:HAS_SECTION]->(s)
             RETURN d.name        AS doc_id,
                    d.title       AS title,
                    d.version     AS version,
                    d.issue_date  AS issue_date,
-                   count(s)      AS section_count
+                   size([(d)-[:HAS_SECTION]->(s) | s]) AS section_count
             ORDER BY d.name
             SKIP $skip
             LIMIT $per_page
@@ -67,13 +87,12 @@ async def list_documents(
 
         documents = [dict(r) for r in result]
 
-    return {
-        "data":     documents,
-        "total":    total,
-        "page":     page,
-        "per_page": per_page,
-        "pages":    (total + per_page - 1) // per_page,
-    }
+    out = {"data": documents, "total": total, "page": page, "per_page": per_page, "pages": (total + per_page - 1) // per_page}
+    try:
+        if _rc: _rc.setex(cache_key, 30, _json.dumps(out, default=str))
+    except Exception:
+        pass
+    return out
 
 @router.get("/documents/{doc_id}/pdf-url")
 async def get_document_pdf_url(doc_id: str):

@@ -33,6 +33,7 @@ from .routers.gnn                import router as gnn_router
 from .routers.visual_qc          import router as visual_qc_router
 from .routers.reprocess          import router as reprocess_router
 from .routers.admin_cache        import router as admin_cache_router
+from .auth.deps import get_admin_user as _get_admin_user
 
 from .services.health import health_monitor
 
@@ -174,6 +175,7 @@ async def ingest(
     file:      UploadFile = File(...),
     driver:    Driver     = Depends(get_driver),
     client_id: str        = "",
+    _: object  = Depends(_get_admin_user),
 ):
     async def progress(step: str, detail: str = ""):
         if client_id:

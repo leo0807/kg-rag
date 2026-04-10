@@ -4,32 +4,13 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Upload, X, RotateCcw, Square, FileText, CheckCircle2, AlertCircle, Clock, Loader2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 
-// ── 类型 ──────────────────────────────────────────────────────────────────────
-
 type ItemStatus = "pending" | "uploading" | "done" | "skipped" | "error" | "interrupted";
-
-interface FileItem {
-    id:        string;
-    name:      string;
-    size:      number;
-    status:    ItemStatus;
-    file?:     File;          // 刷新后丢失
-    progress?: string;
-    docId?:    string;
-    sections?: number;
-    error?:    string;
-}
-
-interface PersistedItem {
-    id: string; name: string; size: number; status: ItemStatus;
-    docId?: string; sections?: number; error?: string;
-}
-
+interface FileItem { id: string; name: string; size: number; status: ItemStatus; file?: File; progress?: string; docId?: string; sections?: number; error?: string; }
+interface PersistedItem { id: string; name: string; size: number; status: ItemStatus; docId?: string; sections?: number; error?: string; }
 interface Stats { total: number; documents: number; sections: number; }
+interface Props { onDone?: () => void; }
 
 const SESSION_KEY = "ingest_session_v2";
-
-// ── localStorage 持久化 ───────────────────────────────────────────────────────
 
 function saveSession(items: FileItem[]) {
     const persisted: PersistedItem[] = items.map(({ id, name, size, status, docId, sections, error }) => ({
@@ -60,8 +41,6 @@ const STATUS_ICON: Record<ItemStatus, React.ReactNode> = {
     uploading:   <Loader2      size={14} className="text-indigo-400 animate-spin" />,
     pending:     <FileText     size={14} className="text-gray-400" />,
 };
-
-interface Props { onDone?: () => void; }
 
 export function LibraryIngestTab({ onDone }: Props) {
     const [items,    setItems]    = useState<FileItem[]>([]);
@@ -204,13 +183,19 @@ export function LibraryIngestTab({ onDone }: Props) {
                 onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); }}
                 onClick={() => !running && inputRef.current?.click()}
                 className={`border-2 border-dashed rounded-xl text-center transition-colors duration-200
-                    ${items.length ? "py-5" : "py-12"}
-                    ${dragging ? "border-indigo-500 bg-indigo-500/10" : "border-gray-700 hover:border-gray-500 bg-gray-900"}
-                    ${running ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                    ${items.length ? "py-4" : "py-10"}
+                    ${dragging ? "border-indigo-500 bg-indigo-500/10" : "border-gray-700 hover:border-gray-600 bg-gray-900/60"}
+                    ${running ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
             >
-                <Upload size={20} className="mx-auto mb-2 text-gray-500" />
-                <div className="text-gray-300 text-sm">拖拽 PDF / DOCX 文件到此处，或点击选择</div>
-                <div className="text-gray-600 text-xs mt-1">支持同时选择多个文件</div>
+                <Upload size={22} className={`mx-auto mb-2 ${dragging ? "text-indigo-400" : "text-gray-500"}`} />
+                <div className="text-gray-200 text-sm font-medium">
+                    {dragging ? "松开以添加文件" : "拖拽文件到此处，或点击选择"}
+                </div>
+                <div className="flex items-center justify-center gap-3 mt-2">
+                    <span className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-500 font-mono">PDF</span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-500 font-mono">DOCX</span>
+                    <span className="text-xs text-gray-600">支持同时选择多个文件</span>
+                </div>
             </div>
             <input ref={inputRef} type="file" accept=".pdf,.docx" multiple className="hidden"
                 onChange={e => { addFiles(e.target.files); e.target.value = ""; }} />
@@ -276,19 +261,25 @@ export function LibraryIngestTab({ onDone }: Props) {
 
             {/* 操作按钮 */}
             {(canUpload || running) && (
-                <div className="flex gap-2">
+                <div className="flex items-center gap-3">
                     {!running && (
                         <button onClick={uploadAll}
-                            className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-500 transition-colors">
-                            <Upload size={13} />
-                            上传 {counts.pending - counts.noFile} 个文件并写入图谱
+                            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-500 transition-colors">
+                            <Upload size={14} />
+                            开始上传（{counts.pending - counts.noFile} 个文件）
                         </button>
                     )}
                     {running && (
-                        <button onClick={abort}
-                            className="flex items-center gap-2 px-4 py-2 border border-red-700 text-red-400 text-sm rounded-lg hover:bg-red-900/20 transition-colors">
-                            <Square size={13} />中止上传
-                        </button>
+                        <>
+                            <div className="flex items-center gap-2 text-sm text-indigo-400">
+                                <Loader2 size={14} className="animate-spin" />
+                                <span>正在写入图谱...</span>
+                            </div>
+                            <button onClick={abort}
+                                className="flex items-center gap-1.5 px-3 py-2 border border-red-800 text-red-400 text-sm rounded-lg hover:bg-red-900/20 transition-colors">
+                                <Square size={12} />中止
+                            </button>
+                        </>
                     )}
                 </div>
             )}
