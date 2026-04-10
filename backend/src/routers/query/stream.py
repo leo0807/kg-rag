@@ -33,8 +33,44 @@ async def query_stream(
         from ...core.observability import send_generation
         import httpx
         import time
+        import asyncio
 
         t_start = time.time()
+
+        _q_emb: list[float] | None = None
+        try:
+            from ...services.embedder import embed_texts
+            from ...services import semantic_cache
+            _q_emb = (await asyncio.to_thread(embed_texts, [req.question]) or [None])[0]
+            hit = _q_emb and semantic_cache.lookup(_q_emb, req.strategy or "parallel")
+            if hit:
+                sim = hit.get("similarity", 0)
+                yield f"data: {json.dumps({'type': 'status', 'content': f'⚡ 语义缓存命中（相似度 {sim:.3f}）'}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'sources', 'content': hit.get('sources', [])}, ensure_ascii=False)}\n\n"
+                cached_answer = hit.get("answer", "")
+                for char in cached_answer:
+                    yield f"data: {json.dumps({'type': 'delta', 'content': char}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+                try:
+                    from ...db.session import AsyncSessionLocal
+                    from ...db.models import CacheHit
+                    tok = max(100, len(cached_answer) // 3)
+                    async with AsyncSessionLocal() as db:
+                        db.add(CacheHit(
+                            user_id=user_id, department=department,
+                            question_preview=req.question[:200],
+                            matched_question_preview=hit.get("question_preview", "")[:200],
+                            similarity=sim, strategy=req.strategy or "parallel",
+                            cache_id=hit.get("cache_id", ""),
+                            prompt_tokens_saved=tok, cost_saved_usd=round(tok * 0.000002, 6),
+                        ))
+                        await db.commit()
+                except Exception as _ce:
+                    logger.warning("CacheHit 写入失败: %s", _ce)
+                return
+        except Exception as _e:
+            logger.debug("语义缓存查找异常（跳过）: %s", _e)
+
         yield f"data: {json.dumps({'type': 'status', 'content': '检索中...'}, ensure_ascii=False)}\n\n"
 
         # 多跳推理单独处理，以便发送中间步骤
@@ -66,7 +102,7 @@ async def query_stream(
             except Exception as e:
                 logger.warning("多跳流式推理失败，降级: %s", e)
 
-        # ── 反事实图查询 ─────────────────────────────────────────────
+        # 反事实图查询
         if req.strategy == "counterfactual":
             try:
                 from ...services.counterfactual import prepare_counterfactual
@@ -74,14 +110,12 @@ async def query_stream(
                 cf_sections, causal_chain, cf_messages = prepare_counterfactual(
                     req.question, driver, top_k=top_k
                 )
-                # 注入多轮对话历史（system + history + 当前用户消息）
                 if req.history:
                     history_msgs = [
                         {"role": h.get("role", "user"), "content": h.get("content", "")}
                         for h in req.history[-10:]
                         if h.get("content", "").strip()
                     ]
-                    # cf_messages = [system, user]; 在 system 和 user 之间插入历史
                     cf_messages = [cf_messages[0]] + history_msgs + [cf_messages[-1]]
                 yield f"data: {json.dumps({'type': 'causal_chain', 'content': causal_chain}, ensure_ascii=False)}\n\n"
                 sources_cf = [
@@ -173,7 +207,7 @@ async def query_stream(
             for s in sections
         )
 
-        # ── 构建多轮对话 ──────────────────────────
+        # 构建多轮对话
         messages = [
             {
                 "role":    "system",
@@ -181,14 +215,9 @@ async def query_stream(
             }
         ]
 
-        # 加入历史对话（最近6轮=12条）
         for h in req.history[-12:]:
-            messages.append({
-                "role":    h.get("role", "user"),
-                "content": h.get("content", ""),
-            })
+            messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
 
-        # 当前问题附带检索上下文（支持多模态图片）
         user_text = f"## 相关规范内容\n\n{context}\n\n## 问题\n\n{req.question}"
         if req.images:
             user_content: list = [{"type": "text", "text": user_text}]
@@ -251,6 +280,18 @@ async def query_stream(
             latency_ms=latency_ms, strategy=req.strategy,
             user_id=user_id, department=department, question_preview=req.question,
         )
+        # 写入语义缓存
+        if _q_emb and full_answer.strip():
+            try:
+                from ...services import semantic_cache
+                doc_ids = list({s["doc_id"] for s in sources if s.get("doc_id")})
+                await asyncio.to_thread(
+                    semantic_cache.store,
+                    _q_emb, req.strategy or "parallel", full_answer,
+                    sources, req.question[:200], doc_ids,
+                )
+            except Exception as _se:
+                logger.debug("语义缓存写入失败（跳过）: %s", _se)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(

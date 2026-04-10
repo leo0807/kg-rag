@@ -72,4 +72,18 @@ export interface StrategyStats {
     strategies: StrategyRow[];
 }
 
-export type Tab = "user" | "dept" | "dau" | "strategy";
+export interface CacheHitStats {
+    days:  number;
+    since: string;
+    store: { active_entries: number; config: { enabled: boolean; threshold: number; ttl: number } };
+    hits: {
+        hit_count:       number;
+        tokens_saved:    number;
+        cost_saved_usd:  number;
+        cost_saved_cny:  number;
+        avg_similarity:  number;
+    };
+    by_strategy: { strategy: string; hit_count: number; avg_similarity: number }[];
+}
+
+export type Tab = "user" | "dept" | "dau" | "strategy" | "cache";

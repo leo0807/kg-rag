@@ -748,10 +748,10 @@ Anthropic Claude API 支持 Prompt Caching，对超过 1024 token 的系统提�
 
 **实施方案**
 
-- [ ] 集成 `gptcache` 库（`pip install gptcache`）或基于现有 Milvus 自行实现向量缓存层
-- [ ] 相似度阈值可在管理后台配置（默认 0.95，过低导致错误命中，过高缓存命中率低）
-- [ ] 缓存 TTL 默认 24 小时，文档更新时按 `doc_id` 批量失效相关缓存条目
-- [ ] 命中统计写入 `cache_hits` 表，在成本报表中显示缓存节省的 token 数和费用
+- [x] 集成 `gptcache` 库（`pip install gptcache`）或基于现有 Milvus 自行实现向量缓存层
+- [x] 相似度阈值可在管理后台配置（默认 0.95，过低导致错误命中，过高缓存命中率低）
+- [x] 缓存 TTL 默认 24 小时，文档更新时按 `doc_id` 批量失效相关缓存条目
+- [x] 命中统计写入 `cache_hits` 表，在成本报表中显示缓存节省的 token 数和费用
 
 ---
 
@@ -792,7 +792,7 @@ Anthropic Claude API 支持 Prompt Caching，对超过 1024 token 的系统提�
 | 成本优化 | Anthropic Prompt Caching | 系统提示和热点文档缓存，成本降低 ~90% | 规划中 |
 | 效果评估 | RAGAS | 自动评估 Faithfulness / Relevancy / Recall / Precision | 规划中 |
 | 效果评估 | TruLens | 生产环境在线评分，异常问题自动入复核队列 | 规划中 |
-| 响应加速 | 语义缓存（GPTCache） | 相似问题向量匹配命中缓存，< 50ms 响应 | 规划中 |
+| 响应加速 | 语义缓存（GPTCache） | 相似问题向量匹配命中缓存，< 50ms 响应 | 已完成 |
 | 模型优化 | 知识蒸馏 + LoRA 微调 | 本地小模型替代远程 API，延迟和成本双降 | 规划中 |
 | 图神经网络 | GraphSAGE GNN | 结构感知节点 Embedding，提升图结构相关章节召回 | ✅ 已实现 |
 | 假设推理 | 反事实因果推理 | "如果去掉 X 步骤"类假设问题的图谱因果链模拟 | ✅ 已实现 |

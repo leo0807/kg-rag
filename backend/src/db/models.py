@@ -95,3 +95,24 @@ class LLMUsage(Base):
     question_preview:  Mapped[str]      = mapped_column(String(200),  default="")
     created_at:        Mapped[datetime] = mapped_column(DateTime,     server_default=func.now())
 
+
+class CacheHit(Base):
+    """语义缓存命中记录，用于统计缓存节省的 token 和费用"""
+    __tablename__  = "cache_hits"
+    __table_args__ = (
+        Index("ix_cache_hits_user_id",    "user_id"),
+        Index("ix_cache_hits_created_at", "created_at"),
+    )
+
+    id:                       Mapped[int]      = mapped_column(Integer,     primary_key=True, autoincrement=True)
+    user_id:                  Mapped[str]      = mapped_column(String(36),  nullable=True)
+    department:               Mapped[str]      = mapped_column(String(64),  default="")
+    question_preview:         Mapped[str]      = mapped_column(String(200), default="")
+    matched_question_preview: Mapped[str]      = mapped_column(String(200), default="")
+    similarity:               Mapped[float]    = mapped_column(Float,       default=0.0)
+    strategy:                 Mapped[str]      = mapped_column(String(32),  default="")
+    cache_id:                 Mapped[str]      = mapped_column(String(36),  default="")
+    prompt_tokens_saved:      Mapped[int]      = mapped_column(Integer,     default=0)
+    cost_saved_usd:           Mapped[float]    = mapped_column(Float,       default=0.0)
+    created_at:               Mapped[datetime] = mapped_column(DateTime,    server_default=func.now())
+
