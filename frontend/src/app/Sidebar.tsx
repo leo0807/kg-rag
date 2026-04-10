@@ -6,7 +6,7 @@ import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
 import {
     LogOut, Upload, BookOpen, Search, MessageSquare,
-    Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch, BrainCircuit, BarChart2, DatabaseZap,
+    Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch, BrainCircuit, BarChart2,
 } from "lucide-react";
 
 const navItems = [
@@ -20,7 +20,6 @@ const navItems = [
     { href: "/admin/entities",      label: "实体审核",   shortcut: "",   Icon: ShieldCheck  },
     { href: "/admin/gnn",           label: "GNN 训练",   shortcut: "",   Icon: BrainCircuit },
     { href: "/admin/analytics",     label: "活跃度报表", shortcut: "",   Icon: BarChart2    },
-    { href: "/admin/reprocess",     label: "重新处理",   shortcut: "",   Icon: DatabaseZap  },
     { href: "/settings",            label: "设置",       shortcut: "",   Icon: Settings     },
 ];
 

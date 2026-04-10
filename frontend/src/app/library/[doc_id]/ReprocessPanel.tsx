@@ -1,182 +1,212 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { RefreshCw, CheckCircle, XCircle, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import {
+    RefreshCw, CheckCircle, XCircle, Loader2, ChevronDown, ChevronUp,
+    Square, RotateCcw, Clock,
+} from "lucide-react";
 
 const PIPELINES = [
-    { key: "entities",    label: "实体提取",   desc: "工具 / 材料 / 工序节点重新提取" },
-    { key: "constraints", label: "约束参数",   desc: "LLM 提取文本中的力矩/公差/温度约束" },
-    { key: "tables",      label: "表格提取",   desc: "PP-Structure 解析规范表格 → Constraint 节点" },
-    { key: "drawings",    label: "工程图纸",   desc: "VLM 重新分析图片中的尺寸标注与装配关系" },
-    { key: "defects",     label: "缺陷检测",   desc: "YOLOv11 对工件图片进行质量缺陷检测" },
+    { key: "entities",    label: "实体提取",   desc: "工具 / 材料 / 工序节点" },
+    { key: "constraints", label: "约束参数",   desc: "LLM 提取力矩/公差/温度约束" },
+    { key: "tables",      label: "表格提取",   desc: "PP-Structure → Constraint 节点" },
+    { key: "drawings",    label: "工程图纸",   desc: "VLM 重新分析尺寸标注与装配关系" },
+    { key: "defects",     label: "缺陷检测",   desc: "YOLOv11 视觉质检" },
 ] as const;
+type PK = typeof PIPELINES[number]["key"];
 
-type PipelineKey = typeof PIPELINES[number]["key"];
+interface Snapshot { snapshot_id: string; timestamp: number; constraints_count: number; defects_count: number; images_count: number; }
+interface TaskStatus { status: string; pipelines?: string[]; current?: string; message?: string; results?: Record<string, number>; error?: string; snapshot_id?: string; }
 
-interface TaskStatus {
-    status:      "idle" | "pending" | "running" | "completed" | "failed";
-    pipelines?:  string[];
-    current?:    string;
-    message?:    string;
-    results?:    Record<string, number>;
-    error?:      string;
-    started_at?: number;
-    finished_at?: number;
-}
+interface Props { docId: string; }
 
-interface Props {
-    docId: string;
+function fmtTime(ts: number) {
+    return new Date(ts * 1000).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 export function ReprocessPanel({ docId }: Props) {
-    const [selected,    setSelected]    = useState<Set<PipelineKey>>(new Set(["entities", "constraints", "tables", "drawings"]));
-    const [task,        setTask]        = useState<TaskStatus>({ status: "idle" });
-    const [submitting,  setSubmitting]  = useState(false);
-    const [showResults, setShowResults] = useState(false);
+    const [selected,   setSelected]   = useState<Set<PK>>(new Set(["entities","constraints","tables","drawings"]));
+    const [task,       setTask]       = useState<TaskStatus>({ status: "idle" });
+    const [snapshots,  setSnapshots]  = useState<Snapshot[]>([]);
+    const [busy,       setBusy]       = useState(false);
+    const [confirm,    setConfirm]    = useState(false);
+    const [showRes,    setShowRes]    = useState(false);
+    const [rollTarget, setRollTarget] = useState("");
+    const [rolling,    setRolling]    = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const token   = typeof window !== "undefined" ? (localStorage.getItem("token") ?? "") : "";
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") ?? "" : "";
+    const h = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
-    // 页面加载时拉取上次任务状态
+    function loadSnapshots() {
+        fetch(`/api/documents/${docId}/snapshots`, { headers: h })
+            .then(r => r.json()).then(d => setSnapshots(d.snapshots ?? [])).catch(() => {});
+    }
+
     useEffect(() => {
-        fetch(`/api/documents/${docId}/reprocess/status`, {
-            headers: { Authorization: `Bearer ${token}` },
-        }).then(r => r.json()).then(setTask).catch(() => {});
+        fetch(`/api/documents/${docId}/reprocess/status`, { headers: h })
+            .then(r => r.json()).then(setTask).catch(() => {});
+        loadSnapshots();
     }, [docId]);
 
-    // 运行中时轮询
     useEffect(() => {
-        if (task.status === "running" || task.status === "pending") {
+        const active = task.status === "running" || task.status === "pending";
+        if (active) {
             pollRef.current = setInterval(async () => {
-                const r = await fetch(`/api/documents/${docId}/reprocess/status`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                const data: TaskStatus = await r.json();
-                setTask(data);
-                if (data.status !== "running" && data.status !== "pending") {
+                const r = await fetch(`/api/documents/${docId}/reprocess/status`, { headers: h });
+                const d: TaskStatus = await r.json();
+                setTask(d);
+                if (d.status !== "running" && d.status !== "pending") {
                     clearInterval(pollRef.current!);
-                    setShowResults(true);
+                    setShowRes(true);
+                    loadSnapshots();
                 }
             }, 2000);
         }
         return () => { if (pollRef.current) clearInterval(pollRef.current); };
     }, [task.status]);
 
-    function toggle(key: PipelineKey) {
-        setSelected(prev => {
-            const next = new Set(prev);
-            next.has(key) ? next.delete(key) : next.add(key);
-            return next;
-        });
-    }
-
-    async function startReprocess() {
-        if (selected.size === 0) return;
-        setSubmitting(true);
+    async function start() {
+        setConfirm(false); setBusy(true);
         try {
             const r = await fetch(`/api/documents/${docId}/reprocess`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ pipelines: [...selected] }),
+                method: "POST", headers: h, body: JSON.stringify({ pipelines: [...selected] }),
             });
-            const data = await r.json();
-            setTask({ status: data.status === "started" ? "pending" : data.status, pipelines: [...selected] });
-            setShowResults(false);
-        } finally {
-            setSubmitting(false);
-        }
+            const d = await r.json();
+            setTask({ status: d.status === "started" ? "pending" : d.status, pipelines: [...selected] });
+            setShowRes(false);
+        } finally { setBusy(false); }
     }
 
-    const isRunning  = task.status === "running" || task.status === "pending";
-    const isDone     = task.status === "completed" || task.status === "failed";
+    async function cancel() {
+        await fetch(`/api/documents/${docId}/reprocess/cancel`, { method: "POST", headers: h });
+    }
+
+    async function rollback() {
+        if (!rollTarget) return;
+        setRolling(true);
+        try {
+            const r = await fetch(`/api/documents/${docId}/rollback/${rollTarget}`, { method: "POST", headers: h });
+            if (r.ok) { setRollTarget(""); loadSnapshots(); }
+        } finally { setRolling(false); }
+    }
+
+    const isRunning = task.status === "running" || task.status === "pending";
+    const isDone    = ["completed","cancelled","failed"].includes(task.status);
 
     return (
         <div className="space-y-4">
             {/* 管道选择 */}
             <div className="space-y-2">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">选择处理管道</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">选择处理管道</div>
                 {PIPELINES.map(({ key, label, desc }) => (
-                    <label
-                        key={key}
+                    <label key={key}
                         className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
-                            selected.has(key)
-                                ? "border-indigo-600/60 bg-indigo-900/20"
-                                : "border-gray-800 hover:border-gray-700"
-                        }`}
-                    >
-                        <input
-                            type="checkbox"
-                            className="mt-0.5 accent-indigo-500"
-                            checked={selected.has(key)}
-                            onChange={() => toggle(key)}
-                            disabled={isRunning}
-                        />
-                        <div className="min-w-0">
-                            <div className="text-sm text-gray-200 font-medium">{label}</div>
-                            <div className="text-xs text-gray-500 mt-0.5">{desc}</div>
-                        </div>
+                            selected.has(key) ? "border-indigo-600/60 bg-indigo-900/20" : "border-gray-800 hover:border-gray-700"
+                        } ${isRunning ? "opacity-50 pointer-events-none" : ""}`}>
+                        <input type="checkbox" className="mt-0.5 accent-indigo-500"
+                            checked={selected.has(key)} disabled={isRunning}
+                            onChange={() => setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; })} />
+                        <div><div className="text-sm text-gray-200 font-medium">{label}</div>
+                            <div className="text-xs text-gray-500">{desc}</div></div>
                     </label>
                 ))}
             </div>
 
-            {/* 启动按钮 */}
-            <button
-                onClick={startReprocess}
-                disabled={isRunning || submitting || selected.size === 0}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium
-                           bg-indigo-600 text-white hover:bg-indigo-500 transition-colors
-                           disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-                {isRunning
-                    ? <><Loader2 size={14} className="animate-spin" />处理中...</>
-                    : <><RefreshCw size={14} />开始重新处理</>
-                }
-            </button>
+            {/* 操作按钮 */}
+            <div className="flex gap-2">
+                <button onClick={() => setConfirm(true)} disabled={isRunning || busy || selected.size === 0}
+                    className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium
+                               bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    {isRunning ? <><Loader2 size={13} className="animate-spin" />处理中...</> : <><RefreshCw size={13} />重新处理</>}
+                </button>
+                {isRunning && (
+                    <button onClick={cancel}
+                        className="px-3 py-2 rounded-lg text-sm border border-red-700 text-red-400 hover:bg-red-900/20 transition-colors flex items-center gap-1.5">
+                        <Square size={12} />中止
+                    </button>
+                )}
+            </div>
 
             {/* 进度 */}
             {isRunning && (
-                <div className="px-3 py-2.5 bg-gray-900 border border-gray-800 rounded-lg">
-                    <div className="flex items-center gap-2 text-xs text-amber-400 mb-1">
+                <div className="px-3 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-xs">
+                    <div className="flex items-center gap-2 text-amber-400 mb-1">
                         <Loader2 size={11} className="animate-spin" />
                         <span className="font-medium">{task.current || "初始化"}</span>
                     </div>
-                    <div className="text-xs text-gray-500">{task.message}</div>
+                    <div className="text-gray-500">{task.message}</div>
                 </div>
             )}
 
             {/* 结果 */}
             {isDone && task.results && (
-                <div className={`border rounded-lg overflow-hidden ${task.status === "completed" ? "border-emerald-800/50" : "border-red-800/50"}`}>
-                    <button
-                        onClick={() => setShowResults(v => !v)}
-                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium"
-                    >
+                <div className={`border rounded-lg overflow-hidden ${task.status === "completed" ? "border-emerald-800/50" : "border-gray-700"}`}>
+                    <button onClick={() => setShowRes(v => !v)}
+                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium">
                         <span className="flex items-center gap-1.5">
-                            {task.status === "completed"
-                                ? <CheckCircle size={12} className="text-emerald-400" />
-                                : <XCircle size={12} className="text-red-400" />
-                            }
-                            {task.status === "completed" ? "处理完成" : "处理失败"}
+                            {task.status === "completed" ? <CheckCircle size={12} className="text-emerald-400" /> : <XCircle size={12} className="text-gray-400" />}
+                            {task.status === "completed" ? "处理完成" : task.status === "cancelled" ? "已中止" : "处理失败"}
                         </span>
-                        {showResults ? <ChevronUp size={12} className="text-gray-500" /> : <ChevronDown size={12} className="text-gray-500" />}
+                        {showRes ? <ChevronUp size={12} className="text-gray-500" /> : <ChevronDown size={12} className="text-gray-500" />}
                     </button>
-                    {showResults && (
+                    {showRes && (
                         <div className="px-3 pb-3 space-y-1">
-                            {task.error && (
-                                <div className="text-xs text-red-400 mb-2">{task.error}</div>
-                            )}
-                            {Object.entries(task.results).map(([pipe, count]) => {
-                                const info = PIPELINES.find(p => p.key === pipe);
-                                return (
-                                    <div key={pipe} className="flex items-center justify-between text-xs">
-                                        <span className="text-gray-400">{info?.label ?? pipe}</span>
-                                        <span className={`font-mono ${count < 0 ? "text-red-400" : "text-emerald-400"}`}>
-                                            {count < 0 ? "失败" : `+${count}`}
-                                        </span>
-                                    </div>
-                                );
-                            })}
+                            {task.error && <div className="text-xs text-red-400 mb-2">{task.error}</div>}
+                            {Object.entries(task.results).map(([pipe, count]) => (
+                                <div key={pipe} className="flex justify-between text-xs">
+                                    <span className="text-gray-400">{PIPELINES.find(p => p.key === pipe)?.label ?? pipe}</span>
+                                    <span className={`font-mono ${count < 0 ? "text-red-400" : "text-emerald-400"}`}>
+                                        {count < 0 ? "失败" : `+${count}`}
+                                    </span>
+                                </div>
+                            ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* 快照 & 回滚 */}
+            {snapshots.length > 0 && (
+                <div className="border border-gray-800 rounded-lg p-3 space-y-2">
+                    <div className="text-xs text-gray-500 uppercase tracking-wider">回滚到历史快照</div>
+                    <select value={rollTarget} onChange={e => setRollTarget(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-gray-900 border border-gray-700 rounded text-xs text-gray-200 outline-none focus:border-indigo-500">
+                        <option value="">— 选择快照 —</option>
+                        {snapshots.map(s => (
+                            <option key={s.snapshot_id} value={s.snapshot_id}>
+                                {fmtTime(s.timestamp)} · 约束 {s.constraints_count} · 图纸 {s.images_count} · 缺陷 {s.defects_count}
+                            </option>
+                        ))}
+                    </select>
+                    <button onClick={rollback} disabled={!rollTarget || rolling || isRunning}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium
+                                   border border-amber-700 text-amber-400 hover:bg-amber-900/20
+                                   disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        {rolling ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+                        执行回滚
+                    </button>
+                </div>
+            )}
+
+            {/* 确认弹窗 */}
+            {confirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                    onClick={() => setConfirm(false)}>
+                    <div className="bg-gray-950 border border-gray-800 rounded-2xl p-6 w-80 shadow-2xl"
+                        onClick={e => e.stopPropagation()}>
+                        <h2 className="text-sm font-semibold text-white mb-2">确认重新处理？</h2>
+                        <p className="text-xs text-gray-400 mb-3">将运行以下管道：</p>
+                        <ul className="text-xs text-indigo-300 mb-3 list-disc list-inside space-y-0.5">
+                            {[...selected].map(k => <li key={k}>{PIPELINES.find(p => p.key === k)?.label}</li>)}
+                        </ul>
+                        <p className="text-xs text-gray-500 mb-4 flex items-center gap-1"><Clock size={11} />处理前将自动拍摄快照，可随时回滚</p>
+                        <div className="flex gap-2">
+                            <button onClick={() => setConfirm(false)}
+                                className="flex-1 py-1.5 rounded-lg border border-gray-700 text-xs text-gray-400 hover:text-white transition-colors">取消</button>
+                            <button onClick={start}
+                                className="flex-1 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-500 transition-colors">确认</button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
