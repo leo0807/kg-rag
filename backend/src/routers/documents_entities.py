@@ -46,21 +46,32 @@ async def search_entities(
     node_label  = type if type in valid_types else None
     per_page    = min(max(per_page, 1), 200)
     skip        = (page - 1) * per_page
-    lbl         = f":{node_label}" if node_label else ":Tool|:Material|:Process"
-    where       = "$q = '' OR toLower(e.name) CONTAINS toLower($q)"
-    order       = "e.name" if node_label else "labels(e)[0], e.name"
 
     with driver.session() as session:
-        cnt = session.run(
-            f"MATCH (e{lbl}) WHERE {where} RETURN count(e) AS total", q=q
-        ).single()
-        total = cnt["total"] if cnt else 0
-        result = session.run(
-            f"MATCH (e{lbl}) WHERE {where} "
-            "RETURN labels(e)[0] AS type, e.name AS name, e.doc_id AS doc_id "
-            f"ORDER BY {order} SKIP $skip LIMIT $per_page",
-            q=q, skip=skip, per_page=per_page,
-        )
+        if node_label:
+            q_where = "($q = '' OR toLower(e.name) CONTAINS toLower($q))"
+            cnt = session.run(
+                f"MATCH (e:{node_label}) WHERE {q_where} RETURN count(e) AS total", q=q
+            ).single()
+            total = cnt["total"] if cnt else 0
+            result = session.run(
+                f"MATCH (e:{node_label}) WHERE {q_where} "
+                "RETURN labels(e)[0] AS type, e.name AS name, e.doc_id AS doc_id "
+                "ORDER BY e.name SKIP $skip LIMIT $per_page",
+                q=q, skip=skip, per_page=per_page,
+            )
+        else:
+            q_where = "(e:Tool OR e:Material OR e:Process) AND ($q = '' OR toLower(e.name) CONTAINS toLower($q))"
+            cnt = session.run(
+                f"MATCH (e) WHERE {q_where} RETURN count(e) AS total", q=q
+            ).single()
+            total = cnt["total"] if cnt else 0
+            result = session.run(
+                f"MATCH (e) WHERE {q_where} "
+                "RETURN labels(e)[0] AS type, e.name AS name, e.doc_id AS doc_id "
+                "ORDER BY labels(e)[0], e.name SKIP $skip LIMIT $per_page",
+                q=q, skip=skip, per_page=per_page,
+            )
         entities = [dict(r) for r in result]
     return {
         "entities": entities,
