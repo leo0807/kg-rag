@@ -61,14 +61,17 @@ export function LibraryIngestTab({ onDone }: Props) {
 
     // ── 文件管理 ──────────────────────────────────────────────────────────────
 
-    const addFiles = useCallback((newFiles: FileList | null) => {
+    const addFiles = useCallback((newFiles: FileList | File[] | null) => {
         if (!newFiles) return;
+        // 立即转成 Array，避免 FileList 在 e.target.value="" 后被清空
+        const fileArray = Array.from(newFiles).filter(f => {
+            const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
+            return ["pdf", "docx"].includes(ext);
+        });
+        if (!fileArray.length) return;
         setItems(prev => {
             const next = [...prev];
-            Array.from(newFiles).forEach(f => {
-                const suffix = f.name.split(".").pop()?.toLowerCase() ?? "";
-                if (!["pdf", "docx"].includes(suffix)) return;
-                // 匹配已有同名项（恢复断点）
+            fileArray.forEach(f => {
                 const existing = next.find(it => it.name === f.name &&
                     (it.status === "interrupted" || it.status === "error" || it.status === "pending"));
                 if (existing) { existing.file = f; existing.status = "pending"; existing.error = undefined; }
