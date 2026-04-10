@@ -188,7 +188,7 @@ async def ingest(
         shutil.copyfileobj(file.file, f)
 
     await progress("parsing", "解析文档中...")
-    doc = parse(tmp_path)
+    doc = await asyncio.to_thread(parse, tmp_path)
 
     await progress("checking", "检查是否已入库...")
     with driver.session() as session:
@@ -201,7 +201,7 @@ async def ingest(
         return {"status": "skipped", "doc_id": doc.doc_id, "message": f"{doc.doc_id} 已入库，跳过", "sections": doc.total_sections}
 
     await progress("writing", f"写入图谱，共 {doc.total_sections} 个章节...")
-    write_document(doc)
+    await asyncio.to_thread(write_document, doc)
 
     # ── 实体提取：工具 / 材料 / 工序节点 + 实体间关系 ─────────────────────
     await progress("entities", "提取工具/材料/工序实体及关系...")
@@ -216,13 +216,13 @@ async def ingest(
             {"chunk_id": s.chunk_id, "title": s.title, "content": s.content}
             for s in doc.sections
         ]
-        entity_data = extract_entities_from_sections(section_dicts)
-        write_entities(driver, doc.doc_id, entity_data)
+        entity_data = await asyncio.to_thread(extract_entities_from_sections, section_dicts)
+        await asyncio.to_thread(write_entities, driver, doc.doc_id, entity_data)
 
         # 工艺约束节点（力矩、公差、温度等）
         await progress("constraints", "提取工艺约束参数...")
-        constraint_data = extract_constraints_from_sections(section_dicts)
-        write_constraints(driver, doc.doc_id, constraint_data)
+        constraint_data = await asyncio.to_thread(extract_constraints_from_sections, section_dicts)
+        await asyncio.to_thread(write_constraints, driver, doc.doc_id, constraint_data)
     except Exception as e:
         logger.warning("实体/约束提取失败（不影响主流程）: %s", e)
 
@@ -232,9 +232,9 @@ async def ingest(
         from .services.table_extractor import extract_all_tables, is_available as tables_available
         from .services.entity_writer   import write_constraints as _wc
         if tables_available():
-            table_cons = extract_all_tables(str(tmp_path), doc.doc_id, section_dicts)
+            table_cons = await asyncio.to_thread(extract_all_tables, str(tmp_path), doc.doc_id, section_dicts)
             if table_cons:
-                _wc(driver, doc.doc_id, table_cons)
+                await asyncio.to_thread(_wc, driver, doc.doc_id, table_cons)
                 logger.info("表格约束写入 %d 条", len(table_cons))
     except Exception as e:
         logger.warning("表格提取失败（不影响主流程）: %s", e)
@@ -247,7 +247,7 @@ async def ingest(
         from .services.multimodal_writer   import write_images_to_graph
         from .services.entity_writer       import link_image_tools
 
-        images = extract_images_from_pdf(str(tmp_path), doc.doc_id)
+        images = await asyncio.to_thread(extract_images_from_pdf, str(tmp_path), doc.doc_id)
         images = [img for img in images if not _is_logo(img)]
 
         if images:
@@ -268,13 +268,13 @@ async def ingest(
                 if already_analyzed:
                     logger.info("图片已有 VLM 分析，跳过: %s", img.path)
                     continue
-                analysis = analyze_image(img.path, img.caption, doc.doc_id)
+                analysis = await asyncio.to_thread(analyze_image, img.path, img.caption, doc.doc_id)
                 # 图纸专项分析（仅对可能是工程图纸的图片额外调用）
                 drawing = {}
                 from .services.drawing_analyzer import analyze_drawing, is_likely_drawing
                 if is_likely_drawing(analysis):
                     try:
-                        drawing = analyze_drawing(img.path, img.caption, doc.doc_id)
+                        drawing = await asyncio.to_thread(analyze_drawing, img.path, img.caption, doc.doc_id)
                     except Exception as de:
                         logger.warning("图纸分析失败: %s", de)
                 analyzed.append({
@@ -285,7 +285,7 @@ async def ingest(
                     "analysis": analysis,
                     "drawing":  drawing,
                 })
-            write_images_to_graph(driver, doc.doc_id, analyzed)
+            await asyncio.to_thread(write_images_to_graph, driver, doc.doc_id, analyzed)
             from .services.entity_writer import write_drawing_constraints
             for item in analyzed:
                 link_image_tools(driver, item["image_id"], item.get("analysis", {}).get("tools", []))

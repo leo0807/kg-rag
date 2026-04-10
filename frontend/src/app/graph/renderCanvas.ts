@@ -32,10 +32,10 @@ export function drawGraphCanvas(
     const nc = nodes.length;
     const simulation = d3.forceSimulation(nodes)
         .force("link",    d3.forceLink(data.edges).id((d: any) => d.id).distance(nc > 50 ? 60 : 140))
-        .force("charge",  d3.forceManyBody().strength(nc > 50 ? -120 : -500))
+        .force("charge",  d3.forceManyBody().strength(nc > 200 ? -60 : nc > 50 ? -120 : -500))
         .force("center",  d3.forceCenter(width / 2, height / 2))
         .force("collide", d3.forceCollide<SimNode>().radius(d => nodeRadius(d) + 6).strength(0.7))
-        .alphaDecay(0.03).velocityDecay(0.4);
+        .alphaDecay(nc > 200 ? 0.06 : 0.03).velocityDecay(0.4).alphaMin(0.05);
 
     let transform = d3.zoomIdentity;
 
@@ -131,7 +131,12 @@ export function drawGraphCanvas(
         ctx.restore();
     }
 
-    simulation.on("tick", render);
+    let rafPending = false;
+    simulation.on("tick", () => {
+        if (rafPending) return;
+        rafPending = true;
+        requestAnimationFrame(() => { rafPending = false; render(); });
+    });
 
     const zoom = d3.zoom<HTMLCanvasElement, unknown>()
         .scaleExtent([MIN_SCALE, MAX_SCALE])

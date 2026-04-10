@@ -171,7 +171,7 @@ export function LibraryIngestTab({ onDone }: Props) {
     const canUpload = counts.pending > 0 && counts.pending > counts.noFile && !running;
 
     return (
-        <div className="space-y-4 max-w-3xl">
+        <div className="space-y-5">
             {stats && (
                 <div className="flex gap-3">
                     {([["已入库文档", stats.documents], ["章节总数", stats.sections], ["图谱节点", stats.total]] as [string, number][]).map(([l, v]) => (

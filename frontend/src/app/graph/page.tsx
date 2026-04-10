@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import {
-    GraphNode, GraphData, NodeFilter, EdgeFilter, Limits,
+    GraphNode, GraphData, NodeFilter, EdgeFilter, RenderMode, Limits,
     MIN_SCALE, MAX_SCALE, NODE_COLOR,
 } from "./constants";
 import { drawGraph }         from "./renderSVG";
@@ -15,9 +15,6 @@ import { GraphToolbar }      from "./GraphToolbar";
 import { TourPanel }         from "./TourPanel";
 import { useTour }           from "./useTour";
 
-const API = "http://localhost:8000";
-type RenderMode = "svg" | "canvas" | "webgl" | "heatmap";
-
 export default function GraphPage() {
     const svgRef         = useRef<SVGSVGElement>(null);
     const canvasRef      = useRef<HTMLCanvasElement>(null);
@@ -28,7 +25,8 @@ export default function GraphPage() {
     const filteredNodesRef = useRef<GraphNode[]>([]);
     const filteredEdgesRef = useRef<any[]>([]);
 
-    const [renderMode, setRenderMode]       = useState<RenderMode>("svg");
+    const [renderMode,  setRenderMode]       = useState<RenderMode>("svg");
+    const [manualMode,  setManualMode]       = useState<RenderMode | null>(null);
     const [data,       setData]             = useState<GraphData | null>(null);
     const [heatMap,    setHeatMap]          = useState<Map<string, number>>(new Map());
     const [scale,      setScale]            = useState(1);
@@ -101,16 +99,16 @@ export default function GraphPage() {
     // Data loading
     useEffect(() => {
         const params = new URLSearchParams({ limit_doc: String(limits.doc), limit_sec: String(limits.sec), limit_entity: String(limits.entity), doc_id: docFilter });
-        fetch(`${API}/api/graph?${params}`).then(r => r.ok ? r.json() : Promise.reject()).then(setData).catch(() => {});
+        fetch(`/api/graph?${params}`).then(r => r.ok ? r.json() : Promise.reject()).then(setData).catch(() => {});
     }, [limits, docFilter]);
 
     useEffect(() => {
-        fetch(`${API}/api/documents?per_page=200`).then(r => r.json())
+        fetch(`/api/documents?per_page=200`).then(r => r.json())
             .then(d => setDocs((d.data || []).map((doc: any) => ({ doc_id: doc.doc_id, title: doc.title || "" })))).catch(() => {});
     }, []);
 
     useEffect(() => {
-        fetch(`${API}/api/graph/hot-nodes?days=30&top_k=200`).then(r => r.ok ? r.json() : null)
+        fetch(`/api/graph/hot-nodes?days=30&top_k=200`).then(r => r.ok ? r.json() : null)
             .then((d: any) => { if (d?.nodes?.length) setHeatMap(new Map(d.nodes.map((n: any) => [n.chunk_id, n.heat_norm]))); }).catch(() => {});
     }, []);
 
@@ -165,7 +163,8 @@ export default function GraphPage() {
         filteredEdgesRef.current = filteredEdges;
         if (pixiDestroyRef.current) { pixiDestroyRef.current(); pixiDestroyRef.current = null; }
         const nc = filteredNodes.length;
-        const mode: RenderMode = nc > 5000 ? "heatmap" : nc > 1000 ? "webgl" : nc > 500 ? "canvas" : "svg";
+        const autoMode: RenderMode = nc > 5000 ? "heatmap" : nc > 1000 ? "webgl" : nc > 500 ? "canvas" : "svg";
+        const mode = manualMode ?? autoMode;
         setRenderMode(mode);
         let canceled = false;
         if (mode === "heatmap" && canvasRef.current) {
@@ -179,7 +178,7 @@ export default function GraphPage() {
             zoomRef.current = drawGraph({ nodes: filteredNodes, edges: filteredEdges }, svgRef.current, tooltipRef.current!, setScale, node => setSelectedNode(node), highlightedIds, heatMap, tour.tourOpen ? tour.tourNodeIds : undefined, tour.tourOpen ? tour.tourCurrentId : undefined);
         }
         return () => { canceled = true; if (pixiDestroyRef.current) { pixiDestroyRef.current(); pixiDestroyRef.current = null; } };
-    }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, heatMap, tour.tourNodeIds, tour.tourCurrentId, tour.tourOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, heatMap, manualMode, tour.tourNodeIds, tour.tourCurrentId, tour.tourOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="w-full h-full bg-gray-950 select-none flex flex-col" onClick={() => { if (showExport) setShowExport(false); }}>
@@ -193,6 +192,7 @@ export default function GraphPage() {
                 showLegend={showLegend} setShowLegend={setShowLegend}
                 showExport={showExport} setShowExport={setShowExport}
                 copied={copied} shareSnapshot={shareSnapshot} exportGraph={exportGraph}
+                renderMode={renderMode} manualMode={manualMode} setManualMode={setManualMode}
             />
 
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">

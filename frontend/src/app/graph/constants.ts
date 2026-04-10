@@ -85,8 +85,9 @@ export const EDGE_TYPES = [
     "ALTERNATIVE_TO", "COMPATIBLE_WITH", "SUPERSEDES", "SIMILAR_TO",
 ] as const;
 
-export type NodeFilter = typeof NODE_TYPES[number];
-export type EdgeFilter = typeof EDGE_TYPES[number];
+export type NodeFilter  = typeof NODE_TYPES[number];
+export type EdgeFilter  = typeof EDGE_TYPES[number];
+export type RenderMode  = "svg" | "canvas" | "webgl" | "heatmap";
 
 export function nodeRadius(d: SimNode, heatNorm = 0): number {
     const t = d.type || d.label;

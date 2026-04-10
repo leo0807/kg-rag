@@ -1,7 +1,7 @@
 "use client";
 
 import { Settings, Search, Download, Layers, Share2, Check, Compass } from "lucide-react";
-import { NodeFilter, EdgeFilter, NODE_COLOR, NODE_SHORT, NODE_TYPES, EDGE_TYPES } from "./constants";
+import { NodeFilter, EdgeFilter, RenderMode, NODE_COLOR, NODE_SHORT, NODE_TYPES, EDGE_TYPES } from "./constants";
 
 interface Props {
     nodeFilter:    NodeFilter;
@@ -24,6 +24,9 @@ interface Props {
     copied:        boolean;
     shareSnapshot: () => void;
     exportGraph:   (format: "json" | "graphml") => void;
+    renderMode:    RenderMode;
+    manualMode:    RenderMode | null;
+    setManualMode: (v: RenderMode | null) => void;
 }
 
 export function GraphToolbar({
@@ -33,6 +36,7 @@ export function GraphToolbar({
     showLimits, setShowLimits, showLegend, setShowLegend,
     showExport, setShowExport,
     copied, shareSnapshot, exportGraph,
+    renderMode, manualMode, setManualMode,
 }: Props) {
     return (
         <div className="shrink-0 flex items-center gap-1.5 px-3 h-11 bg-gray-900 border-b border-gray-800 z-20">
@@ -75,6 +79,21 @@ export function GraphToolbar({
                 <option value="">全部文档</option>
                 {docs.map(d => <option key={d.doc_id} value={d.doc_id}>{d.doc_id}</option>)}
             </select>
+
+            <div className="w-px h-5 bg-gray-700 mx-0.5 shrink-0" />
+
+            {/* Render mode */}
+            <div className="flex items-center gap-0.5 bg-gray-800/60 rounded px-0.5 py-0.5">
+                {(["svg", "canvas", "webgl"] as const).map(m => (
+                    <button key={m} onClick={() => setManualMode(manualMode === m ? null : m)}
+                        title={m === "svg" ? "SVG（少量节点）" : m === "canvas" ? "Canvas（中量）" : "WebGL（海量）"}
+                        className={`px-1.5 h-5 rounded text-xs font-mono transition-colors ${
+                            renderMode === m ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-300"
+                        }`}>
+                        {m === "svg" ? "SVG" : m === "canvas" ? "2D" : "3D"}
+                    </button>
+                ))}
+            </div>
 
             <div className="w-px h-5 bg-gray-700 mx-0.5 shrink-0" />
 

@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 COLLECTION_NAME = "cps_sections"
 DIM             = 1024  # bge-m3 输出维度
 
+def _trunc_utf8(s: str, max_bytes: int = 4000) -> str:
+    """Truncate string so its UTF-8 encoding is at most max_bytes bytes."""
+    enc = s.encode("utf-8")
+    if len(enc) <= max_bytes:
+        return s
+    return enc[:max_bytes].decode("utf-8", errors="ignore")
+
 
 def connect_milvus(host: str = "localhost", port: str = "19530") -> None:
     connections.connect("default", host=host, port=port)
@@ -31,7 +38,7 @@ def get_or_create_collection() -> Collection:
         FieldSchema("id",       DataType.VARCHAR, max_length=128, is_primary=True),
         FieldSchema("doc_id",   DataType.VARCHAR, max_length=64),
         FieldSchema("chunk_id", DataType.VARCHAR, max_length=128),
-        FieldSchema("text",     DataType.VARCHAR, max_length=4096),
+        FieldSchema("text",     DataType.VARCHAR, max_length=65535),
         FieldSchema("embedding", DataType.FLOAT_VECTOR, dim=DIM),
     ]
     schema = CollectionSchema(fields, description="CPS 章节向量库")
@@ -61,7 +68,7 @@ def upsert_sections(sections: list[dict]) -> None:
     ids        = [s["chunk_id"] for s in sections]
     doc_ids    = [s["doc_id"]   for s in sections]
     chunk_ids  = [s["chunk_id"] for s in sections]
-    texts      = [s["text"][:4000] for s in sections]
+    texts      = [_trunc_utf8(s["text"]) for s in sections]
     embeddings = [s["embedding"]   for s in sections]
 
     col.upsert([ids, doc_ids, chunk_ids, texts, embeddings])
