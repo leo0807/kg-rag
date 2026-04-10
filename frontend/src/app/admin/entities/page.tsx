@@ -20,7 +20,7 @@ const PER_PAGE = 50;
 
 export default function EntityAuditPage() {
     const [entities,   setEntities]   = useState<Entity[]>([]);
-    const [loading,    setLoading]    = useState(false);
+    const [loading,    setLoading]    = useState(true);
     const [typeFilter, setTypeFilter] = useState<EntityType | "">("");
     const [searchInput,setSearchInput]= useState("");
     const [search,     setSearch]     = useState("");

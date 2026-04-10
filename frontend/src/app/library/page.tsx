@@ -105,12 +105,13 @@ export default function LibraryPage() {
             {activeTab === "list" && (
                 <>
                     {fetchError && (
-                        <div className="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400">
+                        <div className="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400 mb-4">
                             加载失败，请刷新页面重试
                         </div>
                     )}
-                    {loading ? <SkeletonTable rows={10} /> : !fetchError && (
-                        <>
+                    {loading && docs.length === 0 ? <SkeletonTable rows={10} /> : !fetchError && (
+                        <div className="relative">
+                            {loading && <div className="absolute inset-0 bg-gray-950/50 z-10 pointer-events-none rounded" />}
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="border-b border-gray-800 text-gray-400 text-left">
@@ -155,7 +156,7 @@ export default function LibraryPage() {
                                     </button>
                                 </div>
                             )}
-                        </>
+                        </div>
                     )}
                 </>
             )}
