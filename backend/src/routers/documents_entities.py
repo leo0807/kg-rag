@@ -35,33 +35,40 @@ async def get_document_entities(doc_id: str, driver: Driver = Depends(get_driver
 
 @router.get("/entities")
 async def search_entities(
-    type:   str    = "",
-    q:      str    = "",
-    driver: Driver = Depends(get_driver),
+    type:     str    = "",
+    q:        str    = "",
+    page:     int    = 1,
+    per_page: int    = 50,
+    driver:   Driver = Depends(get_driver),
 ):
-    """实体搜索与过滤。type: Tool|Material|Process，q: 名称关键词"""
+    """实体搜索与过滤，支持分页。type: Tool|Material|Process，q: 名称关键词"""
     valid_types = {"Tool", "Material", "Process"}
     node_label  = type if type in valid_types else None
+    per_page    = min(max(per_page, 1), 200)
+    skip        = (page - 1) * per_page
+    lbl         = f":{node_label}" if node_label else ":Tool|:Material|:Process"
+    where       = "$q = '' OR toLower(e.name) CONTAINS toLower($q)"
+    order       = "e.name" if node_label else "labels(e)[0], e.name"
 
     with driver.session() as session:
-        if node_label:
-            result = session.run(
-                f"MATCH (e:{node_label}) "
-                "WHERE $q = '' OR toLower(e.name) CONTAINS toLower($q) "
-                "RETURN labels(e)[0] AS type, e.name AS name, e.doc_id AS doc_id "
-                "ORDER BY e.name LIMIT 100",
-                q=q,
-            )
-        else:
-            result = session.run(
-                "MATCH (e) WHERE (e:Tool OR e:Material OR e:Process) "
-                "AND ($q = '' OR toLower(e.name) CONTAINS toLower($q)) "
-                "RETURN labels(e)[0] AS type, e.name AS name, e.doc_id AS doc_id "
-                "ORDER BY type, e.name LIMIT 100",
-                q=q,
-            )
+        cnt = session.run(
+            f"MATCH (e{lbl}) WHERE {where} RETURN count(e) AS total", q=q
+        ).single()
+        total = cnt["total"] if cnt else 0
+        result = session.run(
+            f"MATCH (e{lbl}) WHERE {where} "
+            "RETURN labels(e)[0] AS type, e.name AS name, e.doc_id AS doc_id "
+            f"ORDER BY {order} SKIP $skip LIMIT $per_page",
+            q=q, skip=skip, per_page=per_page,
+        )
         entities = [dict(r) for r in result]
-    return {"entities": entities, "total": len(entities)}
+    return {
+        "entities": entities,
+        "total":    total,
+        "page":     page,
+        "per_page": per_page,
+        "pages":    max(1, -(-total // per_page)),
+    }
 
 
 @router.get("/documents/{doc_id}/images")
