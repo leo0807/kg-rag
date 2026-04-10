@@ -43,10 +43,6 @@ const STATUS_ICON: Record<ItemStatus, React.ReactNode> = {
     pending:     <FileText     size={14} className="text-gray-400" />,
 };
 
-function wsUrl(clientId: string) {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}/ws/ingest/${clientId}`;
-}
 
 export function LibraryIngestTab({ onDone }: Props) {
     const [items,    setItems]    = useState<FileItem[]>([]);
@@ -93,22 +89,15 @@ export function LibraryIngestTab({ onDone }: Props) {
 
     const uploadOne = async (item: FileItem, signal: AbortSignal): Promise<boolean> => {
         if (signal.aborted || !item.file) return false;
-        const clientId = `${Date.now()}_${uid()}`;
-        const ws = new WebSocket(wsUrl(clientId));
-        ws.onmessage = (ev) => {
-            const d = JSON.parse(ev.data);
-            setItems(prev => prev.map(it => it.id === item.id ? { ...it, progress: d.detail } : it));
-        };
         setItems(prev => prev.map(it => it.id === item.id ? { ...it, status: "uploading", progress: "" } : it));
         try {
             const fd = new FormData();
             fd.append("file", item.file);
             const token = localStorage.getItem("token") ?? "";
-            const res = await fetch(`/api/ingest?client_id=${clientId}`, {
+            const res = await fetch("/api/ingest", {
                 method: "POST", body: fd, signal,
                 headers: token ? { Authorization: `Bearer ${token}` } : {},
             });
-            ws.close();
             if (!res.ok) throw new ApiError(res.status, await res.text());
             const data = await res.json();
             const st: ItemStatus = data.status === "skipped" ? "skipped" : "done";
@@ -116,7 +105,6 @@ export function LibraryIngestTab({ onDone }: Props) {
                 ? { ...it, status: st, docId: data.doc_id, sections: data.sections, progress: "" } : it));
             return st === "done";
         } catch (e: unknown) {
-            ws.close();
             const interrupted = (e instanceof DOMException && e.name === "AbortError");
             setItems(prev => prev.map(it => it.id === item.id ? {
                 ...it,
