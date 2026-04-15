@@ -37,6 +37,7 @@ from .routers.visual_qc          import router as visual_qc_router
 from .routers.reprocess          import router as reprocess_router
 from .routers.admin_cache        import router as admin_cache_router
 from .routers.annotations        import router as annotations_router
+from .routers.ai_status          import router as ai_status_router
 from .auth.deps import get_admin_user as _get_admin_user
 
 from .services.health import health_monitor
@@ -121,6 +122,7 @@ app.include_router(visual_qc_router)
 app.include_router(reprocess_router)
 app.include_router(admin_cache_router)
 app.include_router(annotations_router)
+app.include_router(ai_status_router)
 
 # 仅挂载图片目录，文档原文通过受控接口访问
 app.mount("/uploads/images", StaticFiles(directory=str(UPLOAD_DIR / "images")), name="uploads_images")
