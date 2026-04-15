@@ -37,20 +37,38 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_HOST:       str = "http://localhost:3001"
 
-    EMBEDDING_MODE:    str = "local"
-    EMBEDDING_MODEL:   str = "models/bge-m3"
-    EMBEDDING_API_URL: str = ""
-    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_MODE:     str = "local"
+    EMBEDDING_PROVIDER: str = ""            # qwen / ""(通用兼容)
+    EMBEDDING_MODEL:    str = "models/bge-m3"
+    EMBEDDING_API_URL:  str = ""
+    EMBEDDING_API_KEY:  str = ""
+
+    # 通义文本向量专用配置
+    EMBEDDING_QWEN_MODEL: str = "text-embedding-v3"
+    EMBEDDING_QWEN_DIM:   int = 1024
 
     RERANKER_MODE:    str = "local"
     RERANKER_MODEL:   str = "models/bge-reranker-v2-m3"
     RERANKER_API_URL: str = ""
     RERANKER_API_KEY: str = ""
 
-    LLM_MODE:    str = "api"
-    LLM_API_URL: str = "http://localhost:11434/v1"
-    LLM_API_KEY: str = "ollama"
-    LLM_MODEL:   str = "qwen2.5:7b"
+    LLM_MODE:     str = "api"
+    LLM_PROVIDER: str = ""            # qwen / deepseek / ernie / anthropic / ""(通用兼容)
+    LLM_API_URL:  str = "http://localhost:11434/v1"
+    LLM_API_KEY:  str = "ollama"
+    LLM_MODEL:    str = "qwen2.5:7b"
+
+    # 各提供方专用模型名（空则使用默认值）
+    LLM_QWEN_MODEL:     str = "qwen-plus"
+    LLM_DEEPSEEK_MODEL: str = "deepseek-chat"
+    LLM_ERNIE_MODEL:    str = "ernie-4.5-8k"
+
+    # 各提供方 API Key
+    DEEPSEEK_API_KEY: str = ""
+
+    # 本地模式专用模型名（via Ollama）
+    LOCAL_LLM_QWEN_MODEL:     str = "qwen2.5:7b"
+    LOCAL_LLM_DEEPSEEK_MODEL: str = "deepseek-r1:7b"
 
     DATABASE_URL: str = "postgresql+asyncpg://aviation:aviation123@localhost:5432/aviation"
 
@@ -61,6 +79,22 @@ class Settings(BaseSettings):
     ES_URL:       str = "http://localhost:9200"
     VLM_MODEL:    str = "Qwen/Qwen2.5-VL-32B-Instruct"
     APP_VERSION:  str = "1.0.0"
+
+    # MinIO / 对象存储
+    STORAGE_ENDPOINT:   str = "http://localhost:9000"
+    STORAGE_ACCESS_KEY: str = "minioadmin"
+    STORAGE_SECRET_KEY: str = "minioadmin"
+    STORAGE_REGION:     str = "us-east-1"
+    STORAGE_PUBLIC_URL: str = "http://localhost:9000"
+
+    # Vision 多模态服务
+    VISION_MODE:           str = "api"      # "api" | "local"
+    QWEN_VL_MODEL:         str = "qwen-vl-max"
+    ERNIE_API_KEY:         str = ""
+    ERNIE_SECRET_KEY:      str = ""
+    HUNYUAN_API_KEY:       str = ""
+    LOCAL_VLM_PATH:        str = "models/qwen2-vl"
+    LOCAL_VLM_BACKUP_PATH: str = "models/internvl2"
 
     @field_validator("NEO4J_URI", mode="before")
     @classmethod

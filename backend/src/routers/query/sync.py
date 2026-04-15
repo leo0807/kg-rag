@@ -8,6 +8,7 @@ from neo4j import Driver
 from ...core.database import get_driver
 from ...core.config import settings
 from ...core.observability import send_generation
+from ...services.llm_service import get_llm_service
 from ...services.cache import get_cached_result, set_cached_result
 from ...db.models import User
 from .models import QueryRequest, QueryResponse, SourceSection
@@ -49,7 +50,7 @@ async def query_sync(
             ]
             latency_ms = int((time.time() - start) * 1000)
             send_generation(
-                name="graphrag-query", model=settings.LLM_MODEL,
+                name="graphrag-query", model=get_llm_service().model_name,
                 input_messages=[{"role": "user", "content": req.question}],
                 output=answer, latency_ms=latency_ms, strategy="multi_hop",
                 user_id=user_id, department=department, question_preview=req.question,
@@ -92,7 +93,7 @@ async def query_sync(
     ]
 
     send_generation(
-        name="graphrag-query", model=settings.LLM_MODEL,
+        name="graphrag-query", model=get_llm_service().model_name,
         input_messages=[{"role": "user", "content": req.question}],
         output=answer, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
         latency_ms=latency_ms, strategy=req.strategy,

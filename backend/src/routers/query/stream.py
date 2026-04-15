@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from neo4j import Driver
 from ...core.database import get_driver
 from ...db.models import User
+from ...services.llm_service import get_llm_service
 from .models import QueryRequest
 from .core   import do_retrieval
 
@@ -29,9 +30,7 @@ async def query_stream(
     department = current_user.department if current_user else ""
 
     async def generate():
-        from ...core.config import settings
         from ...core.observability import send_generation
-        import httpx
         import time
         import asyncio
 
@@ -92,7 +91,7 @@ async def query_stream(
                     yield f"data: {json.dumps({'type': 'delta', 'content': char}, ensure_ascii=False)}\n\n"
                 latency_ms = int((time.time() - t_start) * 1000)
                 send_generation(
-                    name="graphrag-stream", model=settings.LLM_MODEL,
+                    name="graphrag-stream", model=get_llm_service().model_name,
                     input_messages=[{"role": "user", "content": req.question}],
                     output=answer_mh, latency_ms=latency_ms, strategy="multi_hop",
                     user_id=user_id, department=department, question_preview=req.question,
@@ -129,53 +128,19 @@ async def query_stream(
                 yield f"data: {json.dumps({'type': 'sources', 'content': sources_cf}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps({'type': 'status', 'content': '推理中...'}, ensure_ascii=False)}\n\n"
 
-                full_answer   = ""
-                prompt_tokens = 0
-                compl_tokens  = 0
+                full_answer = ""
                 try:
-                    async with httpx.AsyncClient(timeout=90) as client:
-                        async with client.stream(
-                            "POST",
-                            f"{settings.LLM_API_URL.rstrip('/')}/chat/completions",
-                            headers={
-                                "Authorization": f"Bearer {settings.LLM_API_KEY}",
-                                "Content-Type":  "application/json",
-                            },
-                            json={
-                                "model":          settings.LLM_MODEL,
-                                "messages":       cf_messages,
-                                "stream":         True,
-                                "stream_options": {"include_usage": True},
-                            },
-                        ) as response:
-                            async for line in response.aiter_lines():
-                                if not line or not line.startswith("data: "):
-                                    continue
-                                data = line[6:]
-                                if data == "[DONE]":
-                                    break
-                                try:
-                                    chunk = json.loads(data)
-                                    if chunk.get("usage") and not chunk.get("choices"):
-                                        usage = chunk["usage"]
-                                        prompt_tokens = usage.get("prompt_tokens", 0)
-                                        compl_tokens  = usage.get("completion_tokens", 0)
-                                        continue
-                                    delta = chunk["choices"][0]["delta"].get("content", "")
-                                    if delta:
-                                        full_answer += delta
-                                        yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
-                                except Exception:
-                                    pass
+                    async for delta in get_llm_service().stream_chat(cf_messages, timeout=90):
+                        full_answer += delta
+                        yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
                 except Exception as e:
                     yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
 
                 latency_ms = int((time.time() - t_start) * 1000)
                 send_generation(
-                    name="graphrag-stream", model=settings.LLM_MODEL,
+                    name="graphrag-stream", model=get_llm_service().model_name,
                     input_messages=[{"role": "user", "content": req.question}],
-                    output=full_answer, prompt_tokens=prompt_tokens, completion_tokens=compl_tokens,
-                    latency_ms=latency_ms, strategy="counterfactual",
+                    output=full_answer, latency_ms=latency_ms, strategy="counterfactual",
                     user_id=user_id, department=department, question_preview=req.question,
                 )
                 yield "data: [DONE]\n\n"
@@ -230,54 +195,19 @@ async def query_stream(
         else:
             messages.append({"role": "user", "content": user_text})
 
-        full_answer    = ""
-        prompt_tokens  = 0
-        compl_tokens   = 0
+        full_answer = ""
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                async with client.stream(
-                    "POST",
-                    f"{settings.LLM_API_URL.rstrip('/')}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {settings.LLM_API_KEY}",
-                        "Content-Type":  "application/json",
-                    },
-                    json={
-                        "model":          settings.LLM_MODEL,
-                        "messages":       messages,
-                        "stream":         True,
-                        "stream_options": {"include_usage": True},
-                    },
-                ) as response:
-                    async for line in response.aiter_lines():
-                        if not line or not line.startswith("data: "):
-                            continue
-                        data = line[6:]
-                        if data == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data)
-                            # 最终 usage chunk（choices 为空）
-                            if chunk.get("usage") and not chunk.get("choices"):
-                                usage = chunk["usage"]
-                                prompt_tokens = usage.get("prompt_tokens", 0)
-                                compl_tokens  = usage.get("completion_tokens", 0)
-                                continue
-                            delta = chunk["choices"][0]["delta"].get("content", "")
-                            if delta:
-                                full_answer += delta
-                                yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
-                        except Exception:
-                            pass
+            async for delta in get_llm_service().stream_chat(messages, timeout=60):
+                full_answer += delta
+                yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
 
         latency_ms = int((time.time() - t_start) * 1000)
         send_generation(
-            name="graphrag-stream", model=settings.LLM_MODEL,
+            name="graphrag-stream", model=get_llm_service().model_name,
             input_messages=[{"role": "user", "content": req.question}],
-            output=full_answer, prompt_tokens=prompt_tokens, completion_tokens=compl_tokens,
-            latency_ms=latency_ms, strategy=req.strategy,
+            output=full_answer, latency_ms=latency_ms, strategy=req.strategy,
             user_id=user_id, department=department, question_preview=req.question,
         )
         # 写入语义缓存

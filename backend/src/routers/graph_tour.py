@@ -7,21 +7,20 @@ import json
 import logging
 from typing import AsyncIterator
 
-import httpx
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from neo4j import Driver
 from pydantic import BaseModel
 
-from ..core.config import settings
 from ..core.database import get_driver
+from ..services.llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["graph"])
 
 
 async def _stream_explanation(topic: str, node: dict) -> AsyncIterator[str]:
-    """为导览节点生成流式 AI 讲解（调用 OpenAI-compatible API）。"""
+    """为导览节点生成流式 AI 讲解。"""
     type_label = {
         "Section":    "章节",
         "Document":   "文档",
@@ -45,46 +44,19 @@ async def _stream_explanation(topic: str, node: dict) -> AsyncIterator[str]:
           f"语言简洁专业，适合航空工程师快速理解。"
     )
 
-    payload = {
-        "model":       settings.LLM_MODEL,
-        "messages":    [
-            {"role": "system", "content":
-                "你是航空工艺规范知识库的AI导览员，用简洁专业的语言讲解每个节点的知识要点。"},
-            {"role": "user",   "content": user_prompt},
-        ],
-        "stream":      True,
-        "max_tokens":  180,
-        "temperature": 0.3,
-    }
+    messages = [
+        {"role": "system", "content": "你是航空工艺规范知识库的AI导览员，用简洁专业的语言讲解每个节点的知识要点。"},
+        {"role": "user",   "content": user_prompt},
+    ]
 
     try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            async with client.stream(
-                "POST",
-                f"{settings.LLM_API_URL}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.LLM_API_KEY}",
-                    "Content-Type":  "application/json",
-                },
-                json=payload,
-            ) as resp:
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    raw = line[6:].strip()
-                    if raw == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(raw)
-                        delta = chunk["choices"][0]["delta"].get("content", "")
-                        if delta:
-                            yield delta
-                    except Exception:
-                        pass
+        async for delta in get_llm_service().stream_chat(
+            messages, max_tokens=180, temperature=0.3, timeout=25
+        ):
+            yield delta
     except Exception as exc:
         logger.warning("导览LLM调用失败: %s", exc)
-        fallback = f"（{name}：{content[:80]}{'…' if len(content) > 80 else ''}）"
-        yield fallback
+        yield f"（{name}：{content[:80]}{'…' if len(content) > 80 else ''}）"
 
 
 class TourRequest(BaseModel):

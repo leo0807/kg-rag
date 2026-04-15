@@ -10,10 +10,10 @@ src/services/drawing_analyzer.py
 """
 import json
 import logging
-import requests
 from pathlib import Path
 from ..core.config import settings
 from .image_analyzer import image_to_base64
+from .llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -79,28 +79,14 @@ def analyze_drawing(
 }}"""
 
     try:
-        res = requests.post(
-            f"{settings.LLM_API_URL.rstrip('/')}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {settings.LLM_API_KEY}",
-                "Content-Type":  "application/json",
-            },
-            json={
-                "model": settings.VLM_MODEL,
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{media_type};base64,{image_b64}"},
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }],
-            },
-            timeout=90,
-        )
-        content = res.json()["choices"][0]["message"]["content"].strip()
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_b64}"}},
+                {"type": "text", "text": prompt},
+            ],
+        }]
+        content = get_llm_service().chat(messages, model=settings.VLM_MODEL, timeout=90).strip()
         # 清理 markdown 代码块包裹
         if content.startswith("```"):
             content = content.split("```")[1]

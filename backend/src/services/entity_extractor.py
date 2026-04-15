@@ -6,8 +6,8 @@ src/services/entity_extractor.py
 """
 import json
 import logging
-import requests
-from ..core.config import settings
+from typing import Callable
+from .llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -15,20 +15,10 @@ logger = logging.getLogger(__name__)
 def _call_llm(prompt: str) -> str | None:
     """统一的 LLM 调用，返回原始 content 字符串，失败返回 None"""
     try:
-        res = requests.post(
-            f"{settings.LLM_API_URL.rstrip('/')}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {settings.LLM_API_KEY}",
-                "Content-Type":  "application/json",
-            },
-            json={
-                "model":       settings.LLM_MODEL,
-                "messages":    [{"role": "user", "content": prompt}],
-                "temperature": 0,
-            },
-            timeout=90,
+        return get_llm_service().chat(
+            [{"role": "user", "content": prompt}],
+            temperature=0,
         )
-        return res.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
         logger.warning("LLM 调用失败: %s", e)
         return None
@@ -52,7 +42,7 @@ def _parse_json(raw: str) -> list | dict | None:
 
 # ── 实体提取 ──────────────────────────────────────────────────────────────────
 
-def extract_entities_from_sections(sections: list[dict]) -> list[dict]:
+def extract_entities_from_sections(sections: list[dict], on_progress: Callable[[int, int], None] = None) -> list[dict]:
     """
     批量从章节内容中提取实体和实体间关系。
     sections: [{"chunk_id", "title", "content"}]
@@ -64,9 +54,14 @@ def extract_entities_from_sections(sections: list[dict]) -> list[dict]:
     """
     results = []
     batch_size = 5
-    for i in range(0, len(sections), batch_size):
+    total = len(sections)
+    for i in range(0, total, batch_size):
+        if on_progress:
+            on_progress(i, total)
         batch = sections[i: i + batch_size]
         results.extend(_extract_entity_batch(batch))
+    if on_progress:
+        on_progress(total, total)
     return results
 
 
@@ -144,16 +139,21 @@ def _extract_entity_batch(sections: list[dict]) -> list[dict]:
 
 # ── 约束提取 ──────────────────────────────────────────────────────────────────
 
-def extract_constraints_from_sections(sections: list[dict]) -> list[dict]:
+def extract_constraints_from_sections(sections: list[dict], on_progress: Callable[[int, int], None] = None) -> list[dict]:
     """
     从章节中提取工艺约束参数（力矩、公差、温度、压力等）。
     返回: [{"chunk_id", "constraints": [{"type","value","value_max","unit","description","standard"}]}]
     """
     results = []
     batch_size = 5
-    for i in range(0, len(sections), batch_size):
+    total = len(sections)
+    for i in range(0, total, batch_size):
+        if on_progress:
+            on_progress(i, total)
         batch = sections[i: i + batch_size]
         results.extend(_extract_constraint_batch(batch))
+    if on_progress:
+        on_progress(total, total)
     return results
 
 

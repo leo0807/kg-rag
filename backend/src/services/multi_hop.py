@@ -6,7 +6,7 @@ import logging
 from typing import TypedDict, Annotated
 import operator
 from langgraph.graph import StateGraph, END
-from ..core.config import settings
+from .llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,6 @@ def decompose_question(state: AgentState) -> AgentState:
     """
     第一跳：把复杂问题分解成子问题
     """
-    import requests
-
     prompt = f"""你是一个航空工艺规范专家。请分析以下问题，判断是否需要多步检索才能回答。
 
 问题：{state['question']}
@@ -43,19 +41,9 @@ def decompose_question(state: AgentState) -> AgentState:
 只输出子问题列表，每行一个问题，不要有编号或其他内容。"""
 
     try:
-        res = requests.post(
-            f"{settings.LLM_API_URL.rstrip('/')}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {settings.LLM_API_KEY}",
-                "Content-Type":  "application/json",
-            },
-            json={
-                "model":    settings.LLM_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=30,
+        content     = get_llm_service().chat(
+            [{"role": "user", "content": prompt}], timeout=30
         )
-        content    = res.json()["choices"][0]["message"]["content"]
         sub_queries = [q.strip() for q in content.strip().split("\n") if q.strip()]
     except Exception as e:
         logger.warning("问题分解失败，使用原问题: %s", e)
@@ -148,8 +136,6 @@ def should_continue(state: AgentState) -> str:
 
 def synthesize_answer(state: AgentState) -> AgentState:
     """综合所有检索结果生成最终答案"""
-    import requests
-
     if not state["retrieved"]:
         return {**state, "final_answer": "在知识库中未找到相关章节，请确认文件已入库。"}
 
@@ -188,19 +174,9 @@ def synthesize_answer(state: AgentState) -> AgentState:
 请回答："""
 
     try:
-        res = requests.post(
-            f"{settings.LLM_API_URL.rstrip('/')}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {settings.LLM_API_KEY}",
-                "Content-Type":  "application/json",
-            },
-            json={
-                "model":    settings.LLM_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=60,
+        answer = get_llm_service().chat(
+            [{"role": "user", "content": prompt}], timeout=60
         )
-        answer = res.json()["choices"][0]["message"]["content"]
     except Exception as e:
         logger.warning("多跳综合失败: %s", e)
         answer = f"根据多步检索，找到 {len(unique)} 个相关章节：\n\n{context[:2000]}"

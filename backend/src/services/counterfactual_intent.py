@@ -7,8 +7,7 @@ src/services/counterfactual_intent.py
 import json
 import logging
 import re
-import requests
-from ..core.config import settings
+from .llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,22 +28,11 @@ _REL_CN = {
 
 
 def _call_llm(prompt: str, timeout: int = 30) -> str:
-    """调用 LLM（复用 settings 配置）"""
-    res = requests.post(
-        f"{settings.LLM_API_URL.rstrip('/')}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {settings.LLM_API_KEY}",
-            "Content-Type":  "application/json",
-        },
-        json={
-            "model":    settings.LLM_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream":   False,
-        },
+    """调用 LLM（通过 LLMService）"""
+    return get_llm_service().chat(
+        [{"role": "user", "content": prompt}],
         timeout=timeout,
     )
-    res.raise_for_status()
-    return res.json()["choices"][0]["message"]["content"]
 
 
 def parse_counterfactual_intent(question: str) -> dict:
