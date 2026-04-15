@@ -116,3 +116,23 @@ class CacheHit(Base):
     cost_saved_usd:           Mapped[float]    = mapped_column(Float,       default=0.0)
     created_at:               Mapped[datetime] = mapped_column(DateTime,    server_default=func.now())
 
+
+class NodeAnnotation(Base):
+    """图谱节点批注 — 用户对知识节点的现场心得与纠错备注"""
+    __tablename__  = "node_annotations"
+    __table_args__ = (
+        Index("ix_node_annotations_node_id",    "node_id"),
+        Index("ix_node_annotations_user_id",    "user_id"),
+        Index("ix_node_annotations_created_at", "created_at"),
+    )
+
+    id:         Mapped[int]      = mapped_column(Integer,     primary_key=True, autoincrement=True)
+    node_id:    Mapped[str]      = mapped_column(String(256), nullable=False)   # chunk_id or entity name
+    node_type:  Mapped[str]      = mapped_column(String(32),  default="")       # Section / Tool / Material / …
+    user_id:    Mapped[str]      = mapped_column(String(36),  ForeignKey("users.id"), nullable=False)
+    content:    Mapped[str]      = mapped_column(Text,        nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime,    server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime,    server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship()
+
