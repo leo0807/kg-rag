@@ -13,6 +13,8 @@ interface DrawingImage {
     image_id:           string;
     caption:            string;
     path:               string;
+    minio_path:         string | null;
+    url:                string | null;
     description:        string;
     is_drawing:         boolean;
     part_numbers:       string[];
@@ -74,9 +76,11 @@ export function DrawingsTab({ docId }: Props) {
         }
     }
 
+    // 只展示有真实 image_id 的图片（排除 Cypher OPTIONAL MATCH 返回的空行）
+    const validImages = images.filter(img => !!img.image_id);
     const displayed = filter === "drawing"
-        ? images.filter(img => img.is_drawing)
-        : images;
+        ? validImages.filter(img => img.is_drawing)
+        : validImages;
 
     if (loading) {
         return (
@@ -87,7 +91,7 @@ export function DrawingsTab({ docId }: Props) {
         );
     }
 
-    if (images.length === 0) {
+    if (validImages.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-gray-600 gap-3">
                 <ImageOff size={32} strokeWidth={1.5} />
@@ -111,7 +115,7 @@ export function DrawingsTab({ docId }: Props) {
                                 : "text-gray-400 hover:text-white bg-gray-800 border border-gray-700"
                         }`}
                     >
-                        {f === "all" ? `全部图片 (${images.length})` : `工程图纸 (${images.filter(i => i.is_drawing).length})`}
+                        {f === "all" ? `全部图片 (${validImages.length})` : `工程图纸 (${validImages.filter(i => i.is_drawing).length})`}
                     </button>
                 ))}
             </div>
@@ -121,21 +125,29 @@ export function DrawingsTab({ docId }: Props) {
                 <div className="text-center py-12 text-gray-600 text-sm">暂无工程图纸</div>
             ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {displayed.map(img => {
-                        const src = `http://localhost:8000/${img.path.replace(/\\/g, "/")}`;
+                    {displayed.map((img, idx) => {
+                        if (!img.image_id) return null;
+                        const src = img.url ?? null;
                         return (
                             <button
-                                key={img.image_id}
+                                key={img.image_id ?? idx}
                                 onClick={() => setSelected(img)}
                                 className="group relative bg-gray-900 border border-gray-800 rounded-xl
                                            overflow-hidden hover:border-indigo-500 transition-colors text-left"
                             >
-                                <div className="aspect-[4/3] overflow-hidden bg-gray-800">
-                                    <img
-                                        src={src}
-                                        alt={img.caption || "图片"}
-                                        className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-200"
-                                    />
+                                <div className="aspect-[4/3] overflow-hidden bg-gray-800 flex items-center justify-center">
+                                    {src ? (
+                                        <img
+                                            src={src}
+                                            alt={img.caption || "图片"}
+                                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-200"
+                                            onError={e => {
+                                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                                                (e.currentTarget.nextSibling as HTMLElement | null)?.removeAttribute("hidden");
+                                            }}
+                                        />
+                                    ) : null}
+                                    <span hidden={!!src} className="text-xs text-gray-600 px-3 text-center">图片暂不可用</span>
                                 </div>
                                 <div className="px-3 py-2">
                                     <div className="flex items-center gap-1.5 mb-0.5">

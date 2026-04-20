@@ -130,7 +130,8 @@ def main():
     parser.add_argument("--auto",      action="store_true",      help="自动合并（不询问），相似度>=0.92 时")
     args = parser.parse_args()
 
-    from src.core.database import get_driver
+    from src.core.database import init_db, get_driver
+    init_db()
     driver = get_driver()
 
     node_types = [args.type] if args.type else ["Tool", "Material", "Process"]

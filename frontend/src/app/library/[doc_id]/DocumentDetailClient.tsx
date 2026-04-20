@@ -1,0 +1,393 @@
+"use client";
+
+import React, { useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
+import { fetchApi } from "@/lib/api";
+import { ArrowLeft, FileText, Download, ChevronDown, ChevronUp, Loader2, Star } from "lucide-react";
+import { useFavorites } from "@/app/favorites/useFavorites";
+import PdfPanel from "./PdfPanel";
+import { DrawingsTab } from "./DrawingsTab";
+import { ReprocessPanel } from "./ReprocessPanel";
+
+interface UserInfo { username: string; full_name: string; department: string; is_admin?: boolean; }
+
+/** 从 localStorage 读取当前用户信息 */
+function getCurrentUser(): UserInfo | null {
+    try {
+        const raw = localStorage.getItem("user");
+        return raw ? JSON.parse(raw) : null;
+    } catch {
+        return null;
+    }
+}
+
+/** 生成重复水印的 SVG data-URI（每块 280×140，旋转 -30°） */
+function buildWatermarkUrl(name: string, time: string): string {
+    const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="140">
+  <g transform="rotate(-30 140 70)" opacity="0.13" fill="#94a3b8"
+     font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif" text-anchor="middle">
+    <text x="140" y="58"  font-size="15" font-weight="600">${name}</text>
+    <text x="140" y="82"  font-size="11">${time}</text>
+  </g>
+</svg>`.trim();
+    return `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+}
+
+interface Section {
+    number: string;
+    title: string;
+    chunk_id: string;
+}
+
+interface DocumentDetail {
+    doc_id: string;
+    title: string;
+    version: string;
+    issue_date: string;
+    sections: Section[];
+    refs: string[];
+}
+
+interface SectionContent {
+    number: string;
+    title: string;
+    content: string;
+}
+
+function sortSections(sections: Section[]): Section[] {
+    return [...sections].sort((a, b) => {
+        const aParts = a.number.split(".").map(p => parseInt(p, 10) || 0);
+        const bParts = b.number.split(".").map(p => parseInt(p, 10) || 0);
+        for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+            const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0);
+            if (diff !== 0) return diff;
+        }
+        return 0;
+    });
+}
+
+function highlight(text: string, keyword: string) {
+    if (!keyword) return <>{text}</>;
+    const idx = text.toLowerCase().indexOf(keyword.toLowerCase());
+    if (idx === -1) return <>{text}</>;
+    return (
+        <>
+            {text.slice(0, idx)}
+            <mark className="bg-indigo-500/30 text-indigo-300 rounded px-0.5">
+                {text.slice(idx, idx + keyword.length)}
+            </mark>
+            {text.slice(idx + keyword.length)}
+        </>
+    );
+}
+
+export default function DocumentDetailClient({ docId }: { docId: string }) {
+    const searchParams = useSearchParams();
+    const initialPage = searchParams.get("page");
+
+    const [doc,            setDoc]           = useState<DocumentDetail | null>(null);
+    const [expandedChunk,  setExpandedChunk] = useState<string | null>(null);
+    const [sectionContent, setSectionContent] = useState<Record<string, SectionContent>>({});
+    const [loadingChunk,   setLoadingChunk]  = useState<string | null>(null);
+    const [sectionSearch,  setSectionSearch] = useState("");
+    const [pdfUrl,         setPdfUrl]        = useState<string | null>(null);
+    const [downloadUrl,    setDownloadUrl]   = useState<string | null>(null);
+    const [fileName,       setFileName]      = useState<string>("");
+    const [isAdmin,        setIsAdmin]       = useState(false);
+    const [showPdf,        setShowPdf]       = useState(initialPage !== null);
+    const [anchorPage,     setAnchorPage]    = useState<number | undefined>(initialPage ? parseInt(initialPage, 10) : undefined);
+    const [pdfLoading,     setPdfLoading]    = useState(false);
+    const [watermarkUrl,   setWatermarkUrl]  = useState("");
+    const [activeTab,      setActiveTab]     = useState<"sections" | "drawings" | "reprocess">("sections");
+    const { getFavoriteId, addFavorite, removeFavorite } = useFavorites();
+
+    // 监控 URL 参数变化
+    useEffect(() => {
+        const page = searchParams.get("page");
+        if (page !== null) {
+            const p = parseInt(page, 10);
+            setAnchorPage(p);
+            setShowPdf(true);
+        }
+    }, [searchParams]);
+
+    useEffect(() => {
+        const hash = window.location.hash.slice(1);
+        if (hash === "drawings" || hash === "reprocess") setActiveTab(hash);
+    }, []);
+
+    const refresh = () => {
+        if (!docId) return;
+        fetchApi<DocumentDetail>(`/api/documents/${docId}`).then(setDoc).catch(() => {});
+    };
+
+    useEffect(() => {
+        if (!docId) return;
+        refresh();
+
+        // 尝试获取 PDF 静态地址（文件不存在时静默失败）
+        fetchApi<{ preview_url: string; download_url: string; type?: string; filename?: string }>(`/api/documents/${docId}/pdf-url`)
+            .then(data => {
+                const token = localStorage.getItem("token") ?? "";
+                setDownloadUrl(data.download_url);
+                setFileName(data.filename || "");
+                // All formats: server-side PDF preview (LibreOffice converts DOC/DOCX)
+                const preview = `${data.preview_url}?token=${encodeURIComponent(token)}&t=${Date.now()}`;
+                setPdfUrl(preview);
+            })
+            .catch(() => {});
+
+        // 构建水印（用户名 + 当前时间）
+        const user = getCurrentUser();
+        const name = user?.full_name || user?.username || "未知用户";
+        setIsAdmin(Boolean(user?.is_admin));
+        const time = new Date().toLocaleString("zh-CN", {
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit",
+        });
+        setWatermarkUrl(buildWatermarkUrl(name, time));
+    }, [docId]);
+
+    async function handleDownload() {
+        if (!downloadUrl) return;
+        const token = localStorage.getItem("token") ?? "";
+        if (!token) return;
+        const res = await fetch(downloadUrl, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = fileName || `${docId}.bin`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    async function toggleSectionFavorite(e: React.MouseEvent, section: { chunk_id: string; title: string; number: string }) {
+        e.stopPropagation();
+        const favId = getFavoriteId({ type: "section", section_id: section.chunk_id });
+        if (favId) {
+            await removeFavorite(favId);
+        } else {
+            await addFavorite({ type: "section", doc_id: docId, section_id: section.chunk_id, title: `§${section.number} ${section.title}` });
+        }
+    }
+
+    async function toggleSection(chunkId: string) {
+        if (expandedChunk === chunkId) { setExpandedChunk(null); return; }
+        if (sectionContent[chunkId])  { setExpandedChunk(chunkId); return; }
+        setLoadingChunk(chunkId);
+        try {
+            const data = await fetchApi<SectionContent>(`/api/sections/${chunkId}`);
+            setSectionContent(prev => ({ ...prev, [chunkId]: data }));
+            setExpandedChunk(chunkId);
+        } finally {
+            setLoadingChunk(null);
+        }
+    }
+
+    if (!doc) {
+        return (
+            <div className="flex items-center justify-center h-full text-gray-500 text-sm gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                加载中...
+            </div>
+        );
+    }
+
+    const sortedSections = sortSections(doc.sections);
+    const visibleSections = sectionSearch
+        ? sortedSections.filter(s =>
+            s.title.toLowerCase().includes(sectionSearch.toLowerCase()) ||
+            s.number.includes(sectionSearch)
+          )
+        : sortedSections;
+
+    const docPanel = (
+        <div className={`bg-gray-950 overflow-y-auto ${showPdf ? "flex-1 min-w-0" : "p-8 max-w-3xl min-h-screen"}`}>
+            <div className={showPdf ? "px-6 pt-5 pb-4" : "mb-6"}>
+                <a
+                    href="/library"
+                    className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                >
+                    <ArrowLeft size={14} />
+                    返回文档库
+                </a>
+            </div>
+
+            {/* 标题区 */}
+            <div className={showPdf ? "px-6 pb-4 border-b border-gray-800" : "mb-8"}>
+                <div className="text-sm font-mono text-indigo-400 mb-1">
+                    {doc.doc_id} · 版本 {doc.version || "—"}
+                </div>
+                <h1 className="text-xl font-semibold text-white leading-snug">
+                    {doc.title || "未命名文档"}
+                </h1>
+                <div className="text-sm text-gray-500 mt-1">
+                    发布日期：{doc.issue_date || "—"}
+                </div>
+
+                {/* 操作按钮行 */}
+                <div className="flex items-center gap-2 mt-3">
+                    {pdfUrl ? (
+                        <button
+                            onClick={() => setShowPdf(v => !v)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                showPdf
+                                    ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                                    : "bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white border border-gray-700"
+                            }`}
+                        >
+                            <FileText size={13} />
+                            {showPdf ? "关闭预览" : "预览原文"}
+                        </button>
+                    ) : (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs
+                                         text-gray-600 border border-gray-800 cursor-default"
+                              title="文件未找到">
+                            <FileText size={13} />
+                            原文仅支持下载
+                        </span>
+                    )}
+                    {isAdmin && downloadUrl && (
+                        <button
+                            onClick={handleDownload}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs
+                                       bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700
+                                       border border-gray-700 transition-colors"
+                        >
+                            <Download size={13} />
+                            下载原文
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {doc.refs.length > 0 && (
+                <div className={showPdf ? "px-6 py-4 border-b border-gray-800" : "mb-8"}>
+                    <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">引用文件</div>
+                    <div className="flex flex-wrap gap-2">
+                        {doc.refs.map(ref => (
+                            <a key={ref} href={`/library/${ref}`}
+                                className="px-3 py-1 bg-gray-900 border border-gray-700 rounded-md
+                                           text-sm font-mono text-indigo-400 hover:border-indigo-500 transition-colors">
+                                {ref}
+                            </a>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* 选项卡：章节 / 图纸 */}
+            <div className={showPdf ? "px-6 pt-3" : "mt-2"}>
+                <div className="flex items-center gap-1 border-b border-gray-800 mb-4">
+                    {([["sections", `章节目录 (${doc.sections.length})`], ["drawings", "工程图纸"], ["reprocess", "重新处理"]] as const).map(([tab, label]) => (
+                        <button key={tab} onClick={() => {
+                            setActiveTab(tab as "sections" | "drawings" | "reprocess");
+                            history.replaceState(null, "", tab === "sections" ? window.location.pathname + window.location.search : `${window.location.pathname}${window.location.search}#${tab}`);
+                        }}
+                            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === tab ? "border-indigo-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}>
+                            {label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* 章节列表 */}
+                {activeTab === "sections" && (
+                    <>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="text-xs text-gray-500">
+                                {sectionSearch && `匹配 ${visibleSections.length} 个`}
+                            </div>
+                            <input
+                                value={sectionSearch}
+                                onChange={e => setSectionSearch(e.target.value)}
+                                placeholder="搜索章节..."
+                                className="px-2.5 py-1 bg-gray-900 border border-gray-700 rounded
+                                           text-xs text-gray-200 outline-none focus:border-indigo-500
+                                           placeholder-gray-500 w-36"
+                            />
+                        </div>
+                        <div className="space-y-0.5">
+                            {visibleSections.map(section => {
+                                const isExpanded = expandedChunk === section.chunk_id;
+                                const isLoading  = loadingChunk  === section.chunk_id;
+                                const content    = sectionContent[section.chunk_id];
+                                return (
+                                    <div key={section.chunk_id}>
+                                        <div className="flex items-center group rounded-lg hover:bg-gray-900 transition-colors">
+                                        <button
+                                            onClick={() => toggleSection(section.chunk_id)}
+                                            className="flex-1 flex items-baseline gap-3 px-3 py-2.5 text-left min-w-0"
+                                        >
+                                            <span className="text-xs font-mono text-gray-500 w-12 shrink-0">
+                                                {section.number}
+                                            </span>
+                                            <span className="text-sm text-gray-300 flex-1 min-w-0">
+                                                {highlight(section.title, sectionSearch)}
+                                            </span>
+                                            <span className="text-gray-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {isLoading
+                                                    ? <Loader2 size={12} className="animate-spin" />
+                                                    : isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                                                }
+                                            </span>
+                                        </button>
+                                        <button
+                                            onClick={(e) => toggleSectionFavorite(e, section)}
+                                            title={getFavoriteId({ type: "section", section_id: section.chunk_id }) ? "取消收藏" : "收藏此章节"}
+                                            className="px-2 py-2.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <Star
+                                                size={13}
+                                                className={getFavoriteId({ type: "section", section_id: section.chunk_id })
+                                                    ? "text-amber-400 fill-amber-400"
+                                                    : "text-gray-600 hover:text-amber-400"}
+                                            />
+                                        </button>
+                                        </div>
+                                        {isExpanded && content && (
+                                            <div className="mx-3 mb-2 px-4 py-3 bg-gray-900 rounded-lg border border-gray-800 text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">
+                                                {content.content}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </>
+                )}
+
+                {activeTab === "drawings"   && <DrawingsTab docId={docId} />}
+                {activeTab === "reprocess"  && <ReprocessPanel docId={docId} onComplete={refresh} />}
+            </div>
+        </div>
+    );
+
+    // ── 整体布局 ─────────────────────────────────────────────────────────────
+    if (showPdf && pdfUrl) {
+        return (
+            <div className="flex h-full overflow-hidden">
+                <div className="flex flex-col overflow-hidden" style={{ width: "42%" }}>
+                    {docPanel}
+                </div>
+                <PdfPanel
+                    docId={doc.doc_id}
+                    pdfUrl={pdfUrl}
+                    pdfLoading={pdfLoading}
+                    watermarkUrl={watermarkUrl}
+                    canDownload={isAdmin && Boolean(downloadUrl)}
+                    anchorPage={anchorPage}
+                    onDownload={handleDownload}
+                    onLoadStart={() => setPdfLoading(true)}
+                    onLoad={() => setPdfLoading(false)}
+                    onClose={() => setShowPdf(false)}
+                />
+            </div>
+        );
+    }
+
+    return docPanel;
+}

@@ -1,16 +1,19 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Download } from "lucide-react";
+import { Download, GitCompare } from "lucide-react";
 import SkeletonCard from "@/components/SkeletonCard";
 import NetToast from "@/components/NetToast";
 import type { NetToastType } from "@/components/NetToast";
 import ConversationSidebar from "./ConversationSidebar";
 import MessageBubble from "./MessageBubble";
 import ConversationInput from "./ConversationInput";
+import CompareGrid from "./CompareGrid";
 import { useConversations } from "./useConversations";
 import { useStreamQuery } from "./useStreamQuery";
+import { useCompareQuery } from "./useCompareQuery";
 import { SourceSection, Strategy } from "./types";
+import { useFavorites } from "@/app/favorites/useFavorites";
 import { ReasoningChain } from "./ReasoningChain";
 import { CausalChainPanel } from "./CausalChainPanel";
 
@@ -37,7 +40,18 @@ export default function QueryPage() {
     const [strategy,      setStrategy]      = useState<Strategy>("parallel");
     const [pendingImages, setPendingImages] = useState<string[]>([]);
     const [quoteSource,   setQuoteSource]   = useState<SourceSection | null>(null);
-    const [netToast, setNetToast] = useState<{ type: NetToastType; label: string } | null>(null);
+    const [netToast,      setNetToast]      = useState<{ type: NetToastType; label: string } | null>(null);
+    const [compareMode,   setCompareMode]   = useState(() => {
+        if (typeof window !== "undefined") return localStorage.getItem("query:compare_mode") === "1";
+        return false;
+    });
+    const isAdmin = typeof window !== "undefined"
+        ? JSON.parse(localStorage.getItem("user") ?? "{}").is_admin === true
+        : false;
+    const { favorites, getFavoriteId, addFavorite, removeFavorite } = useFavorites();
+    const favoritedChunkIds = new Set(
+        favorites.filter(f => f.type === "section" && f.section_id).map(f => f.section_id!)
+    );
     const bottomRef  = useRef<HTMLDivElement>(null);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -50,6 +64,12 @@ export default function QueryPage() {
     const {
         loading, streaming, streamingMsgId, reasoningSteps, causalChain, submit,
     } = useStreamQuery({ strategy, activeId, activeConv, conversations, createConversation, updateConversation, showNetToast });
+
+    const {
+        loading: compareLoading, question: compareQuestion,
+        results: compareResults, retryingStrategy,
+        compare, retryStrategy,
+    } = useCompareQuery();
 
     // Refs for visibility change callback
     const activeIdRef      = useRef<string | null>(activeId);
@@ -84,6 +104,14 @@ export default function QueryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    function toggleCompareMode() {
+        setCompareMode(v => {
+            const next = !v;
+            localStorage.setItem("query:compare_mode", next ? "1" : "0");
+            return next;
+        });
+    }
+
     async function handleSubmit() {
         if ((!input.trim() && pendingImages.length === 0) || loading || streaming) return;
         const citation = quoteSource
@@ -92,7 +120,11 @@ export default function QueryPage() {
         const question = citation + input.trim();
         const images   = [...pendingImages];
         setInput(""); setPendingImages([]); setQuoteSource(null);
-        await submit(question, images);
+        if (compareMode) {
+            await compare(question);
+        } else {
+            await submit(question, images);
+        }
     }
 
     async function handleBranch(upToIndex: number) {
@@ -159,15 +191,51 @@ export default function QueryPage() {
             <div className="flex-1 flex flex-col min-w-0">
                 <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800 shrink-0">
                     <div className="text-sm text-gray-400 truncate">{activeConv?.title ?? "选择或新建对话"}</div>
-                    <button onClick={exportConversation} disabled={!activeConv || historyLen === 0}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 hover:border-gray-600 rounded-lg transition-colors disabled:opacity-30">
-                        <Download size={12} /> 导出对话
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={toggleCompareMode}
+                            title="四策略对比模式"
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg transition-colors ${
+                                compareMode
+                                    ? "text-indigo-300 border-indigo-600 bg-indigo-900/30 hover:bg-indigo-900/50"
+                                    : "text-gray-500 border-gray-800 hover:text-gray-300 hover:border-gray-600"
+                            }`}
+                        >
+                            <GitCompare size={12} />
+                            {compareMode ? "对比模式 ON" : "对比模式"}
+                        </button>
+                        <button onClick={exportConversation} disabled={!activeConv || historyLen === 0}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 hover:border-gray-600 rounded-lg transition-colors disabled:opacity-30">
+                            <Download size={12} /> 导出对话
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-auto px-4 py-6">
                     <div className="max-w-3xl mx-auto">
-                        {!activeConv || historyLen === 0 ? (
+                        {compareMode ? (
+                            <>
+                                {!compareLoading && compareResults.length === 0 && (
+                                    <div className="flex flex-col items-center justify-center min-h-40 gap-3 py-8 text-gray-600">
+                                        <GitCompare size={32} className="opacity-40" />
+                                        <p className="text-sm">输入问题，对比四种检索策略的回答</p>
+                                    </div>
+                                )}
+                                <CompareGrid
+                                    question={compareQuestion}
+                                    results={compareResults}
+                                    loading={compareLoading}
+                                    retryingStrategy={retryingStrategy}
+                                    onRetryStrategy={retryStrategy}
+                                    onUseAnswer={(answer, strat) => {
+                                        setCompareMode(false);
+                                        localStorage.setItem("query:compare_mode", "0");
+                                        setInput(answer.slice(0, 200));
+                                        void strat;
+                                    }}
+                                />
+                            </>
+                        ) : !activeConv || historyLen === 0 ? (
                             <div className="flex flex-col items-center justify-center min-h-64 gap-5 py-10">
                                 <div className="text-5xl">✈️</div>
                                 <div className="text-gray-500 text-sm">开始提问关于航空工艺规范的问题</div>
@@ -211,9 +279,23 @@ export default function QueryPage() {
                                             role={msg.role} content={msg.content}
                                             sources={msg.sources} images={msg.images}
                                             streaming={streaming && msg.id === streamingMsgId}
+                                            followUpQuestions={msg.role === "assistant" ? msg.followUpQuestions : undefined}
+                                            errorInfo={msg.role === "assistant" ? msg.errorInfo : undefined}
+                                            isAdmin={isAdmin}
                                             onSourceClick={handleSourceClick}
                                             onQuoteSource={handleQuoteSource}
                                             onBranch={msg.role === "assistant" && !streaming ? () => handleBranch(i) : undefined}
+                                            onFollowUp={q => { setInput(q); }}
+                                            onRetry={msg.role === "assistant" && msg.errorInfo ? () => {
+                                                const prev = activeConv?.messages[i - 1];
+                                                if (prev?.role === "user") setInput(prev.content);
+                                            } : undefined}
+                                            favoritedChunkIds={favoritedChunkIds}
+                                            onFavoriteSection={async (s) => {
+                                                const favId = getFavoriteId({ type: "section", section_id: s.chunk_id });
+                                                if (favId) await removeFavorite(favId);
+                                                else await addFavorite({ type: "section", doc_id: s.doc_id, section_id: s.chunk_id, title: `§${s.number} ${s.title}` });
+                                            }}
                                         />
                                     </div>
                                 ))}

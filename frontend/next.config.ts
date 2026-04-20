@@ -8,11 +8,17 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         destination: "http://localhost:8000/api/:path*",
       },
+      {
+        source: "/uploads/:path*",
+        destination: "http://localhost:8000/uploads/:path*",
+      },
     ];
   },
   // 禁用代理缓冲
   experimental: {
-    proxyTimeout: 120000,
+    proxyTimeout: 600000,
+    // 允许更大的上传体积，避免 /api/ingest 超过 10MB 被截断
+    middlewareClientMaxBodySize: "200mb",
   },
 };
 

@@ -25,8 +25,10 @@ export async function drawGraphWebGL(
 
     const edgeGfx   = new PIXI.Graphics();
     const nodeLayer = new PIXI.Container();
-    (app.stage as any).addChild(edgeGfx);
-    (app.stage as any).addChild(nodeLayer);
+    if (app.stage) {
+        app.stage.addChild(edgeGfx);
+        app.stage.addChild(nodeLayer);
+    }
 
     const nodes = data.nodes as SimNode[];
     nodes.forEach(n => {
@@ -49,20 +51,43 @@ export async function drawGraphWebGL(
     }
 
     const sprites = new Map<string, any>();
+    const labels  = new Map<string, any>();
+    const containers = new Map<string, any>();
+
     nodes.forEach(n => {
         const type  = n.type || n.label;
         const color = NODE_COLOR[type] ?? "#6b7280";
         const heat  = heatMap.get(n.id) ?? 0;
         const r     = nodeRadius(n, heat);
-        const sp    = new PIXI.Sprite(getTex(color, r));
+        
+        const container = new PIXI.Container();
+        container.x = n.x!;
+        container.y = n.y!;
+        
+        const sp = new PIXI.Sprite(getTex(color, r));
         sp.anchor.set(0.5);
-        sp.x = n.x!; sp.y = n.y!;
         sp.alpha     = highlightedIds.size === 0 || highlightedIds.has(n.id) ? 1 : 0.25;
         sp.eventMode = "static";
         sp.cursor    = "pointer";
         sp.on("pointerdown", () => onNodeClick(n));
-        (nodeLayer as any).addChild(sp);
+        container.addChild(sp);
+        
+        // Add Label
+        const txt = new PIXI.Text(n.name || n.label || n.id, {
+            fontSize:   12,
+            fill:       0xffffff,
+            align:      "center",
+            fontWeight: "normal",
+        });
+        txt.anchor.set(0.5, 0);
+        txt.y = r + 4;
+        txt.visible = false; // Hidden by default, shown on zoom
+        container.addChild(txt);
+
+        nodeLayer.addChild(container);
         sprites.set(n.id, sp);
+        labels.set(n.id, txt);
+        containers.set(n.id, container);
     });
 
     const simulation = d3.forceSimulation(nodes)
@@ -75,7 +100,10 @@ export async function drawGraphWebGL(
     let tick = 0;
     simulation.on("tick", () => {
         tick++;
-        nodes.forEach(n => { const sp = sprites.get(n.id); if (sp) { sp.x = n.x!; sp.y = n.y!; } });
+        nodes.forEach(n => { 
+            const c = containers.get(n.id); 
+            if (c) { c.x = n.x!; c.y = n.y!; } 
+        });
         if (tick % 2 === 0) {
             edgeGfx.clear();
             edgeGfx.lineStyle(0.6, 0x4b5563, 0.5);
@@ -90,9 +118,15 @@ export async function drawGraphWebGL(
         .scaleExtent([MIN_SCALE, MAX_SCALE])
         .on("zoom", event => {
             const t = event.transform;
-            app.stage.x = t.x; app.stage.y = t.y;
-            app.stage.scale.set(t.k);
+            if (app.stage) {
+                app.stage.x = t.x; app.stage.y = t.y;
+                app.stage.scale.set(t.k);
+            }
             onScaleChange(t.k);
+            
+            // Toggle label visibility based on zoom
+            const showLabels = t.k > 0.8;
+            labels.forEach(l => { l.visible = showLabels; });
         });
     d3.select(canvasEl).call(zoom);
     d3.select(canvasEl).call(zoom.transform, d3.zoomIdentity);
@@ -111,10 +145,21 @@ export async function drawGraphWebGL(
             tooltipEl.classList.remove("hidden");
             tooltipEl.style.left = (event.clientX + 12) + "px";
             tooltipEl.style.top  = (event.clientY - 8)  + "px";
-            const desc = (found as any).description || (found as any).content;
-            tooltipEl.innerHTML = desc
-                ? `<div class="font-medium">${found.name}</div><div class="text-gray-400 mt-1 max-w-xs">${String(desc).slice(0, 80)}…</div>`
-                : found.name;
+            const nodeType = (found as any).type as string | undefined;
+            if (nodeType === "Image") {
+                const badge = (found as any).is_drawing
+                    ? `<span style="background:#6366f1;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;">图纸</span>`
+                    : "";
+                const caption = found.name || found.id;
+                const hint = `<div style="color:#6b7280;font-size:10px;margin-top:4px;">点击节点查看图片</div>`;
+                tooltipEl.innerHTML =
+                    `<div style="font-weight:500;">${caption}${badge}</div>${hint}`;
+            } else {
+                const desc = (found as any).description || (found as any).content;
+                tooltipEl.innerHTML = desc
+                    ? `<div class="font-medium">${found.name}</div><div class="text-gray-400 mt-1 max-w-xs">${String(desc).slice(0, 80)}…</div>`
+                    : found.name;
+            }
         } else {
             tooltipEl.classList.add("hidden");
         }

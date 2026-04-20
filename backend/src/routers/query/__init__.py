@@ -9,9 +9,10 @@ from slowapi.util import get_remote_address
 from ...core.database import get_driver
 from ...auth.deps import get_optional_user
 from ...db.models import User
-from .models import QueryRequest, QueryResponse
-from .sync   import query_sync
-from .stream import query_stream
+from .models  import QueryRequest, QueryResponse
+from .sync    import query_sync
+from .stream  import query_stream
+from .compare import query_compare
 
 router  = APIRouter(prefix="/api", tags=["query"])
 limiter = Limiter(key_func=get_remote_address)
@@ -169,6 +170,16 @@ async def query_suggest(
                 suggestions.append({"text": r["text"], "type": r["type"].lower(), "doc_id": r["doc_id"] or ""})
 
     return {"suggestions": suggestions[:10]}
+
+
+@router.post("/query/compare")
+@limiter.limit("10/minute")
+async def query_compare_route(
+    request: Request,
+    req:     QueryRequest,
+    driver:  Driver     = Depends(get_driver),
+):
+    return await query_compare(req, driver)
 
 
 @router.post("/query/auto-strategy")

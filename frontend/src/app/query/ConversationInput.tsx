@@ -1,6 +1,7 @@
 "use client";
-import { useRef, useEffect, useCallback } from "react";
-import { Send, RotateCcw, Paperclip, X, Reply } from "lucide-react";
+import { useRef, useEffect, useCallback, useState } from "react";
+import { Send, RotateCcw, Paperclip, X, Reply, Star, ChevronRight, Hash, FileText, Database } from "lucide-react";
+import { useFavorites } from "@/app/favorites/useFavorites";
 import { Strategy, SourceSection } from "./types";
 
 const strategies: { value: Strategy; label: string; title: string }[] = [
@@ -10,6 +11,14 @@ const strategies: { value: Strategy; label: string; title: string }[] = [
     { value: "multi_hop",      label: "多跳",   title: "多跳推理，复杂因果" },
     { value: "counterfactual", label: "反事实", title: "假设推理：去掉 X 后还能满足 Y 吗？" },
 ];
+
+interface Suggestion {
+    type: "entity";
+    label: string;
+    id: string;
+    entity_type: string;
+    relationships?: string[];
+}
 
 interface Props {
     value: string;
@@ -33,10 +42,48 @@ export default function ConversationInput({
     quoteSource, onChange, onStrategy, onSubmit, onClear,
     onAddImages, onRemoveImage, onClearQuote,
 }: Props) {
+    const { getFavoriteId, addFavorite, removeFavorite } = useFavorites();
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [selectedIndex, setSelectedIndex] = useState(0);
 
     useEffect(() => { textareaRef.current?.focus(); }, []);
+
+    // 联想搜索逻辑
+    useEffect(() => {
+        const query = value.trim();
+        if (query.length < 2) {
+            setSuggestions([]);
+            setShowSuggestions(false);
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            try {
+                const res = await fetch(`/api/search/autocomplete?q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                setSuggestions(data.suggestions || []);
+                setShowSuggestions((data.suggestions || []).length > 0);
+                setSelectedIndex(0);
+            } catch (err) {
+                console.error("Autocomplete failed:", err);
+            }
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [value]);
+
+    function handleSelectSuggestion(s: Suggestion, rel?: string) {
+        let newValue = s.label;
+        if (rel) {
+            newValue = `${s.label} 的 ${rel}`;
+        }
+        onChange(newValue);
+        setShowSuggestions(false);
+        textareaRef.current?.focus();
+    }
 
     // 有引用时自动聚焦输入框
     useEffect(() => {
@@ -77,7 +124,54 @@ export default function ConversationInput({
     const canSend = (value.trim() || pendingImages.length > 0) && !loading && !streaming;
 
     return (
-        <div className="border-t border-gray-800 bg-gray-950 px-4 py-4">
+        <div className="border-t border-gray-800 bg-gray-950 px-4 py-4 relative">
+            {/* 联想搜索下拉框 */}
+            {showSuggestions && (
+                <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-900 border border-gray-700
+                                rounded-xl shadow-2xl overflow-hidden z-50 max-h-80 overflow-y-auto">
+                    {suggestions.map((s, idx) => (
+                        <div key={idx} className={`border-b border-gray-800 last:border-0`}>
+                            <div
+                                onClick={() => handleSelectSuggestion(s)}
+                                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors
+                                          ${selectedIndex === idx ? "bg-indigo-900/40" : "hover:bg-gray-800"}`}
+                            >
+                                <div className="w-6 h-6 rounded bg-gray-800 flex items-center justify-center shrink-0">
+                                    {s.entity_type === "Section" ? <Hash size={14} className="text-indigo-400" /> :
+                                     s.entity_type === "Document" ? <FileText size={14} className="text-amber-400" /> :
+                                     <Database size={14} className="text-emerald-400" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm text-gray-200 font-medium truncate">{s.label}</div>
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">{s.entity_type}</div>
+                                </div>
+                                <ChevronRight size={14} className="text-gray-600" />
+                            </div>
+                            
+                            {/* 关系路径联想 (Relationship-aware) */}
+                            {s.relationships && s.relationships.length > 0 && (
+                                <div className="px-4 pb-3 flex flex-wrap gap-1.5 ml-9">
+                                    {s.relationships.slice(0, 5).map(rel => (
+                                        <button
+                                            key={rel}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleSelectSuggestion(s, rel);
+                                            }}
+                                            className="px-2 py-0.5 bg-indigo-950/40 border border-indigo-800/50 
+                                                       rounded text-[10px] text-indigo-300 hover:bg-indigo-800 
+                                                       hover:text-white transition-colors"
+                                        >
+                                            {rel}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {/* 策略 + 清空 */}
             <div className="flex items-center gap-2 mb-3">
                 <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-lg p-0.5">
@@ -189,6 +283,26 @@ export default function ConversationInput({
                         el.style.height = Math.min(el.scrollHeight, 128) + "px";
                     }}
                 />
+                {value.trim() && !streaming && (
+                    <button
+                        onClick={async () => {
+                            const trimmed = value.trim();
+                            const favId = getFavoriteId({ type: "query", query_text: trimmed });
+                            if (favId) await removeFavorite(favId);
+                            else await addFavorite({ type: "query", query_text: trimmed, title: trimmed.slice(0, 80) });
+                        }}
+                        title={getFavoriteId({ type: "query", query_text: value.trim() }) ? "取消收藏此问题" : "收藏此问题"}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center
+                         hover:bg-gray-800 transition-colors flex-shrink-0"
+                    >
+                        <Star
+                            size={13}
+                            className={getFavoriteId({ type: "query", query_text: value.trim() })
+                                ? "text-amber-400 fill-amber-400"
+                                : "text-gray-600 hover:text-amber-400"}
+                        />
+                    </button>
+                )}
                 <button
                     onClick={onSubmit}
                     disabled={!canSend}

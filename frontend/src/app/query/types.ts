@@ -4,6 +4,15 @@ export interface SourceSection {
     number: string;
     title: string;
     score: number;
+    page_idx?: number;
+    bbox?: [number, number, number, number];
+}
+
+export interface LLMErrorInfo {
+    code:        string;
+    message:     string;
+    status_code: number | null;
+    endpoint:    string;
 }
 
 export interface Message {
@@ -13,6 +22,8 @@ export interface Message {
     sources?: SourceSection[];
     images?: string[];           // base64 data URIs (user messages only)
     causalChain?: CausalChainData;
+    followUpQuestions?: string[];
+    errorInfo?: LLMErrorInfo;
     timestamp: number;
 }
 
@@ -42,6 +53,8 @@ export interface CausalSection {
     rel_type:    string;
     rel_type_cn: string;
     constraints: CausalConstraint[];
+    page_idx?:   number;
+    bbox?:       [number, number, number, number];
 }
 
 export interface CausalChainData {

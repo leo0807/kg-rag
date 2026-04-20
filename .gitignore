@@ -21,7 +21,15 @@ milvus_data/
 
 # 上传文件
 uploads/
+backend/uploads/
+backend/snapshots/
 *.pdf
+backend/**/*.pdf
+backend/**/*.docx
+
+# 媒体文件
+*.aiff
+*.mp3
 
 # 进度文件
 ingest_progress.json

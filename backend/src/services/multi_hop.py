@@ -100,7 +100,9 @@ def retrieve_for_subquery(state: AgentState, driver, top_k: int = 3) -> AgentSta
                                s.doc_id   AS doc_id,
                                s.number   AS number,
                                s.title    AS title,
-                               s.content  AS content
+                               s.content  AS content,
+                               s.page_idx AS page_idx,
+                               s.bbox     AS bbox
                     """, cid=r["chunk_id"]).single()
                     if node:
                         retrieved.append({**dict(node), "score": r["score"]})
@@ -148,7 +150,7 @@ def synthesize_answer(state: AgentState) -> AgentState:
             seen.add(r["chunk_id"])
 
     context = "\n\n".join(
-        f"[{r['doc_id']} §{r['number']}] {r['title']}\n{r.get('content', '')}"
+        f"[{r['doc_id']} §{r['number']} (第{r.get('page_idx', 0)+1}页)] {r['title']}\n{r.get('content', '')}"
         for r in unique[:6]
     )
 
@@ -205,6 +207,79 @@ def build_multi_hop_graph(driver):
     graph.add_edge("synthesize", END)
 
     return graph.compile()
+
+
+async def multi_hop_query_stream(question: str, driver, top_k: int = 5):
+    """
+    流式多跳推理查询入口，用于前端可视化 CoT 过程。
+    Yields: {"type": "status"|"steps"|"sources"|"delta"|"done", "content": ...}
+    """
+    import asyncio
+    graph = build_multi_hop_graph(driver)
+
+    initial_state = AgentState(
+        question     = question,
+        sub_queries  = [],
+        retrieved    = [],
+        hop_count    = 0,
+        final_answer = "",
+        steps        = [],
+    )
+
+    # 由于 LangGraph invoke 是同步的，我们在 thread pool 运行
+    # 为了实现真正的流式，我们可能需要更复杂的观察者模式，
+    # 这里我们先通过 graph.stream() 捕获节点切换
+    
+    seen_chunk_ids = set()
+    
+    try:
+        # 使用 graph.astream() 进行异步流式处理
+        async for output in graph.astream(initial_state):
+            # output 是一个 dict，key 是节点名，value 是该节点返回的状态增量
+            node_name = list(output.keys())[0]
+            data = output[node_name]
+            
+            if node_name == "decompose":
+                queries = data.get("sub_queries", [])
+                yield {"type": "status", "content": f"🔍 问题已分解为 {len(queries)} 个步骤"}
+                yield {"type": "steps", "content": [{"hop": 0, "query": "分解问题", "sub_queries": queries}]}
+                
+            elif node_name == "retrieve":
+                hop = data.get("hop_count", 0)
+                steps = data.get("steps", [])
+                if steps:
+                    yield {"type": "status", "content": f"📖 正在执行第 {hop} 步检索..."}
+                    yield {"type": "steps", "content": steps}
+                
+                # 提取新发现的来源
+                new_retrieved = data.get("retrieved", [])
+                new_sources = []
+                for s in new_retrieved:
+                    if s["chunk_id"] not in seen_chunk_ids:
+                        new_sources.append({
+                            "chunk_id": s["chunk_id"], "doc_id": s["doc_id"],
+                            "number":   s.get("number") or "", "title": s.get("title") or "",
+                            "score":    round(float(s.get("score", 0)), 4),
+                        })
+                        seen_chunk_ids.add(s["chunk_id"])
+                
+                if new_sources:
+                    yield {"type": "sources", "content": new_sources}
+            
+            elif node_name == "synthesize":
+                yield {"type": "status", "content": "✨ 正在综合多步检索结果..."}
+                answer = data.get("final_answer", "")
+                if answer:
+                    # 模拟打字机流式输出（因为 synthesize 是一次性生成的）
+                    for char in answer:
+                        yield {"type": "delta", "content": char}
+                        await asyncio.sleep(0.005)
+
+        yield {"type": "done", "content": None}
+
+    except Exception as e:
+        logger.error("多跳流式查询异常: %s", e)
+        yield {"type": "error", "content": str(e)}
 
 
 def multi_hop_query(question: str, driver, top_k: int = 5) -> tuple[str, list[dict], list[dict]]:

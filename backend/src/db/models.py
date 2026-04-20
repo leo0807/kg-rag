@@ -1,5 +1,5 @@
 """
-数据库模型：用户、用户配置、系统配置、审计日志、对话、反馈
+数据库模型：用户、用户配置、系统配置、审计日志、对话、反馈、收藏夹
 """
 import uuid
 from datetime import datetime
@@ -136,3 +136,24 @@ class NodeAnnotation(Base):
 
     user: Mapped["User"] = relationship()
 
+
+
+class Favorite(Base):
+    """用户收藏 — 章节、文档或问题"""
+    __tablename__  = "favorites"
+    __table_args__ = (
+        Index("ix_favorites_user_id",    "user_id"),
+        Index("ix_favorites_created_at", "created_at"),
+    )
+
+    id:           Mapped[str]           = mapped_column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id:      Mapped[str]           = mapped_column(String(36),  ForeignKey("users.id"), nullable=False)
+    type:         Mapped[str]           = mapped_column(String(20),  nullable=False)   # section | document | query
+    doc_id:       Mapped[str | None]    = mapped_column(String(50),  nullable=True)
+    section_id:   Mapped[str | None]    = mapped_column(String(100), nullable=True)
+    query_text:   Mapped[str | None]    = mapped_column(Text,        nullable=True)
+    title:        Mapped[str]           = mapped_column(String(200), nullable=False)
+    note:         Mapped[str | None]    = mapped_column(Text,        nullable=True)
+    created_at:   Mapped[datetime]      = mapped_column(DateTime,    server_default=func.now())
+
+    user: Mapped["User"] = relationship()

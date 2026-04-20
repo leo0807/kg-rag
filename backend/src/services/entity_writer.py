@@ -35,6 +35,77 @@ _ALLOWED_RELATIONS = {"REQUIRES_TOOL", "USES_MATERIAL", "ALTERNATIVE_TO", "COMPA
 _TYPE_LABEL = {"Tool": "Tool", "Material": "Material", "Process": "Process"}
 
 
+def write_tables(driver: Driver, doc_id: str, table_data: list[dict]) -> None:
+    """
+    table_data: [{
+        "table_id", "chunk_id", "markdown", "rows_json", "page_index",
+        "constraints": [...]
+    }]
+    写入 Table 节点并建立：
+    (Section)-[:HAS_TABLE]->(Table)
+    (Table)-[:HAS_ROW]->(Constraint)
+    """
+    total_tables = total_rows = 0
+    with driver.session() as session:
+        for item in table_data:
+            table_id = item["table_id"]
+            chunk_id = item["chunk_id"]
+            
+            # 1. 创建/更新 Table 节点
+            session.run("""
+                MATCH (sec:Section {chunk_id: $chunk_id})
+                MERGE (t:Table {table_id: $table_id})
+                SET t.doc_id      = $doc_id,
+                    t.markdown    = $markdown,
+                    t.rows_json   = $rows_json,
+                    t.page_index  = $page_index,
+                    t.row_count   = $row_count,
+                    t.bbox        = $bbox
+                MERGE (sec)-[:HAS_TABLE]->(t)
+            """,
+                chunk_id=chunk_id, table_id=table_id, doc_id=doc_id,
+                markdown=item["markdown"], rows_json=item["rows_json"],
+                page_index=item["page_index"],
+                row_count=item.get("row_count", 0),
+                bbox=item.get("bbox"),
+            )
+            total_tables += 1
+
+            # 2. 创建关联的 Constraint 节点并建立 HAS_ROW 关系
+            for c in item.get("constraints", []):
+                session.run("""
+                    MATCH (t:Table {table_id: $table_id})
+                    MERGE (con:Constraint {constraint_id: $cid})
+                    SET con.type        = $type,
+                        con.value       = $value,
+                        con.value_min   = $value_min,
+                        con.value_max   = $value_max,
+                        con.unit        = $unit,
+                        con.description = $description,
+                        con.doc_id      = $doc_id,
+                        con.source      = 'table'
+                    MERGE (t)-[:HAS_ROW]->(con)
+                    
+                    // 同时建立 Section 到 Constraint 的传统关系，保持检索兼容性
+                    WITH t, con
+                    MATCH (sec:Section)-[:HAS_TABLE]->(t)
+                    MERGE (sec)-[:HAS_CONSTRAINT]->(con)
+                """,
+                    table_id  = table_id,
+                    cid       = c["constraint_id"],
+                    type      = c["type"],
+                    value     = c["value"],
+                    value_min = c.get("value_min", ""),
+                    value_max = c.get("value_max", ""),
+                    unit      = c["unit"],
+                    description = c.get("description", ""),
+                    doc_id    = doc_id,
+                )
+                total_rows += 1
+
+    logger.info("表格写入完成 doc_id=%s tables=%d rows=%d", doc_id, total_tables, total_rows)
+
+
 def write_entities(driver: Driver, doc_id: str, entity_data: list[dict]) -> None:
     """
     entity_data: [{

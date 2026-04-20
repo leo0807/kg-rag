@@ -6,6 +6,7 @@ import {
     GraphNode, GraphData, NodeFilter, EdgeFilter, RenderMode, Limits,
     MIN_SCALE, MAX_SCALE, NODE_COLOR,
 } from "./constants";
+import { GraphStats } from "./constants";
 import { drawGraph }         from "./renderSVG";
 import { drawGraphCanvas }   from "./renderCanvas";
 import { drawGraphHeatmap }  from "./renderHeatmap";
@@ -25,8 +26,11 @@ export default function GraphPage() {
     const filteredNodesRef = useRef<GraphNode[]>([]);
     const filteredEdgesRef = useRef<any[]>([]);
 
+    const containerRef   = useRef<HTMLDivElement>(null);
+    const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [renderMode,  setRenderMode]       = useState<RenderMode>("svg");
     const [manualMode,  setManualMode]       = useState<RenderMode | null>(null);
+    const [redrawKey,   setRedrawKey]        = useState(0);
     const [data,       setData]             = useState<GraphData | null>(null);
     const [heatMap,    setHeatMap]          = useState<Map<string, number>>(new Map());
     const [scale,      setScale]            = useState(1);
@@ -37,7 +41,9 @@ export default function GraphPage() {
     const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
     const [docFilter,  setDocFilter]        = useState("");
     const [docs,       setDocs]             = useState<{doc_id: string; title: string}[]>([]);
-    const [limits,     setLimits]           = useState<Limits>({ doc: 50, sec: 200, entity: 100 });
+    const [limits,     setLimits]           = useState<Limits>({ doc: 100, sec: 500, entity: 200, tbl: 0, show_level: 0, show_images: true, show_entities: true });
+    const [graphStats, setGraphStats]       = useState<GraphStats | null>(null);
+    const [expandingId, setExpandingId]     = useState<string | null>(null);
     const [showLimits, setShowLimits]       = useState(false);
     const [showLegend, setShowLegend]       = useState(false);
     const [showExport, setShowExport]       = useState(false);
@@ -75,8 +81,8 @@ export default function GraphPage() {
         if (p.has("nf")) setNodeFilter(p.get("nf") as NodeFilter);
         if (p.has("ef")) setEdgeFilter(p.get("ef") as EdgeFilter);
         if (p.has("df")) setDocFilter(p.get("df")!);
-        if (p.has("ld") || p.has("ls") || p.has("le"))
-            setLimits({ doc: Number(p.get("ld") || 50), sec: Number(p.get("ls") || 200), entity: Number(p.get("le") || 100) });
+        if (p.has("ld") || p.has("ls") || p.has("le") || p.has("lt"))
+            setLimits(prev => ({ ...prev, doc: Number(p.get("ld") || 100), sec: Number(p.get("ls") || 500), entity: Number(p.get("le") || 200), tbl: Number(p.get("lt") || 0) }));
         if (p.has("sq")) { setSearchQuery(p.get("sq")!); }
         if (p.has("sn") && data) { const node = data.nodes.find(n => n.id === p.get("sn")!); if (node) setSelectedNode(node); }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -88,9 +94,10 @@ export default function GraphPage() {
         if (edgeFilter !== "全部关系") p.set("ef", edgeFilter);
         if (searchQuery)              p.set("sq", searchQuery);
         if (docFilter)                p.set("df", docFilter);
-        if (limits.doc    !== 50)     p.set("ld", String(limits.doc));
-        if (limits.sec    !== 200)    p.set("ls", String(limits.sec));
-        if (limits.entity !== 100)    p.set("le", String(limits.entity));
+        if (limits.doc    !== 100)    p.set("ld", String(limits.doc));
+        if (limits.sec    !== 500)    p.set("ls", String(limits.sec));
+        if (limits.entity !== 200)    p.set("le", String(limits.entity));
+        if (limits.tbl    !== 0)      p.set("lt", String(limits.tbl));
         if (selectedNode)             p.set("sn", selectedNode.id);
         const qs = p.toString();
         window.history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
@@ -98,9 +105,42 @@ export default function GraphPage() {
 
     // Data loading
     useEffect(() => {
-        const params = new URLSearchParams({ limit_doc: String(limits.doc), limit_sec: String(limits.sec), limit_entity: String(limits.entity), doc_id: docFilter });
-        fetch(`/api/graph?${params}`).then(r => r.ok ? r.json() : Promise.reject()).then(setData).catch(() => {});
+        const params = new URLSearchParams({
+            limit_doc:     String(limits.doc),
+            limit_sec:     String(limits.sec),
+            limit_entity:  String(limits.entity),
+            limit_tbl:     String(limits.tbl),
+            doc_id:        docFilter,
+            hide_logos:    "true",
+            show_level:    String(limits.show_level),
+            show_images:   String(limits.show_images),
+            show_entities: String(limits.show_entities),
+        });
+        fetch(`/api/graph?${params}`)
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then((d: GraphData) => { setData(d); if (d.stats) setGraphStats(d.stats); })
+            .catch(() => {});
     }, [limits, docFilter]);
+
+    // 展开子节点
+    async function expandSection(chunkId: string) {
+        setExpandingId(chunkId);
+        try {
+            const res = await fetch(`/api/graph/expand/${chunkId}`);
+            if (!res.ok) return;
+            const { nodes: children } = await res.json();
+            if (!children?.length) return;
+            setData(prev => {
+                if (!prev) return prev;
+                const existingIds = new Set(prev.nodes.map(n => n.id));
+                const newNodes = (children as GraphNode[]).filter(n => !existingIds.has(n.id));
+                const newEdges = children.map((c: GraphNode) => ({ source: chunkId, target: c.id, type: "HAS_SUBSECTION" }));
+                return { ...prev, nodes: [...prev.nodes, ...newNodes], edges: [...prev.edges, ...newEdges] };
+            });
+        } finally {
+            setExpandingId(null);
+        }
+    }
 
     useEffect(() => {
         fetch(`/api/documents?per_page=200`).then(r => r.json())
@@ -110,6 +150,20 @@ export default function GraphPage() {
     useEffect(() => {
         fetch(`/api/graph/hot-nodes?days=30&top_k=200`).then(r => r.ok ? r.json() : null)
             .then((d: any) => { if (d?.nodes?.length) setHeatMap(new Map(d.nodes.map((n: any) => [n.chunk_id, n.heat_norm]))); }).catch(() => {});
+    }, []);
+
+    // ResizeObserver: re-trigger render when container changes size (devtools, window resize)
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(() => {
+            if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+            resizeTimerRef.current = setTimeout(() => {
+                setRedrawKey(k => k + 1);
+            }, 150);
+        });
+        ro.observe(el);
+        return () => { ro.disconnect(); if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current); };
     }, []);
 
     const handleSearch = useCallback((q: string) => {
@@ -178,7 +232,7 @@ export default function GraphPage() {
             zoomRef.current = drawGraph({ nodes: filteredNodes, edges: filteredEdges }, svgRef.current, tooltipRef.current!, setScale, node => setSelectedNode(node), highlightedIds, heatMap, tour.tourOpen ? tour.tourNodeIds : undefined, tour.tourOpen ? tour.tourCurrentId : undefined);
         }
         return () => { canceled = true; if (pixiDestroyRef.current) { pixiDestroyRef.current(); pixiDestroyRef.current = null; } };
-    }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, heatMap, manualMode, tour.tourNodeIds, tour.tourCurrentId, tour.tourOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, heatMap, manualMode, tour.tourNodeIds, tour.tourCurrentId, tour.tourOpen, redrawKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="w-full h-full bg-gray-950 select-none flex flex-col" onClick={() => { if (showExport) setShowExport(false); }}>
@@ -193,14 +247,37 @@ export default function GraphPage() {
                 showExport={showExport} setShowExport={setShowExport}
                 copied={copied} shareSnapshot={shareSnapshot} exportGraph={exportGraph}
                 renderMode={renderMode} manualMode={manualMode} setManualMode={setManualMode}
+                showTables={limits.tbl > 0}
+                onToggleTables={() => setLimits(prev => ({ ...prev, tbl: prev.tbl > 0 ? 0 : 200 }))}
+                showLevel={limits.show_level}
+                onShowLevel={lv => setLimits(prev => ({ ...prev, show_level: lv }))}
+                showImages={limits.show_images}
+                onToggleImages={() => setLimits(prev => ({ ...prev, show_images: !prev.show_images }))}
+                showEntities={limits.show_entities}
+                onToggleEntities={() => setLimits(prev => ({ ...prev, show_entities: !prev.show_entities }))}
+                graphStats={graphStats}
+                onExpandAll={() => {
+                    const totalNodes = graphStats?.total ?? 0;
+                    if (totalNodes > 500) {
+                        if (!confirm(`当前文档共有约 ${totalNodes} 个节点，全部展开可能影响性能，确认？`)) return;
+                    }
+                    const params = new URLSearchParams({
+                        limit_doc: "9999", limit_sec: "9999", limit_entity: "9999", limit_tbl: "0",
+                        doc_id: docFilter, show_level: "0", show_images: String(limits.show_images),
+                        show_entities: String(limits.show_entities), expand_all: "true",
+                    });
+                    fetch(`/api/graph?${params}`).then(r => r.ok ? r.json() : Promise.reject())
+                        .then((d: GraphData) => { setData(d); if (d.stats) setGraphStats(d.stats); }).catch(() => {});
+                }}
+                onCollapseToLevel1={() => setLimits(prev => ({ ...prev, show_level: 1 }))}
             />
 
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
                 <div className="flex-1 flex overflow-hidden min-h-0">
-                    <div className="relative flex-1 overflow-hidden">
-                        <svg    ref={svgRef}    className={`w-full h-full${renderMode === "svg"                              ? "" : " hidden"}`} />
-                        <canvas ref={canvasRef} className={`w-full h-full${renderMode === "canvas" || renderMode === "heatmap" ? "" : " hidden"}`} />
-                        <canvas ref={webglRef}  className={`w-full h-full${renderMode === "webgl"                            ? "" : " hidden"}`} />
+                    <div ref={containerRef} className="relative flex-1 overflow-hidden">
+                        <svg    ref={svgRef}    className={`absolute inset-0 w-full h-full${renderMode === "svg"                              ? "" : " pointer-events-none opacity-0"}`} />
+                        <canvas ref={canvasRef} className={`absolute inset-0 w-full h-full${renderMode === "canvas" || renderMode === "heatmap" ? "" : " pointer-events-none opacity-0"}`} />
+                        <canvas ref={webglRef}  className={`absolute inset-0 w-full h-full${renderMode === "webgl"                            ? "" : " pointer-events-none opacity-0"}`} />
 
                         {renderMode !== "svg" && (
                             <div className="absolute top-3 left-3 px-2 py-1 bg-gray-900/80 border border-indigo-700/40 rounded-lg text-xs text-indigo-400 pointer-events-none z-10">
@@ -214,16 +291,16 @@ export default function GraphPage() {
                             <div className="absolute top-3 left-3 bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 space-y-3 w-56 z-10 shadow-xl">
                                 <div className="text-xs text-gray-400 font-medium">节点数量限制</div>
                                 {([
-                                    { key: "doc",    label: "Document", min: 10,  max: 200 },
-                                    { key: "sec",    label: "Section",  min: 50,  max: 500 },
-                                    { key: "entity", label: "Entity",   min: 20,  max: 200 },
+                                    { key: "doc",    label: "Document", min: 10,  max: 500 },
+                                    { key: "sec",    label: "Section",  min: 50,  max: 2000 },
+                                    { key: "entity", label: "Entity",   min: 20,  max: 1000 },
                                 ] as { key: keyof Limits; label: string; min: number; max: number }[]).map(({ key, label, min, max }) => (
                                     <div key={key} className="flex items-center gap-2">
                                         <span className="text-xs text-gray-400 w-16">{label}</span>
-                                        <input type="range" min={min} max={max} step={10} value={limits[key]}
+                                        <input type="range" min={min} max={max} step={10} value={limits[key] as number}
                                             onChange={e => setLimits(prev => ({ ...prev, [key]: Number(e.target.value) }))}
                                             className="flex-1 h-1 accent-indigo-500" />
-                                        <span className="text-xs text-gray-500 w-8 text-right">{limits[key]}</span>
+                                        <span className="text-xs text-gray-500 w-8 text-right">{limits[key] as number}</span>
                                     </div>
                                 ))}
                             </div>
@@ -275,7 +352,14 @@ export default function GraphPage() {
                         <div ref={tooltipRef} className="fixed hidden px-2 py-1 bg-gray-800 text-white text-xs rounded pointer-events-none border border-gray-700 max-w-xs" />
                     </div>
 
-                    {selectedNode && <NodeDetailSidebar node={selectedNode} onClose={() => setSelectedNode(null)} />}
+                    {selectedNode && (
+                        <NodeDetailSidebar
+                            node={selectedNode}
+                            onClose={() => setSelectedNode(null)}
+                            onExpandSection={expandSection}
+                            expandingId={expandingId}
+                        />
+                    )}
                 </div>
 
                 {tour.tourOpen && (

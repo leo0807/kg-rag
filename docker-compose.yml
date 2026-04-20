@@ -1,11 +1,10 @@
 version: "3.9"
 
-# ─────────────────────────────────────────────
-# 航空 GraphRAG 本地开发环境
-# 包含：Neo4j · Milvus · etcd · MinIO · Attu
-# 启动：docker compose up -d
-# 停止：docker compose down
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# 基础设施层 —— 开发 / 生产共用
+# 启动开发环境：bash scripts/dev.sh
+# 启动生产环境：bash scripts/prod.sh
+# ─────────────────────────────────────────────────────────────
 
 services:
   # ── Langfuse 依赖：PostgreSQL ─────────────
@@ -29,7 +28,7 @@ services:
     image: langfuse/langfuse:2
     container_name: aviation-langfuse
     ports:
-      - "3001:3000" # 浏览器打开 http://localhost:3001
+      - "3001:3000"
     environment:
       DATABASE_URL: postgresql://langfuse:langfuse123@langfuse-db:5432/langfuse
       NEXTAUTH_SECRET: aviation-langfuse-secret-key
@@ -44,6 +43,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: aviation-redis
+    command: redis-server --appendonly yes --appendfsync everysec
     ports:
       - "6379:6379"
     volumes:
@@ -59,11 +59,11 @@ services:
     image: neo4j:5.20-community
     container_name: aviation-neo4j
     ports:
-      - "7474:7474" # Neo4j Browser (网页界面)
-      - "7687:7687" # Bolt 协议 (Python 驱动连接这里)
+      - "7474:7474"
+      - "7687:7687"
     environment:
-      NEO4J_AUTH: neo4j/aviation123 # 用户名/密码
-      NEO4J_PLUGINS: '["apoc"]' # 常用扩展插件
+      NEO4J_AUTH: neo4j/aviation123
+      NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_memory_heap_initial__size: 512m
       NEO4J_dbms_memory_heap_max__size: 1G
     volumes:
@@ -93,13 +93,18 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Milvus 依赖：MinIO（向量数据文件存储）─
+  # ── MinIO 对象存储（Milvus 内部 + 应用文件存储共用）──
   minio:
     image: minio/minio:RELEASE.2024-05-10T01-41-38Z
     container_name: aviation-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
     environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
     command: minio server /minio_data --console-address ":9001"
     volumes:
       - minio_data:/minio_data
@@ -116,8 +121,8 @@ services:
     container_name: aviation-milvus
     command: [ "milvus", "run", "standalone" ]
     ports:
-      - "19530:19530" # gRPC (Python 驱动连接这里)
-      - "9091:9091" # HTTP 管理接口
+      - "19530:19530"
+      - "9091:9091"
     environment:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
@@ -139,44 +144,12 @@ services:
     image: zilliz/attu:v2.4
     container_name: aviation-attu
     ports:
-      - "8080:3000" # 浏览器打开 http://localhost:8080
+      - "8080:3000"
     environment:
       MILVUS_URL: milvus:19530
     depends_on:
       - milvus
-  # ── 后端 API ──────────────────────────────
-  backend:
-    build: ./backend
-    container_name: aviation-backend
-    ports:
-      - "8000:8000"
-    environment:
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: aviation123
-      MILVUS_HOST: milvus
-      MILVUS_PORT: 19530
-      REDIS_URL: redis://redis:6379/0
-      LANGFUSE_HOST: http://langfuse:3000
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
-      APP_VERSION: 1.0.0
-    depends_on:
-      neo4j:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend/uploads:/app/uploads
 
-  # ── 前端 ──────────────────────────────────
-  frontend:
-    build: ./frontend
-    container_name: aviation-frontend
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
   # ── 应用数据库（用户、配置、审计）────────
   app-db:
     image: postgres:15
@@ -215,6 +188,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
   # ── Kibana（ES 可视化）───────────────────
   kibana:
     image: kibana:8.7.0
@@ -227,6 +201,7 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+
 volumes:
   neo4j_data:
   neo4j_logs:

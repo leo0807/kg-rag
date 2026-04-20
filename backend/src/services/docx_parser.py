@@ -11,29 +11,44 @@ logger = logging.getLogger(__name__)
 _DOC_ID_RE  = re.compile(r'(CPS\d+)', re.IGNORECASE)
 _VER_RE     = re.compile(r'版本[:：]\s*([A-Z])')
 _DATE_RE    = re.compile(r'(\d{4}-\d{2}-\d{2})')
-_NUM_RE     = re.compile(r'^(\d{1,2}(?:\.\d{1,2}){0,2})\s+([\u4e00-\u9fff\w\/\-]{2,})$')
+
+# 只匹配第一行，不受多行内容影响；标题字符集更宽松（允许更多 Unicode）
+_NUM_RE = re.compile(
+    r'^(\d{1,2}(?:\.\d{1,2}){0,3})[ \t\u3000]+'  # 章节号 + 分隔符（含全角空格）
+    r'(.{2,80})'                                   # 标题（宽松：任意字符 2-80 位）
+    r'$'
+)
 
 
 def _is_heading(para) -> bool:
-    """判断段落是否为标题（Word 样式或手动加粗加大字号）"""
+    """判断段落是否为标题（Word 样式、手动加粗大字号、或文本以章节号开头）"""
     style = para.style.name if para.style else ""
     if style.startswith("Heading") or style.startswith("标题"):
         return True
+    text = para.text.strip()
+    if not text:
+        return False
+    # 文本第一行以章节号格式开头 → 视为标题行（覆盖自定义样式如 NewNormal2）
+    first_line = text.split("\n")[0].strip()
+    if _NUM_RE.match(first_line):
+        return True
+    # 加粗大字号
     runs = para.runs
-    if not runs or not para.text.strip():
+    if not runs:
         return False
     bold_chars = sum(len(r.text) for r in runs if r.bold)
-    total_chars = max(len(para.text.strip()), 1)
+    total_chars = max(len(text), 1)
     if bold_chars / total_chars >= 0.8:
         size = runs[0].font.size
-        if size is None or size >= 120000:   # 9pt+ (EMU: 1pt = 12700)
+        if size is None or size >= 120000:   # ≥9pt
             return True
     return False
 
 
 def _section_number(text: str) -> str | None:
-    """从标题文本提取章节号（如 '3.1 标题' → '3.1'）"""
-    m = _NUM_RE.match(text.strip())
+    """从标题文本提取章节号（只看第一行，避免多行干扰）"""
+    first_line = text.strip().split("\n")[0].strip()
+    m = _NUM_RE.match(first_line)
     return m.group(1) if m else None
 
 
@@ -79,18 +94,30 @@ def parse_docx(path: Path) -> dict:
         content = "\n".join(current_lines).strip()
         if not content:
             return
-        num = current_num or str(section_idx + 1)
+        # 真实章节号：优先用提取到的编号，fallback 用 "0.{idx}" 避免与数字章节混淆
+        num = current_num if current_num else f"0.{section_idx}"
+        # chunk_id：点替换为下划线，保证合法标识符
+        safe_num = num.replace(".", "_")
+        level = len(num.split(".")) if re.match(r'^\d', num) else 1
         sections.append({
-            "chunk_id": f"{doc_id}_{num}",
-            "number":   num,
-            "title":    current_title,
-            "content":  f"{num} {current_title}\n{content}",
+            "chunk_id":  f"{doc_id}_{safe_num}",
+            "number":    num,
+            "title":     current_title,
+            "content":   f"{num} {current_title}\n{content}",
+            "level":     level,
+            "seq_index": section_idx,
         })
         section_idx += 1
+
+    # 目录页特征：文本以 tab+数字 结尾（Word TOC 页码引导）
+    _TOC_LINE = re.compile(r'\t\d+\s*$')
 
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
+            continue
+        # 跳过目录条目
+        if _TOC_LINE.search(text):
             continue
         if _is_heading(para):
             _flush()
@@ -118,7 +145,10 @@ def parse_docx(path: Path) -> dict:
     if not sections:
         # fallback: 整文档作为单一章节
         full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-        sections.append({"chunk_id": f"{doc_id}_1", "number": "1", "title": title or stem, "content": full_text})
+        sections.append({
+            "chunk_id": f"{doc_id}_1", "number": "1", "title": title or stem,
+            "content": full_text, "level": 1, "seq_index": 0,
+        })
 
     if not doc_id:
         raise ValueError(f"无法提取文档编号: {path.name}")

@@ -69,6 +69,8 @@ def get_causal_chain(driver: Driver, entity_name: str, entity_type: str) -> dict
                     s.number   AS number,
                     s.title    AS title,
                     s.doc_id   AS doc_id,
+                    s.page_idx AS page_idx,
+                    s.bbox     AS bbox,
                     cons
                 ORDER BY s.doc_id, s.number
                 LIMIT 12
@@ -96,6 +98,8 @@ def get_causal_chain(driver: Driver, entity_name: str, entity_type: str) -> dict
                     "rel_type":    row["rel_type"] or "",
                     "rel_type_cn": _REL_CN.get(row["rel_type"] or "", row["rel_type"] or ""),
                     "constraints": valid_cons,
+                    "page_idx":    row["page_idx"],
+                    "bbox":        row["bbox"],
                 })
                 all_constraints.extend(valid_cons)
 
@@ -139,6 +143,8 @@ def get_causal_chain(driver: Driver, entity_name: str, entity_type: str) -> dict
                         s.number   AS number,
                         s.title    AS title,
                         s.doc_id   AS doc_id,
+                        s.page_idx AS page_idx,
+                        s.bbox     AS bbox,
                         cons
                     ORDER BY s.doc_id, s.number
                     LIMIT 8
@@ -162,6 +168,8 @@ def get_causal_chain(driver: Driver, entity_name: str, entity_type: str) -> dict
                         "rel_type":    "TEXT_MENTION",
                         "rel_type_cn": "文本提及",
                         "constraints": valid_cons,
+                        "page_idx":    row["page_idx"],
+                        "bbox":        row["bbox"],
                     })
                     result["constraints"].extend(valid_cons)
                 result["constraints"] = result["constraints"][:10]

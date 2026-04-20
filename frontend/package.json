@@ -12,14 +12,18 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@xyflow/react": "^12.10.2",
+    "clsx": "^2.1.1",
     "d3": "^7.9.0",
-    "lucide-react": "^1.7.0",
+    "lucide-react": "^1.8.0",
+    "mammoth": "^1.12.0",
     "next": "16.1.6",
     "pixi.js": "^7.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.0",

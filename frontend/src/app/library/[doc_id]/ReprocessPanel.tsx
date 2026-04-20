@@ -3,29 +3,36 @@
 import { useState, useEffect, useRef } from "react";
 import {
     RefreshCw, CheckCircle, XCircle, Loader2, ChevronDown, ChevronUp,
-    Square, RotateCcw, Clock,
+    Square, RotateCcw, Clock, ShieldCheck, AlertTriangle, Info, CheckCircle2,
 } from "lucide-react";
 
 const PIPELINES = [
-    { key: "entities",    label: "实体提取",   desc: "工具 / 材料 / 工序节点" },
-    { key: "constraints", label: "约束参数",   desc: "LLM 提取力矩/公差/温度约束" },
-    { key: "tables",      label: "表格提取",   desc: "PP-Structure → Constraint 节点" },
-    { key: "drawings",    label: "工程图纸",   desc: "VLM 重新分析尺寸标注与装配关系" },
-    { key: "defects",     label: "缺陷检测",   desc: "YOLOv11 视觉质检" },
+    { key: "reparse",     label: "重新解析章节", desc: "重新从 PDF 提取章节结构（修复 0 章节文档）" },
+    { key: "entities",    label: "实体提取",     desc: "工具 / 材料 / 工序节点" },
+    { key: "constraints", label: "约束参数",     desc: "LLM 提取力矩/公差/温度约束" },
+    { key: "tables",      label: "表格提取",     desc: "PP-Structure → Constraint 节点" },
+    { key: "drawings",    label: "工程图纸",     desc: "VLM 重新分析尺寸标注与装配关系" },
+    { key: "defects",     label: "缺陷检测",     desc: "YOLOv11 视觉质检" },
 ] as const;
 type PK = typeof PIPELINES[number]["key"];
 
 interface Snapshot { snapshot_id: string; timestamp: number; constraints_count: number; defects_count: number; images_count: number; }
 interface TaskStatus { status: string; pipelines?: string[]; current?: string; message?: string; results?: Record<string, number>; error?: string; snapshot_id?: string; }
 
-interface Props { docId: string; }
+interface ValidationIssue { level: "error" | "warning" | "info"; code: string; detail: string; }
+interface ValidationReport {
+    doc_id: string; valid: boolean; score: number;
+    issues: ValidationIssue[];
+    stats: { section_count: number; empty_sections: number; avg_content_len: number; title: string; };
+}
+interface Props { docId: string; onComplete?: () => void; }
 
 function fmtTime(ts: number) {
     return new Date(ts * 1000).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-export function ReprocessPanel({ docId }: Props) {
-    const [selected,   setSelected]   = useState<Set<PK>>(new Set(["entities","constraints","tables","drawings"]));
+export function ReprocessPanel({ docId, onComplete }: Props) {
+    const [selected,   setSelected]   = useState<Set<PK>>(new Set<PK>(["entities","constraints","tables","drawings"]));
     const [task,       setTask]       = useState<TaskStatus>({ status: "idle" });
     const [snapshots,  setSnapshots]  = useState<Snapshot[]>([]);
     const [busy,       setBusy]       = useState(false);
@@ -33,6 +40,9 @@ export function ReprocessPanel({ docId }: Props) {
     const [showRes,    setShowRes]    = useState(false);
     const [rollTarget, setRollTarget] = useState("");
     const [rolling,    setRolling]    = useState(false);
+    const [validating, setValidating] = useState(false);
+    const [valReport,  setValReport]  = useState<ValidationReport | null>(null);
+    const [showVal,    setShowVal]    = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const token = typeof window !== "undefined" ? localStorage.getItem("token") ?? "" : "";
     const h = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
@@ -59,6 +69,7 @@ export function ReprocessPanel({ docId }: Props) {
                     clearInterval(pollRef.current!);
                     setShowRes(true);
                     loadSnapshots();
+                    if (d.status === "completed") onComplete?.();
                 }
             }, 2000);
         }
@@ -79,6 +90,14 @@ export function ReprocessPanel({ docId }: Props) {
 
     async function cancel() {
         await fetch(`/api/documents/${docId}/reprocess/cancel`, { method: "POST", headers: h });
+    }
+
+    async function runValidation() {
+        setValidating(true); setValReport(null); setShowVal(true);
+        try {
+            const r = await fetch(`/api/documents/${docId}/validate`, { headers: h });
+            if (r.ok) setValReport(await r.json());
+        } finally { setValidating(false); }
     }
 
     async function rollback() {
@@ -164,6 +183,71 @@ export function ReprocessPanel({ docId }: Props) {
                     )}
                 </div>
             )}
+
+            {/* 解析质量验证 */}
+            <div className="border border-gray-800 rounded-lg overflow-hidden">
+                <button onClick={() => showVal ? setShowVal(false) : runValidation()}
+                    className="w-full flex items-center justify-between px-3 py-2.5 text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-900 transition-colors">
+                    <span className="flex items-center gap-1.5">
+                        <ShieldCheck size={13} className="text-indigo-400" />
+                        验证解析质量
+                        {valReport && (
+                            <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                valReport.valid ? "bg-emerald-900/40 text-emerald-300" : "bg-red-900/40 text-red-300"
+                            }`}>
+                                {valReport.valid ? "通过" : "有问题"} · {valReport.score}分
+                            </span>
+                        )}
+                    </span>
+                    {validating ? <Loader2 size={11} className="animate-spin text-gray-500" /> :
+                        showVal ? <ChevronUp size={11} className="text-gray-500" /> : <ChevronDown size={11} className="text-gray-500" />}
+                </button>
+
+                {showVal && (
+                    <div className="px-3 pb-3 pt-1 border-t border-gray-800 space-y-2">
+                        {validating && (
+                            <div className="flex items-center gap-2 text-xs text-gray-500 py-2">
+                                <Loader2 size={11} className="animate-spin" />验证中...
+                            </div>
+                        )}
+                        {valReport && !validating && (
+                            <>
+                                {/* 摘要统计 */}
+                                <div className="grid grid-cols-3 gap-2 text-center py-1">
+                                    {[
+                                        { label: "章节数", value: valReport.stats.section_count },
+                                        { label: "空章节", value: valReport.stats.empty_sections },
+                                        { label: "平均字数", value: valReport.stats.avg_content_len },
+                                    ].map(({ label, value }) => (
+                                        <div key={label} className="bg-gray-900 rounded px-2 py-1.5">
+                                            <div className="text-sm font-mono font-medium text-gray-200">{value}</div>
+                                            <div className="text-[10px] text-gray-500">{label}</div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* 问题列表 */}
+                                {valReport.issues.length === 0 ? (
+                                    <div className="flex items-center gap-1.5 text-xs text-emerald-400 py-1">
+                                        <CheckCircle2 size={12} />无问题，解析质量良好
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {valReport.issues.map((issue, i) => (
+                                            <div key={i} className="flex items-start gap-2 text-xs">
+                                                {issue.level === "error"   && <XCircle      size={11} className="text-red-400 mt-0.5 shrink-0" />}
+                                                {issue.level === "warning" && <AlertTriangle size={11} className="text-amber-400 mt-0.5 shrink-0" />}
+                                                {issue.level === "info"    && <Info          size={11} className="text-blue-400 mt-0.5 shrink-0" />}
+                                                <span className="text-gray-400 leading-snug">{issue.detail}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
 
             {/* 快照 & 回滚 */}
             {snapshots.length > 0 && (

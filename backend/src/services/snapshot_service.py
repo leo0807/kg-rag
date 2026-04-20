@@ -1,7 +1,10 @@
 """
 快照服务 — 重新处理前保存图谱状态，支持回滚
 
-存储路径: snapshots/{doc_id}/snap_{timestamp}.json
+存储路径:
+  本地（主）: snapshots/{doc_id}/snap_{timestamp}.json
+  MinIO（备）: snapshots/{doc_id}/snap_{timestamp}.json
+
 每文档保留最近 MAX_SNAPSHOTS 份快照
 """
 import json
@@ -14,6 +17,19 @@ logger = logging.getLogger(__name__)
 SNAPSHOT_DIR = Path("snapshots")
 SNAPSHOT_DIR.mkdir(exist_ok=True)
 MAX_SNAPSHOTS = 3
+
+
+# ── MinIO 备份（内部工具）────────────────────────────────────────────────────
+
+def _backup_to_minio(doc_id: str, snapshot_id: str, data: bytes) -> None:
+    """将快照字节上传到 MinIO snapshots 桶，失败时仅记录警告不抛出。"""
+    try:
+        from ..core.storage import upload_bytes, BUCKET_SNAPSHOTS
+        key = f"{doc_id}/{snapshot_id}.json"
+        upload_bytes(BUCKET_SNAPSHOTS, key, data, content_type="application/json")
+        logger.debug("快照已备份到 MinIO: %s", key)
+    except Exception as e:
+        logger.warning("快照 MinIO 备份失败（本地仍有效）doc_id=%s id=%s: %s", doc_id, snapshot_id, e)
 
 
 # ── 公开 API ──────────────────────────────────────────────────────────────────
@@ -34,10 +50,15 @@ def take_snapshot(driver, doc_id: str) -> str:
         "images":           _q_image_fields(driver, doc_id),
         "entity_relations": _q_entity_relations(driver, doc_id),
     }
+    serialized = json.dumps(data, ensure_ascii=False, indent=2).encode()
     path = snap_dir / f"{snapshot_id}.json"
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_bytes(serialized)
     _cleanup(snap_dir)
     logger.info("快照已保存 doc_id=%s id=%s", doc_id, snapshot_id)
+
+    # MinIO 备份（异步不阻塞，失败不影响主流程）
+    _backup_to_minio(doc_id, snapshot_id, serialized)
+
     return snapshot_id
 
 

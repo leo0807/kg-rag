@@ -5,11 +5,80 @@ src/routers/documents_entities.py
 import asyncio
 import logging
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from neo4j import Driver
 from ..core.database import get_driver
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["documents"])
+
+
+@router.get("/images/{image_id}")
+async def proxy_image(image_id: str, driver: Driver = Depends(get_driver)):
+    """
+    图片代理：通过 image_id 从 MinIO 下载图片并直接返回字节流。
+    避免前端直接访问 MinIO 内网地址（localhost:9000）产生的 CORS/网络问题。
+    """
+    with driver.session() as session:
+        rec = session.run(
+            "MATCH (i:Image {image_id: $iid}) RETURN i.minio_path AS mp LIMIT 1",
+            iid=image_id,
+        ).single()
+    if not rec or not rec["mp"]:
+        raise HTTPException(404, f"图片不存在或无 MinIO 路径: {image_id}")
+
+    minio_path = rec["mp"]
+    try:
+        from ..core.storage import download_bytes, BUCKET_EXTRACTED_IMAGES
+        data = download_bytes(BUCKET_EXTRACTED_IMAGES, minio_path)
+    except Exception as e:
+        logger.warning("图片代理下载失败 %s: %s", minio_path, e)
+        raise HTTPException(502, "图片下载失败")
+
+    # 根据扩展名推断 Content-Type
+    ext = minio_path.rsplit(".", 1)[-1].lower()
+    content_type = {
+        "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "png": "image/png", "gif": "image/gif",
+        "webp": "image/webp",
+    }.get(ext, "image/jpeg")
+
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Cache-Control": "max-age=3600, immutable"},
+    )
+
+
+@router.get("/images/{image_id}/detail")
+async def get_image_detail(image_id: str, driver: Driver = Depends(get_driver)):
+    """返回图片完整元数据，含所属章节信息。"""
+    with driver.session() as session:
+        rec = session.run("""
+            MATCH (i:Image {image_id: $iid})
+            OPTIONAL MATCH (s:Section)-[:HAS_IMAGE]->(i)
+            RETURN
+                i.image_id        AS image_id,
+                i.doc_id          AS doc_id,
+                i.caption         AS caption,
+                i.description     AS description,
+                i.is_drawing      AS is_drawing,
+                i.minio_path      AS minio_path,
+                i.drawing_summary AS drawing_summary,
+                i.keywords        AS keywords,
+                i.page            AS page,
+                s.chunk_id        AS section_chunk_id,
+                s.number          AS section_number,
+                s.title           AS section_title
+            LIMIT 1
+        """, iid=image_id).single()
+    if not rec:
+        raise HTTPException(404, f"图片不存在: {image_id}")
+    row = dict(rec)
+    mp = row.get("minio_path") or ""
+    row["url"] = f"/api/images/{image_id}" if mp else None
+    row["analyzed"] = bool(row.get("caption") or row.get("description"))
+    return row
 
 
 @router.get("/documents/{doc_id}/entities")
@@ -88,22 +157,27 @@ async def get_document_images(doc_id: str, driver: Driver = Depends(get_driver))
     import json as _json
     with driver.session() as session:
         result = session.run("""
-            MATCH (d:Document {name: $doc_id})-[:HAS_SECTION]->(s:Section)
-            OPTIONAL MATCH (s)-[:HAS_IMAGE]->(i:Image)
-            WHERE i IS NOT NULL
-            RETURN i.image_id          AS image_id,
-                   i.caption           AS caption,
-                   i.path              AS path,
-                   i.description       AS description,
-                   i.is_drawing        AS is_drawing,
-                   i.part_numbers      AS part_numbers,
-                   i.annotations       AS annotations,
-                   i.assembly_relations AS assembly_relations,
-                   i.drawing_summary   AS drawing_summary,
-                   s.chunk_id          AS section_chunk_id,
-                   s.number            AS section_number,
-                   s.title             AS section_title
-            ORDER BY s.number
+            MATCH (d:Document {name: $doc_id})
+            OPTIONAL MATCH (d)-[:HAS_SECTION]->(s:Section)-[:HAS_IMAGE]->(i:Image)
+            OPTIONAL MATCH (d)-[:HAS_IMAGE]->(i2:Image)
+            WITH collect(i) + collect(i2) AS all_imgs
+            UNWIND all_imgs AS img
+            WITH img WHERE img IS NOT NULL
+            RETURN DISTINCT
+                   img.image_id          AS image_id,
+                   img.caption           AS caption,
+                   img.path              AS path,
+                   img.minio_path        AS minio_path,
+                   img.description       AS description,
+                   img.is_drawing        AS is_drawing,
+                   img.part_numbers      AS part_numbers,
+                   img.annotations       AS annotations,
+                   img.assembly_relations AS assembly_relations,
+                   img.drawing_summary   AS drawing_summary,
+                   null                  AS section_chunk_id,
+                   null                  AS section_number,
+                   null                  AS section_title
+            ORDER BY image_id
         """, doc_id=doc_id)
         images = []
         for r in result:
@@ -118,6 +192,10 @@ async def get_document_images(doc_id: str, driver: Driver = Depends(get_driver))
                         row[field] = []
                 elif raw is None:
                     row[field] = []
+            # 使用代理接口 URL，避免直连 MinIO 的 CORS/内网问题
+            image_id = row.get("image_id") or ""
+            minio_path = row.get("minio_path") or ""
+            row["url"] = f"/api/images/{image_id}" if image_id and minio_path else None
             images.append(row)
     return {"doc_id": doc_id, "images": images, "total": len(images)}
 

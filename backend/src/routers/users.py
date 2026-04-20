@@ -10,12 +10,36 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from ..db.session import get_db
-from ..db.models import User, AuditLog
-from ..auth.deps import get_admin_user
+from ..db.models import User, AuditLog, UserSetting, Conversation, LLMUsage, CacheHit
+from .feedback import QueryFeedback
+from ..auth.deps import get_admin_user, get_current_user
 from ..auth.password import hash_password
+from sqlalchemy import delete
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/users", tags=["users"])
+
+
+@router.delete("/me")
+async def delete_me(
+    db:   AsyncSession = Depends(get_db),
+    user: User         = Depends(get_current_user),
+):
+    """用户注销（合规要求：被遗忘权）。级联删除该用户的所有对话、配置、反馈、审计日志及用量统计。"""
+    user_id  = user.id
+    username = user.username
+
+    await db.execute(delete(UserSetting).where(UserSetting.user_id == user_id))
+    await db.execute(delete(Conversation).where(Conversation.user_id == user_id))
+    await db.execute(delete(LLMUsage).where(LLMUsage.user_id == user_id))
+    await db.execute(delete(CacheHit).where(CacheHit.user_id == user_id))
+    await db.execute(delete(QueryFeedback).where(QueryFeedback.user_id == user_id))
+    await db.execute(delete(AuditLog).where(AuditLog.user_id == user_id))
+    await db.execute(delete(User).where(User.id == user_id))
+    await db.commit()
+
+    logger.info("用户注销成功: %s (ID: %s)", username, user_id)
+    return {"status": "OK", "message": "您的账号及所有关联数据已永久删除"}
 
 
 class CreateUserRequest(BaseModel):

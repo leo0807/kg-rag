@@ -2,11 +2,19 @@
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ExternalLink, Reply } from "lucide-react";
-import { SourceSection } from "./types";
+import { AlertTriangle, ExternalLink, Reply, Star } from "lucide-react";
+import { LLMErrorInfo, SourceSection } from "./types";
 import SourceGraph from "./SourceGraph";
 
 const RANK_COLORS = ["#fbbf24", "#34d399", "#60a5fa", "#f472b6", "#a78bfa"];
+
+const ERROR_HINTS: Record<string, string> = {
+    quota_exceeded:    "· 联系管理员充值或切换模型",
+    rate_limited:      "· 稍等片刻后重试",
+    timeout:           "· 点击重试，或换用响应更快的模型",
+    service_unavailable: "· 检查 AI 服务是否正常运行",
+    unknown_error:     "· 联系管理员查看后端日志",
+};
 
 interface Props {
     role: "user" | "assistant";
@@ -14,12 +22,24 @@ interface Props {
     sources?: SourceSection[];
     images?: string[];
     streaming?: boolean;
+    followUpQuestions?: string[];
+    errorInfo?: LLMErrorInfo;
+    isAdmin?: boolean;
     onSourceClick?: (chunkId: string) => void;
     onQuoteSource?: (source: SourceSection) => void;
     onBranch?: () => void;
+    onFollowUp?: (q: string) => void;
+    onRetry?: () => void;
+    onFavoriteSection?: (s: SourceSection) => void;
+    favoritedChunkIds?: Set<string>;
 }
 
-export default function MessageBubble({ role, content, sources, images, streaming, onSourceClick, onQuoteSource, onBranch }: Props) {
+export default function MessageBubble({
+    role, content, sources, images, streaming,
+    followUpQuestions, errorInfo, isAdmin,
+    onSourceClick, onQuoteSource, onBranch, onFollowUp, onRetry,
+    onFavoriteSection, favoritedChunkIds,
+}: Props) {
     if (role === "user") {
         return (
             <div className="flex justify-end mb-6">
@@ -74,8 +94,54 @@ export default function MessageBubble({ role, content, sources, images, streamin
                     )}
                 </div>
 
+                {/* 错误卡片 */}
+                {errorInfo && (
+                    <div className="px-4 py-3 bg-amber-950/40 border border-amber-600/70 rounded-2xl rounded-tl-sm">
+                        <div className="flex items-start gap-2 mb-2">
+                            <AlertTriangle size={15} className="text-amber-400 mt-0.5 shrink-0" />
+                            <span className="text-sm font-medium text-amber-300">
+                                {errorInfo.code === "quota_exceeded"      && "API 额度不足"}
+                                {errorInfo.code === "rate_limited"        && "请求过于频繁"}
+                                {errorInfo.code === "timeout"             && "模型响应超时"}
+                                {errorInfo.code === "service_unavailable" && "AI 服务暂时不可用"}
+                                {!["quota_exceeded","rate_limited","timeout","service_unavailable"].includes(errorInfo.code) && "AI 服务异常"}
+                            </span>
+                        </div>
+                        <p className="text-xs text-amber-200/80 mb-3">{errorInfo.message}</p>
+
+                        {isAdmin && (errorInfo.status_code || errorInfo.endpoint) && (
+                            <div className="mb-3 px-3 py-2 bg-amber-900/30 border border-amber-700/40 rounded-lg text-xs text-amber-300/70 space-y-1">
+                                <div className="font-medium text-amber-400 mb-1">管理员信息</div>
+                                {errorInfo.status_code && <div>HTTP 状态码：<span className="font-mono">{errorInfo.status_code}</span></div>}
+                                {errorInfo.endpoint   && <div>端点：<span className="font-mono break-all">{errorInfo.endpoint}</span></div>}
+                                {errorInfo.code === "quota_exceeded" && (
+                                    <div className="mt-1 space-y-0.5">
+                                        <div>建议操作：</div>
+                                        <div>· 充值：检查 API 提供商控制台</div>
+                                        <div>· 或在 <span className="font-mono">.env</span> 设置 <span className="font-mono">LLM_MODE=local</span> 切换本地模型</div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="text-xs text-amber-400/60 space-y-0.5">
+                            <div className="font-medium mb-1">你可以：</div>
+                            <div>{ERROR_HINTS[errorInfo.code] ?? ERROR_HINTS.unknown_error}</div>
+                            {onRetry && (
+                                <button
+                                    onClick={onRetry}
+                                    className="mt-2 px-3 py-1 text-xs bg-amber-800/40 hover:bg-amber-700/50
+                                               border border-amber-600/50 rounded-lg text-amber-300 transition-colors"
+                                >
+                                    重试
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* 回答内容 */}
-                <div className="px-4 py-3 bg-gray-900 border border-gray-800 rounded-2xl rounded-tl-sm">
+                {!errorInfo && <div className="px-4 py-3 bg-gray-900 border border-gray-800 rounded-2xl rounded-tl-sm">
                     <div className="text-sm text-gray-200 leading-relaxed prose prose-invert prose-sm max-w-none
                                     prose-headings:text-gray-100 prose-headings:font-semibold
                                     prose-p:text-gray-200 prose-p:leading-relaxed
@@ -96,6 +162,26 @@ export default function MessageBubble({ role, content, sources, images, streamin
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
                         )}
                     </div>
+
+                    {/* 追问建议 */}
+                    {!streaming && followUpQuestions && followUpQuestions.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-800 animate-fade-in">
+                            <div className="text-xs text-gray-600 mb-2">追问建议</div>
+                            <div className="flex flex-col gap-1.5">
+                                {followUpQuestions.map((q, i) => (
+                                    <button
+                                        key={i}
+                                        onClick={() => onFollowUp?.(q)}
+                                        className="text-left px-3 py-1.5 text-xs text-indigo-300/80 bg-indigo-950/30
+                                                   border border-indigo-800/40 rounded-lg hover:border-indigo-500/60
+                                                   hover:text-indigo-200 hover:bg-indigo-950/50 transition-colors"
+                                    >
+                                        {q}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* 来源章节 */}
                     {!streaming && sources && sources.length > 0 && (
@@ -131,14 +217,31 @@ export default function MessageBubble({ role, content, sources, images, streamin
                                         </button>
                                         {/* 跳转原文链接 */}
                                         <Link
-                                            href={`/library/${s.doc_id}`}
-                                            title="查看原文"
+                                            href={`/library/${s.doc_id}${s.page_idx !== undefined ? `?page=${s.page_idx}` : ""}`}
+                                            title="查看原文并跳转锚点"
                                             className="px-1.5 py-1 border border-l-0 border-gray-700
-                                                       hover:border-indigo-500 rounded-r-lg
+                                                       hover:border-indigo-500
                                                        text-gray-600 hover:text-indigo-400 transition-colors"
                                         >
                                             <ExternalLink size={10} />
                                         </Link>
+                                        {/* 收藏按钮 */}
+                                        {onFavoriteSection && (
+                                            <button
+                                                onClick={() => onFavoriteSection(s)}
+                                                title={favoritedChunkIds?.has(s.chunk_id) ? "取消收藏" : "收藏此章节"}
+                                                className="px-1.5 py-1 border border-l-0 border-gray-700
+                                                           hover:border-amber-500 rounded-r-lg
+                                                           transition-colors"
+                                            >
+                                                <Star
+                                                    size={10}
+                                                    className={favoritedChunkIds?.has(s.chunk_id)
+                                                        ? "text-amber-400 fill-amber-400"
+                                                        : "text-gray-600 hover:text-amber-400"}
+                                                />
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -146,7 +249,7 @@ export default function MessageBubble({ role, content, sources, images, streamin
                             <SourceGraph sources={sources} />
                         </div>
                     )}
-                </div>
+                </div>}
             </div>
         </div>
     );

@@ -6,9 +6,11 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from neo4j import Driver
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_driver
+from ..db.session import get_db
+from ..db.models import User, AuditLog
 from ..auth.deps import get_current_user
-from ..db.models import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -31,7 +33,8 @@ async def delete_entity(
     name: str,
     type: str = "Tool",
     driver: Driver = Depends(get_driver),
-    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(_require_admin),
 ):
     """删除指定实体节点（含所有关系）"""
     valid_types = {"Tool", "Material", "Process"}
@@ -48,6 +51,14 @@ async def delete_entity(
 
         session.run(f"MATCH (e:{type} {{name: $name}}) DETACH DELETE e", name=name)
 
+    db.add(AuditLog(
+        user_id=user.id,
+        action="delete_entity",
+        resource=type,
+        detail=f"管理员 {user.username} 删除了 {type} 实体: {name}",
+    ))
+    await db.commit()
+
     logger.info("管理员删除实体: %s (%s)", name, type)
     return {"status": "deleted", "name": name, "type": type}
 
@@ -56,7 +67,8 @@ async def delete_entity(
 async def merge_entities(
     req: MergeRequest,
     driver: Driver = Depends(get_driver),
-    _: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(_require_admin),
 ):
     """
     将多个源实体合并到目标实体。
@@ -102,6 +114,14 @@ async def merge_entities(
             # 删除源节点
             session.run(f"MATCH (e:{req.type} {{name: $src}}) DETACH DELETE e", src=src_name)
             merged_count += 1
+
+    db.add(AuditLog(
+        user_id=user.id,
+        action="merge_entities",
+        resource=req.type,
+        detail=f"管理员 {user.username} 合并了 {merged_count} 个 {req.type} 实体到 {req.target_name}。源实体: {', '.join(req.source_names)}",
+    ))
+    await db.commit()
 
     logger.info("管理员合并实体: %s → %s, 合并 %d 个", req.source_names, req.target_name, merged_count)
     return {

@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, ZoomIn, ZoomOut, MessageSquarePlus, Trash2, Loader2 } from "lucide-react";
+import { X, ZoomIn, ZoomOut, MessageSquarePlus, Trash2, Loader2, Image as ImageIcon } from "lucide-react";
 import { GraphNode, NODE_COLOR } from "./constants";
 import { fetchApi } from "@/lib/api";
-
-const API = "http://localhost:8000";
 
 interface Annotation {
     id:         number;
@@ -19,19 +17,52 @@ interface Annotation {
     updated_at: string;
 }
 
-interface Props {
-    node:    GraphNode;
-    onClose: () => void;
+interface ImageDetail {
+    image_id:        string;
+    doc_id:          string | null;
+    caption:         string | null;
+    description:     string | null;
+    is_drawing:      boolean;
+    drawing_summary: string | null;
+    keywords:        string | null;
+    page:            number | null;
+    section_chunk_id: string | null;
+    section_number:  string | null;
+    section_title:   string | null;
+    url:             string | null;
+    analyzed:        boolean;
 }
 
-export function NodeDetailSidebar({ node, onClose }: Props) {
+interface Props {
+    node:           GraphNode;
+    onClose:        () => void;
+    onExpandSection?: (chunkId: string) => void;
+    expandingId?:   string | null;
+}
+
+export function NodeDetailSidebar({ node, onClose, onExpandSection, expandingId }: Props) {
     const type    = node.type || node.label;
     const color   = NODE_COLOR[type] ?? "#6b7280";
-    const imgPath = node.path
-        ? `${API}/${node.path.replace(/^.*?(uploads\/)/, "uploads/")}`
-        : null;
+    const isImage = type === "Image";
+
+    // Image 节点：使用代理 URL，支持放大
+    const imgUrl  = isImage ? (node.url || null) : null;
     const [imgOpen, setImgOpen]         = useState(false);
     const [zoom,    setZoom]            = useState(1);
+
+    // Image 详情（含所属章节）
+    const [imgDetail, setImgDetail]     = useState<ImageDetail | null>(null);
+    const [detailLoading, setDetailLoading] = useState(false);
+    useEffect(() => {
+        if (!isImage) return;
+        let cancelled = false;
+        setDetailLoading(true);
+        fetchApi<ImageDetail>(`/api/images/${encodeURIComponent(node.id)}/detail`)
+            .then(d => { if (!cancelled) setImgDetail(d); })
+            .catch(() => {})
+            .finally(() => { if (!cancelled) setDetailLoading(false); });
+        return () => { cancelled = true; };
+    }, [node.id, isImage]);
 
     // ── 批注状态 ──────────────────────────────────────────────────────────
     // node.id 对所有节点类型均为唯一标识（Section 的 id 即 chunk_id）
@@ -120,34 +151,143 @@ export function NodeDetailSidebar({ node, onClose }: Props) {
                 {node.doc_id && <div className="text-xs text-gray-500 font-mono mt-1">{node.doc_id}</div>}
             </div>
 
-            {imgPath && (
-                <div className="px-4 py-3 border-b border-gray-800 bg-gray-950">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={imgPath} alt={node.name}
-                        className="max-h-48 w-full object-contain rounded-lg cursor-zoom-in"
-                        onClick={() => { setZoom(1); setImgOpen(true); }}
-                        onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    <div className="mt-2 text-[11px] text-gray-500">点击图片可放大查看</div>
-                </div>
+            {/* ── Image 专属区域 ─────────────────────────────────────── */}
+            {isImage && (
+                <>
+                    {/* 图片主体 */}
+                    <div className="px-4 py-3 border-b border-gray-800 bg-gray-950">
+                        {detailLoading && !imgUrl && (
+                            <div className="flex justify-center py-6">
+                                <Loader2 size={18} className="animate-spin text-gray-600" />
+                            </div>
+                        )}
+                        {imgUrl && (
+                            <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={imgUrl} alt={node.name}
+                                    className="max-w-full w-full object-contain rounded-lg cursor-zoom-in"
+                                    style={{ maxWidth: 400 }}
+                                    onClick={() => { setZoom(1); setImgOpen(true); }}
+                                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                                <div className="mt-2 text-[11px] text-gray-500">点击图片可放大</div>
+                            </>
+                        )}
+                        {!imgUrl && !detailLoading && (
+                            <div className="flex flex-col items-center gap-1 py-4 text-gray-700">
+                                <ImageIcon size={24} />
+                                <span className="text-[11px]">图片不可用</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 元数据区 */}
+                    <div className="px-4 py-3 border-b border-gray-800 space-y-2">
+                        {/* is_drawing 标签 */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-600 w-20 shrink-0">类型</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                (imgDetail?.is_drawing ?? node.is_drawing)
+                                    ? "bg-indigo-900/60 text-indigo-300"
+                                    : "bg-gray-800 text-gray-400"
+                            }`}>
+                                {(imgDetail?.is_drawing ?? node.is_drawing) ? "工程图纸" : "普通图片"}
+                            </span>
+                        </div>
+
+                        {/* 分析状态 */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-600 w-20 shrink-0">分析状态</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                imgDetail?.analyzed
+                                    ? "bg-emerald-900/60 text-emerald-300"
+                                    : "bg-gray-800 text-gray-500"
+                            }`}>
+                                {detailLoading ? "加载中…" : imgDetail?.analyzed ? "已分析" : "待分析"}
+                            </span>
+                        </div>
+
+                        {/* 所属文档 */}
+                        {(imgDetail?.doc_id ?? node.doc_id) && (
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-600 w-20 shrink-0">所属文档</span>
+                                <span className="text-xs text-gray-300 font-mono">
+                                    {imgDetail?.doc_id ?? node.doc_id}
+                                </span>
+                            </div>
+                        )}
+
+                        {/* 所属章节 */}
+                        {imgDetail?.section_title && (
+                            <div className="flex items-start gap-2">
+                                <span className="text-xs text-gray-600 w-20 shrink-0 mt-0.5">所属章节</span>
+                                <span className="text-xs text-gray-300 leading-snug">
+                                    {imgDetail.section_number && (
+                                        <span className="font-mono text-amber-400 mr-1">{imgDetail.section_number}</span>
+                                    )}
+                                    {imgDetail.section_title}
+                                </span>
+                            </div>
+                        )}
+
+                        {/* 页码 */}
+                        {(imgDetail?.page ?? null) !== null && (
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-600 w-20 shrink-0">页码</span>
+                                <span className="text-xs text-gray-400">第 {imgDetail!.page} 页</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* caption */}
+                    {(imgDetail?.caption ?? node.name) && (
+                        <div className="px-4 py-3 border-b border-gray-800">
+                            <div className="text-xs text-gray-500 mb-1">Caption</div>
+                            <p className="text-xs text-gray-300 leading-relaxed">
+                                {imgDetail?.caption ?? node.name}
+                            </p>
+                        </div>
+                    )}
+
+                    {/* VLM 描述 */}
+                    {(imgDetail?.description ?? node.description) && (
+                        <div className="px-4 py-3 border-b border-gray-800">
+                            <div className="text-xs text-gray-500 mb-1">VLM 分析</div>
+                            <p className="text-xs text-gray-300 leading-relaxed">
+                                {imgDetail?.description ?? node.description}
+                            </p>
+                        </div>
+                    )}
+
+                    {/* 图纸摘要 */}
+                    {imgDetail?.drawing_summary && (
+                        <div className="px-4 py-3 border-b border-gray-800">
+                            <div className="text-xs text-gray-500 mb-1">图纸摘要</div>
+                            <p className="text-xs text-gray-300 leading-relaxed">{imgDetail.drawing_summary}</p>
+                        </div>
+                    )}
+                </>
             )}
 
-            {node.description && (
+            {/* ── 非 Image 节点的通用描述 ─────────────────────────────── */}
+            {!isImage && node.description && (
                 <div className="px-4 py-3 border-b border-gray-800">
                     <div className="text-xs text-gray-500 mb-1">VLM 分析</div>
                     <p className="text-xs text-gray-300 leading-relaxed">{node.description}</p>
                 </div>
             )}
 
-            <div className="px-4 py-3 space-y-2 border-b border-gray-800">
-                {Object.entries(node)
-                    .filter(([k]) => !["id","name","label","type","x","y","fx","fy","description","path","content","chunk_id"].includes(k))
-                    .map(([k, v]) => v != null && String(v) !== "" && (
-                        <div key={k} className="flex gap-2">
-                            <span className="text-xs text-gray-600 w-20 shrink-0">{k}</span>
-                            <span className="text-xs text-gray-300 break-all">{String(v)}</span>
-                        </div>
-                    ))}
-            </div>
+            {!isImage && (
+                <div className="px-4 py-3 space-y-2 border-b border-gray-800">
+                    {Object.entries(node)
+                        .filter(([k]) => !["id","name","label","type","x","y","fx","fy","description","path","url","content","chunk_id"].includes(k))
+                        .map(([k, v]) => v != null && String(v) !== "" && (
+                            <div key={k} className="flex gap-2">
+                                <span className="text-xs text-gray-600 w-20 shrink-0">{k}</span>
+                                <span className="text-xs text-gray-300 break-all">{String(v)}</span>
+                            </div>
+                        ))}
+                </div>
+            )}
 
             {/* ── 批注区 ──────────────────────────────────────────────── */}
             <div className="px-4 py-3 flex flex-col gap-2 flex-1">
@@ -220,6 +360,20 @@ export function NodeDetailSidebar({ node, onClose }: Props) {
                 </div>
             </div>
 
+            {type === "Section" && node.has_children && onExpandSection && (
+                <div className="px-4 pb-3">
+                    <button
+                        onClick={() => onExpandSection(node.id)}
+                        disabled={expandingId === node.id}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2
+                                   bg-amber-600/20 hover:bg-amber-600/40 border border-amber-600/40
+                                   text-amber-300 text-xs rounded-lg transition-colors disabled:opacity-50"
+                    >
+                        {expandingId === node.id ? "加载子节点…" : "展开子章节"}
+                    </button>
+                </div>
+            )}
+
             {type === "Document" && (
                 <div className="px-4 pb-4">
                     <a href={`/library/${node.doc_id || node.id}`}
@@ -229,12 +383,14 @@ export function NodeDetailSidebar({ node, onClose }: Props) {
                 </div>
             )}
 
-            {imgOpen && imgPath && (
-                <div className="fixed inset-0 z-[200] bg-black/70 flex items-center justify-center">
-                    <div className="relative max-w-[90vw] max-h-[90vh]">
+            {imgOpen && imgUrl && (
+                <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center"
+                    onClick={() => setImgOpen(false)}>
+                    <div className="relative max-w-[90vw] max-h-[90vh]"
+                        onClick={e => e.stopPropagation()}>
                         <div className="absolute -top-10 right-0 flex items-center gap-2">
                             <button
-                                onClick={() => setZoom(z => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+                                onClick={() => setZoom(z => Math.max(0.25, +(z - 0.25).toFixed(2)))}
                                 className="w-8 h-8 rounded bg-gray-900/80 text-gray-200 hover:text-white border border-gray-700 flex items-center justify-center"
                                 title="缩小"
                             >
@@ -242,7 +398,7 @@ export function NodeDetailSidebar({ node, onClose }: Props) {
                             </button>
                             <div className="text-xs text-gray-300 w-12 text-center">{Math.round(zoom * 100)}%</div>
                             <button
-                                onClick={() => setZoom(z => Math.min(3, +(z + 0.25).toFixed(2)))}
+                                onClick={() => setZoom(z => Math.min(4, +(z + 0.25).toFixed(2)))}
                                 className="w-8 h-8 rounded bg-gray-900/80 text-gray-200 hover:text-white border border-gray-700 flex items-center justify-center"
                                 title="放大"
                             >
@@ -258,11 +414,10 @@ export function NodeDetailSidebar({ node, onClose }: Props) {
                         </div>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                            src={imgPath}
+                            src={imgUrl}
                             alt={node.name}
                             className="block max-w-[90vw] max-h-[90vh] object-contain"
                             style={{ transform: `scale(${zoom})`, transformOrigin: "center center" }}
-                            onClick={() => setImgOpen(false)}
                         />
                     </div>
                 </div>

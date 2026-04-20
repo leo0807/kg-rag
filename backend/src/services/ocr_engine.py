@@ -29,10 +29,16 @@ except ImportError:
 # 懒初始化单例（避免重复加载模型）
 _ocr_instance    = None
 _struct_instance = None
+_struct_disabled = False
+_struct_error_once = False
 
 
 def is_available() -> bool:
     return _PADDLE_AVAILABLE and _FITZ_AVAILABLE
+
+
+def is_struct_available() -> bool:
+    return is_available() and not _struct_disabled
 
 
 def _get_ocr():
@@ -120,16 +126,20 @@ def ocr_page(img) -> str:
         return ""
 
 
-def ocr_page_struct(img) -> list[dict]:
+def analyze_layout(img) -> list[dict]:
     """
     用 PP-Structure 对页面做版面分析。
     返回区域列表 [{type, res}]，type ∈ {text, table, figure, title, ...}
     """
-    if not _PADDLE_AVAILABLE or img is None:
+    global _struct_disabled, _struct_error_once
+    if not _PADDLE_AVAILABLE or img is None or _struct_disabled:
         return []
     try:
         result = _get_struct()(img)
         return [{"type": r.get("type", "text"), "res": r.get("res", {})} for r in (result or [])]
     except Exception as e:
-        logger.warning("PP-Structure 分析失败: %s", e)
+        _struct_disabled = True
+        if not _struct_error_once:
+            logger.warning("PP-Structure 分析失败，已禁用表格解析（后续不再尝试）: %s", e)
+            _struct_error_once = True
         return []

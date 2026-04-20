@@ -63,6 +63,10 @@ def upsert_sections(sections: list[dict]) -> None:
     批量写入章节向量
     sections: [{"chunk_id": ..., "doc_id": ..., "text": ..., "embedding": [...]}]
     """
+    if not sections:
+        logger.warning("Milvus 写入跳过：sections 为空")
+        return
+
     col = get_or_create_collection()
 
     ids        = [s["chunk_id"] for s in sections]
@@ -71,8 +75,22 @@ def upsert_sections(sections: list[dict]) -> None:
     texts      = [_trunc_utf8(s["text"]) for s in sections]
     embeddings = [s["embedding"]   for s in sections]
 
+    if not embeddings:
+        logger.warning("Milvus 写入跳过：embeddings 为空")
+        return
+
     col.upsert([ids, doc_ids, chunk_ids, texts, embeddings])
     logger.info("写入 Milvus %d 条向量", len(sections))
+
+
+def delete_by_doc_id(doc_id: str) -> None:
+    """删除指定文档的所有章节向量"""
+    try:
+        col = get_or_create_collection()
+        col.delete(expr=f'doc_id == "{doc_id}"')
+        logger.info("Milvus 删除 doc_id=%s 的向量", doc_id)
+    except Exception as e:
+        logger.warning("Milvus 删除向量失败 doc_id=%s: %s", doc_id, e)
 
 
 def search_sections(

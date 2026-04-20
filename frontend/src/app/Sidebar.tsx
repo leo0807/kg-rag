@@ -6,17 +6,22 @@ import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
 import {
     LogOut, BookOpen, Search, MessageSquare,
-    Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch, BrainCircuit, BarChart2,
+    Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch, BrainCircuit, BarChart2, Share2, Star, Server, Activity,
 } from "lucide-react";
+import { useFavorites } from "@/app/favorites/useFavorites";
 
 const navItems = [
     { href: "/library",             label: "文档库",     shortcut: "⌘B", Icon: BookOpen     },
     { href: "/search",              label: "全局搜索",   shortcut: "⌘K", Icon: Search       },
     { href: "/query",               label: "智能问答",   shortcut: "⌘/", Icon: MessageSquare},
     { href: "/graph",               label: "图谱可视化", shortcut: "",   Icon: Network      },
+    { href: "/graph/builder",       label: "Cypher 构造器", shortcut: "", Icon: GitBranch    },
+    { href: "/references",          label: "引用关系",   shortcut: "",   Icon: Share2       },
     { href: "/timeline",            label: "版本时间线", shortcut: "",   Icon: GitBranch    },
     { href: "/compare",             label: "文档对比",   shortcut: "",   Icon: GitCompare   },
+    { href: "/favorites",           label: "收藏夹",     shortcut: "",   Icon: Star         },
     { href: "/admin/entities",      label: "实体审核",   shortcut: "",   Icon: ShieldCheck  },
+    { href: "/admin/status",        label: "系统状态",   shortcut: "",   Icon: Server       },
     { href: "/admin/gnn",           label: "GNN 训练",   shortcut: "",   Icon: BrainCircuit },
     { href: "/admin/analytics",     label: "活跃度报表", shortcut: "",   Icon: BarChart2    },
     { href: "/settings",            label: "设置",       shortcut: "",   Icon: Settings     },
@@ -31,6 +36,7 @@ export default function Sidebar() {
     const router   = useRouter();
     const [user,      setUser]      = useState<UserInfo | null>(null);
     const [collapsed, setCollapsed] = useState(false);
+    const { favorites } = useFavorites();
 
     useEffect(() => {
         if (localStorage.getItem(STORAGE_KEY) === "1") setCollapsed(true);
@@ -50,7 +56,17 @@ export default function Sidebar() {
     }
 
     function isActive(href: string) {
-        return pathname === href || pathname.startsWith(href + "/");
+        if (pathname === href) return true;
+        // 如果当前路径以某个 href 开头，我们需要检查是否有更精确（更长）的匹配项在导航栏中
+        if (pathname.startsWith(href + "/")) {
+            const hasMoreSpecificMatch = navItems.some(item => 
+                item.href !== href && 
+                item.href.length > href.length && 
+                pathname.startsWith(item.href)
+            );
+            return !hasMoreSpecificMatch;
+        }
+        return false;
     }
 
     function handleLogout() {
@@ -85,6 +101,7 @@ export default function Sidebar() {
             <nav className="flex-1 px-2 py-3 space-y-0.5">
                 {navItems.map(({ href, label, shortcut, Icon }) => {
                     const active = isActive(href);
+                    const badge  = href === "/favorites" && favorites.length > 0 ? favorites.length : 0;
                     return (
                         <Link key={href} href={href} title={collapsed ? `${label}${shortcut ? "  " + shortcut : ""}` : undefined}
                             className={`flex items-center gap-2.5 rounded-lg text-sm
@@ -93,11 +110,25 @@ export default function Sidebar() {
                                         ${active
                                             ? "bg-indigo-600 text-white"
                                             : "text-gray-400 hover:text-white hover:bg-gray-800"}`}>
-                            <Icon size={15} className="flex-shrink-0" />
+                            <div className="relative flex-shrink-0">
+                                <Icon size={15} />
+                                {badge > 0 && collapsed && (
+                                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-500 rounded-full
+                                                     flex items-center justify-center text-[8px] text-white font-bold">
+                                        {badge > 9 ? "9+" : badge}
+                                    </span>
+                                )}
+                            </div>
                             {!collapsed && (
                                 <>
                                     <span className="flex-1">{label}</span>
-                                    {shortcut && (
+                                    {badge > 0 && (
+                                        <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400
+                                                         text-[10px] font-bold rounded-full">
+                                            {badge}
+                                        </span>
+                                    )}
+                                    {shortcut && badge === 0 && (
                                         <span className={`text-xs font-mono ${active ? "text-indigo-200" : "text-gray-600"}`}>
                                             {shortcut}
                                         </span>

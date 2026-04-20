@@ -31,6 +31,7 @@ from .routers.admin_entities     import router as admin_entities_router
 from .routers.admin_activity     import router as admin_activity_router
 from .routers.admin_analytics    import router as admin_analytics_router
 from .routers.admin_dashboard    import router as admin_dashboard_router
+from .routers.admin_batch_ingest import router as admin_batch_ingest_router
 from .routers.mobile             import router as mobile_router
 from .routers.gnn                import router as gnn_router
 from .routers.visual_qc          import router as visual_qc_router
@@ -38,6 +39,9 @@ from .routers.reprocess          import router as reprocess_router
 from .routers.admin_cache        import router as admin_cache_router
 from .routers.annotations        import router as annotations_router
 from .routers.ai_status          import router as ai_status_router
+from .routers.graph_references   import router as graph_references_router
+from .routers.favorites          import router as favorites_router
+from .routers.search_autocomplete import router as search_autocomplete_router
 from .auth.deps import get_admin_user as _get_admin_user
 
 from .services.health import health_monitor
@@ -117,12 +121,16 @@ app.include_router(conversations_router)
 app.include_router(admin_entities_router)
 app.include_router(admin_activity_router)
 app.include_router(admin_analytics_router)
+app.include_router(admin_batch_ingest_router)
 app.include_router(gnn_router)
 app.include_router(visual_qc_router)
 app.include_router(reprocess_router)
 app.include_router(admin_cache_router)
 app.include_router(annotations_router)
 app.include_router(ai_status_router)
+app.include_router(graph_references_router)
+app.include_router(favorites_router)
+app.include_router(search_autocomplete_router)
 
 # 仅挂载图片目录，文档原文通过受控接口访问
 app.mount("/uploads/images", StaticFiles(directory=str(UPLOAD_DIR / "images")), name="uploads_images")
@@ -264,13 +272,17 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
         except Exception as e:
             logger.warning("实体/约束提取失败（不影响主流程）: %s", e)
 
+        # doc.pdf_path 是解析时使用的 PDF（原生 PDF 或 .doc→PDF 临时文件）
+        # 用于图片/表格提取，比原始 .doc 文件更可靠
+        _pdf_for_extraction = str(doc.pdf_path) if doc.pdf_path and doc.pdf_path.exists() else str(tmp_path)
+
         # ── 表格约束提取 ──────────────────────────────────────────────────
         _task_update(task_id, step="tables")
         try:
             from .services.table_extractor import extract_all_tables, is_available as tables_available
             from .services.entity_writer   import write_constraints as _wc
             if tables_available():
-                table_cons = await asyncio.to_thread(extract_all_tables, str(tmp_path), doc.doc_id, section_dicts)
+                table_cons = await asyncio.to_thread(extract_all_tables, _pdf_for_extraction, doc.doc_id, section_dicts)
                 if table_cons:
                     await asyncio.to_thread(_wc, driver, doc.doc_id, table_cons)
                     logger.info("表格约束写入 %d 条", len(table_cons))
@@ -285,7 +297,7 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
             from .services.multimodal_writer   import write_images_to_graph
             from .services.entity_writer       import link_image_tools
 
-            images = await asyncio.to_thread(extract_images_from_pdf, str(tmp_path), doc.doc_id)
+            images = await asyncio.to_thread(extract_images_from_pdf, _pdf_for_extraction, doc.doc_id)
             images = [img for img in images if not _is_logo(img)]
 
             if images:
@@ -360,6 +372,10 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
             logger.info("文件已上传到 MinIO: %s/%s", BUCKET_RAW_DOCUMENTS, minio_key)
         except Exception as _me:
             logger.warning("MinIO 上传失败（本地文件保留作为回退）: %s", _me)
+        finally:
+            # 清理 .doc/.docx 转换产生的临时 PDF（图片/表格提取已完成）
+            if doc and doc.pdf_path and doc.pdf_path != tmp_path:
+                doc.pdf_path.unlink(missing_ok=True)
 
         _task_update(task_id, status="done", doc_id=doc.doc_id, sections=doc.total_sections)
         logger.info("ingest 完成 task_id=%s doc_id=%s", task_id, doc.doc_id)

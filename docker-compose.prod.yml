@@ -1,0 +1,93 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────
+# 生产应用层
+# 用法：bash scripts/prod.sh
+#   等价于：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# 依赖：根目录下必须存在 .env 文件（参考 .env.example）
+# ─────────────────────────────────────────────────────────────
+
+services:
+  # ── 后端 API ──────────────────────────────
+  backend:
+    build: ./backend
+    container_name: aviation-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: aviation123
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+      REDIS_URL: redis://redis:6379/0
+      LANGFUSE_HOST: http://langfuse:3000
+      APP_VERSION: 1.0.0
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_REGION: us-east-1
+      STORAGE_PUBLIC_URL: http://localhost:9000
+      DATABASE_URL: postgresql+asyncpg://aviation:aviation123@app-db:5432/aviation
+      ES_URL: http://elasticsearch:9200
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      app-db:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+
+  # ── Celery Worker ─────────────────────────
+  celery-worker:
+    build: ./backend
+    container_name: aviation-celery-worker
+    restart: unless-stopped
+    command: celery -A src.celery_app worker --loglevel=info --concurrency=2
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: aviation123
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+      REDIS_URL: redis://redis:6379/0
+      LANGFUSE_HOST: http://langfuse:3000
+      APP_VERSION: 1.0.0
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_REGION: us-east-1
+      STORAGE_PUBLIC_URL: http://localhost:9000
+    depends_on:
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      app-db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+      - snapshots_data:/app/snapshots
+
+  # ── 前端 ──────────────────────────────────
+  frontend:
+    build: ./frontend
+    container_name: aviation-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  uploads_data:
+  snapshots_data:

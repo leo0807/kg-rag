@@ -27,6 +27,7 @@ class ServiceStatus:
     state:      ServiceState = ServiceState.UNKNOWN
     last_check: float        = 0.0
     error:      str          = ""
+    latency_ms: float        = 0.0  # 新增：最近一次 I/O 耗时
 
     @property
     def is_ok(self) -> bool:
@@ -36,6 +37,7 @@ class ServiceStatus:
         return {
             "state":      self.state,
             "error":      self.error,
+            "latency_ms": round(self.latency_ms, 2),
             "last_check": int(self.last_check) if self.last_check else None,
         }
 
@@ -59,6 +61,7 @@ class ServiceHealthMonitor:
     # ── 各服务 ping ─────────────────────────────────────────────────────────
 
     def ping_neo4j(self) -> bool:
+        start = time.time()
         try:
             from ..core.database import get_driver
             with get_driver().session() as s:
@@ -68,10 +71,12 @@ class ServiceHealthMonitor:
         except Exception as exc:
             self.neo4j.state = ServiceState.DOWN
             self.neo4j.error = str(exc)
+        self.neo4j.latency_ms = (time.time() - start) * 1000
         self.neo4j.last_check = time.time()
         return self.neo4j.is_ok
 
     def ping_milvus(self) -> bool:
+        start = time.time()
         try:
             from pymilvus import utility
             utility.list_collections()
@@ -80,10 +85,12 @@ class ServiceHealthMonitor:
         except Exception as exc:
             self.milvus.state = ServiceState.DOWN
             self.milvus.error = str(exc)
+        self.milvus.latency_ms = (time.time() - start) * 1000
         self.milvus.last_check = time.time()
         return self.milvus.is_ok
 
     def ping_es(self) -> bool:
+        start = time.time()
         try:
             from .es_store import get_es
             if not get_es().ping():
@@ -93,6 +100,7 @@ class ServiceHealthMonitor:
         except Exception as exc:
             self.elasticsearch.state = ServiceState.DOWN
             self.elasticsearch.error = str(exc)
+        self.elasticsearch.latency_ms = (time.time() - start) * 1000
         self.elasticsearch.last_check = time.time()
         return self.elasticsearch.is_ok
 

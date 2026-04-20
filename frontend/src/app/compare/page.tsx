@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { fetchApi } from "@/lib/api";
 import { renderWordDiff } from "./diff";
+import { Search, ChevronDown, Check } from "lucide-react";
 
 interface Document {
     doc_id: string;
@@ -25,6 +26,64 @@ interface DocDetail {
     sections: Section[];
 }
 
+function DocSelector({ docs, selectedId, onSelect, label }: { docs: Document[], selectedId: string, onSelect: (id: string) => void, label: string }) {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState("");
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener("mousedown", handleClick);
+        return () => document.removeEventListener("mousedown", handleClick);
+    }, []);
+
+    const filtered = useMemo(() => 
+        docs.filter(d => d.doc_id.toLowerCase().includes(search.toLowerCase()) || d.title.toLowerCase().includes(search.toLowerCase())),
+        [docs, search]
+    );
+
+    const selectedDoc = docs.find(d => d.doc_id === selectedId);
+
+    return (
+        <div className="flex-1 min-w-[200px]" ref={containerRef}>
+            <label className="text-xs text-gray-500 mb-1 block">{label}</label>
+            <div className="relative">
+                <button
+                    onClick={() => setOpen(!open)}
+                    className="w-full flex items-center justify-between px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-200 outline-none focus:border-indigo-500"
+                >
+                    <span className="truncate">{selectedDoc ? `${selectedDoc.doc_id} ${selectedDoc.title}` : "选择文档..."}</span>
+                    <ChevronDown size={14} className="text-gray-500" />
+                </button>
+                {open && (
+                    <div className="absolute z-20 top-full mt-1 w-full bg-gray-900 border border-gray-700 rounded-lg shadow-xl py-1">
+                        <div className="px-2 pb-1">
+                            <input
+                                autoFocus
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                placeholder="搜索文档..."
+                                className="w-full px-2 py-1.5 bg-gray-950 border border-gray-800 rounded text-xs text-white placeholder-gray-600 outline-none"
+                            />
+                        </div>
+                        <div className="max-h-60 overflow-y-auto">
+                            {filtered.map(d => (
+                                <button key={d.doc_id} onClick={() => { onSelect(d.doc_id); setOpen(false); }}
+                                    className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800 flex items-center gap-2">
+                                    {selectedId === d.doc_id && <Check size={12} className="text-indigo-500" />}
+                                    <span className={selectedId === d.doc_id ? "ml-0" : "ml-5"}>{d.doc_id} - {d.title}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export default function ComparePage() {
     const [docs, setDocs]             = useState<Document[]>([]);
     const [leftId, setLeftId]         = useState("");
@@ -36,7 +95,7 @@ export default function ComparePage() {
     const [showWordDiff, setShowWordDiff] = useState(true);
 
     useEffect(() => {
-        fetchApi<{ data: Document[] }>("/api/documents?per_page=100")
+        fetchApi<{ data: Document[] }>("/api/documents?per_page=1000")
             .then(d => setDocs(d.data));
     }, []);
 
@@ -72,49 +131,21 @@ export default function ComparePage() {
 
             {/* 顶部选择栏 */}
             <div className="flex flex-wrap items-end gap-4 px-6 py-4 border-b border-gray-800">
-                <div className="flex-1 min-w-[160px]">
-                    <label className="text-xs text-gray-500 mb-1 block">左侧文档</label>
-                    <select
-                        value={leftId}
-                        onChange={e => { setLeftId(e.target.value); loadDoc(e.target.value, "left"); }}
-                        className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg
-                                   text-sm text-gray-200 outline-none focus:border-indigo-500"
-                    >
-                        <option value="">选择文档...</option>
-                        {docs.map(d => (
-                            <option key={d.doc_id} value={d.doc_id}>
-                                {d.doc_id} {d.title ? `· ${d.title}` : ""}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                <div className="flex-1 min-w-[160px]">
-                    <label className="text-xs text-gray-500 mb-1 block">右侧文档</label>
-                    <select
-                        value={rightId}
-                        onChange={e => { setRightId(e.target.value); loadDoc(e.target.value, "right"); }}
-                        className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg
-                                   text-sm text-gray-200 outline-none focus:border-indigo-500"
-                    >
-                        <option value="">选择文档...</option>
-                        {docs.map(d => (
-                            <option key={d.doc_id} value={d.doc_id}>
-                                {d.doc_id} {d.title ? `· ${d.title}` : ""}
-                            </option>
-                        ))}
-                    </select>
-                </div>
+                <DocSelector docs={docs} selectedId={leftId} onSelect={(id) => { setLeftId(id); loadDoc(id, "left"); }} label="左侧文档" />
+                <DocSelector docs={docs} selectedId={rightId} onSelect={(id) => { setRightId(id); loadDoc(id, "right"); }} label="右侧文档" />
 
                 <div className="flex-1 min-w-[140px]">
                     <label className="text-xs text-gray-500 mb-1 block">高亮关键词</label>
-                    <input
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        placeholder="输入关键词高亮..."
-                        className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg
-                                   text-sm text-gray-200 outline-none focus:border-indigo-500 placeholder-gray-600"
-                    />
+                    <div className="relative">
+                        <Search size={14} className="absolute left-2.5 top-2.5 text-gray-500" />
+                        <input
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            placeholder="输入关键词..."
+                            className="w-full pl-8 pr-3 py-2 bg-gray-900 border border-gray-700 rounded-lg
+                                       text-sm text-gray-200 outline-none focus:border-indigo-500 placeholder-gray-600"
+                        />
+                    </div>
                 </div>
 
                 <button

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { NetToastType } from "@/components/NetToast";
-import { Message, SourceSection, Strategy, CausalChainData } from "./types";
+import { Message, SourceSection, Strategy, CausalChainData, LLMErrorInfo } from "./types";
 import { ReasoningStep } from "./ReasoningChain";
 
 interface UseStreamQueryParams {
@@ -51,6 +51,8 @@ export function useStreamQuery({
 
         setStreamingMsgId(aiMsgId);
         setLoading(true);
+        setReasoningSteps([]);
+        setCausalChain(null);
         answerRef.current = "";
 
         const history = (activeConv?.messages ?? []).map(m => ({ role: m.role, content: m.content }));
@@ -63,6 +65,8 @@ export function useStreamQuery({
 
         let sources: SourceSection[] = [];
         let streamCausalChain: CausalChainData | null = null;
+        let streamFollowUps: string[] = [];
+        let streamError: LLMErrorInfo | null = null;
 
         const MAX_RETRIES = 3;
         let retryDelay    = 1000;
@@ -92,19 +96,39 @@ export function useStreamQuery({
 
                     const reader  = res.body!.getReader();
                     const decoder = new TextDecoder();
+                    let buffer = ""; // 新增缓冲区处理断裂的字符
+
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
-                        for (const line of decoder.decode(value).split("\n")) {
+                        
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split("\n");
+                        buffer = lines.pop() || ""; // 最后一项可能不完整，留入缓冲区
+
+                        for (const line of lines) {
                             if (!line.startsWith("data: ")) continue;
                             const data = line.slice(6);
-                            if (data === "[DONE]") break;
+                            if (data === "[DONE]") {
+                                streamDone = true;
+                                break;
+                            }
                             try {
                                 const event = JSON.parse(data);
-                                if (event.type === "sources")           sources = event.content;
+                                if (event.type === "sources") {
+                                    sources = [...sources, ...event.content];
+                                }
                                 else if (event.type === "delta")        answerRef.current += event.content;
-                                else if (event.type === "steps")        setReasoningSteps(event.content || []);
+                                else if (event.type === "steps")        setReasoningSteps(prev => [...prev, ...event.content]);
+                                else if (event.type === "status")       showNetToast("online", event.content, 2000);
                                 else if (event.type === "causal_chain") { streamCausalChain = event.content; setCausalChain(event.content); }
+                                else if (event.type === "follow_up")    streamFollowUps = event.content || [];
+                                else if (event.type === "error")        streamError = {
+                                    code:        event.code        ?? "unknown_error",
+                                    message:     event.message     ?? event.content ?? "AI 服务异常",
+                                    status_code: event.status_code ?? null,
+                                    endpoint:    event.endpoint    ?? "",
+                                };
                             } catch { }
                         }
                     }
@@ -119,7 +143,14 @@ export function useStreamQuery({
             setStreaming(false);
             setStreamingMsgId(null);
             const finalMsgs = newMsgs.map(m =>
-                m.id === aiMsgId ? { ...m, content: answerRef.current, sources, causalChain: streamCausalChain ?? undefined } : m
+                m.id === aiMsgId ? {
+                    ...m,
+                    content:           answerRef.current,
+                    sources,
+                    causalChain:       streamCausalChain ?? undefined,
+                    followUpQuestions: streamFollowUps.length > 0 ? streamFollowUps : undefined,
+                    errorInfo:         streamError ?? undefined,
+                } : m
             );
             await updateConversation(convId!, finalMsgs);
 

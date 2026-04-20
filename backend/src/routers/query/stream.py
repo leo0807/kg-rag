@@ -2,17 +2,52 @@
 流式查询接口，支持多轮对话
 """
 import json
+import re
 import logging
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from neo4j import Driver
 from ...core.database import get_driver
 from ...db.models import User
-from ...services.llm_service import get_llm_service
+from ...services.llm_service import get_llm_service, LLMError
 from .models import QueryRequest
 from .core   import do_retrieval
 
 logger = logging.getLogger(__name__)
+
+
+def _error_event(e: Exception) -> str:
+    """将异常序列化为 SSE error 事件字符串。"""
+    if isinstance(e, LLMError):
+        payload = {"type": "error", "code": e.code, "message": e.message,
+                   "status_code": e.status_code, "endpoint": e.endpoint}
+    else:
+        payload = {"type": "error", "code": "unknown_error",
+                   "message": "AI 服务异常，请联系管理员",
+                   "status_code": None, "endpoint": ""}
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+async def _emit_follow_ups(question: str, answer: str):
+    """生成并 yield 追问建议 SSE 事件；失败静默跳过。"""
+    import asyncio
+    try:
+        msgs = [
+            {"role": "system", "content": "只输出一个 JSON 数组，格式：[\"问题1\",\"问题2\",\"问题3\"]，每条不超过30字，不要其他内容。"},
+            {"role": "user",   "content": f"用户问题：{question}\n系统答案（节选）：{answer[:400]}\n\n请生成3条追问建议："},
+        ]
+        raw = await asyncio.wait_for(
+            asyncio.to_thread(get_llm_service().chat, msgs), timeout=8.0
+        )
+        m = re.search(r'\[.*?\]', raw, re.DOTALL)
+        if m:
+            items = json.loads(m.group())
+            questions = [str(q).strip() for q in items if str(q).strip()][:3]
+            if questions:
+                return json.dumps({"type": "follow_up", "content": questions}, ensure_ascii=False)
+    except Exception as _e:
+        logger.debug("追问建议生成失败（跳过）: %s", _e)
+    return None
 
 
 async def query_stream(
@@ -75,27 +110,24 @@ async def query_stream(
         # 多跳推理单独处理，以便发送中间步骤
         if req.strategy == "multi_hop":
             try:
-                from ...services.multi_hop import multi_hop_query
-                answer_mh, mh_sections, mh_steps = multi_hop_query(req.question, driver, top_k=top_k)
-                yield f"data: {json.dumps({'type': 'steps', 'content': mh_steps}, ensure_ascii=False)}\n\n"
-                sources_mh = [
-                    {
-                        "chunk_id": s["chunk_id"], "doc_id": s["doc_id"],
-                        "number":   s.get("number") or "", "title": s.get("title") or "",
-                        "score":    round(float(s.get("score", 0)), 4),
-                    }
-                    for s in mh_sections
-                ]
-                yield f"data: {json.dumps({'type': 'sources', 'content': sources_mh}, ensure_ascii=False)}\n\n"
-                for char in answer_mh:
-                    yield f"data: {json.dumps({'type': 'delta', 'content': char}, ensure_ascii=False)}\n\n"
+                from ...services.multi_hop import multi_hop_query_stream
+                full_answer = ""
+                async for event in multi_hop_query_stream(req.question, driver, top_k=top_k):
+                    if event["type"] == "done":
+                        break
+                    if event["type"] == "delta":
+                        full_answer += event["content"]
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
                 latency_ms = int((time.time() - t_start) * 1000)
                 send_generation(
                     name="graphrag-stream", model=get_llm_service().model_name,
                     input_messages=[{"role": "user", "content": req.question}],
-                    output=answer_mh, latency_ms=latency_ms, strategy="multi_hop",
+                    output=full_answer, latency_ms=latency_ms, strategy="multi_hop",
                     user_id=user_id, department=department, question_preview=req.question,
                 )
+                fu = await _emit_follow_ups(req.question, full_answer)
+                if fu: yield f"data: {fu}\n\n"
                 yield "data: [DONE]\n\n"
                 return
             except Exception as e:
@@ -134,7 +166,10 @@ async def query_stream(
                         full_answer += delta
                         yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
                 except Exception as e:
-                    yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+                    logger.warning("counterfactual stream_chat 失败: %s", e)
+                    yield _error_event(e)
+                    yield "data: [DONE]\n\n"
+                    return
 
                 latency_ms = int((time.time() - t_start) * 1000)
                 send_generation(
@@ -143,6 +178,8 @@ async def query_stream(
                     output=full_answer, latency_ms=latency_ms, strategy="counterfactual",
                     user_id=user_id, department=department, question_preview=req.question,
                 )
+                fu = await _emit_follow_ups(req.question, full_answer)
+                if fu: yield f"data: {fu}\n\n"
                 yield "data: [DONE]\n\n"
                 return
             except Exception as e:
@@ -155,6 +192,8 @@ async def query_stream(
                 "chunk_id": s["chunk_id"], "doc_id": s["doc_id"],
                 "number":   s.get("number") or "", "title": s.get("title") or "",
                 "score":    round(s.get("rerank_score") or ft_score_map.get(s["chunk_id"], 0.0), 4),
+                "page_idx": s.get("page_idx"),
+                "bbox":     s.get("bbox"),
             }
             for s in sections
         ]
@@ -168,7 +207,7 @@ async def query_stream(
         yield f"data: {json.dumps({'type': 'status', 'content': '生成回答中...'}, ensure_ascii=False)}\n\n"
 
         context = "\n\n".join(
-            f"[{s['doc_id']} §{s['number']}] {s['title']}\n{s['content']}"
+            f"[{s['doc_id']} §{s['number']} (第{s.get('page_idx', 0)+1}页)] {s['title']}\n{s['content']}"
             for s in sections
         )
 
@@ -201,7 +240,10 @@ async def query_stream(
                 full_answer += delta
                 yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+            logger.warning("stream_chat 失败: %s", e)
+            yield _error_event(e)
+            yield "data: [DONE]\n\n"
+            return
 
         latency_ms = int((time.time() - t_start) * 1000)
         send_generation(
@@ -222,6 +264,8 @@ async def query_stream(
                 )
             except Exception as _se:
                 logger.debug("语义缓存写入失败（跳过）: %s", _se)
+        fu = await _emit_follow_ups(req.question, full_answer)
+        if fu: yield f"data: {fu}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(

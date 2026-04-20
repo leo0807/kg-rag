@@ -35,7 +35,9 @@ def get_section_details(driver: Driver, chunk_ids: list[str]) -> list[dict]:
                    s.doc_id   AS doc_id,
                    s.number   AS number,
                    s.title    AS title,
-                   s.content  AS content
+                   s.content  AS content,
+                   s.page_idx AS page_idx,
+                   s.bbox     AS bbox
         """, chunk_ids=chunk_ids)
         records = {r["chunk_id"]: dict(r) for r in result}
     return [records[cid] for cid in chunk_ids if cid in records]
@@ -44,12 +46,16 @@ def get_section_details(driver: Driver, chunk_ids: list[str]) -> list[dict]:
 def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
     """返回 (sections, ft_score_map)"""
 
+    # 0. 查询扩展（近义词）
+    from ...services.query_expander import expand_query
+    search_query = expand_query(driver, question)
+
     # ES 全文检索
     ft_ids, ft_score_map = [], {}
     if health_monitor.elasticsearch.is_ok:
         try:
             from ...services.es_store import search_sections_es
-            es_results   = search_sections_es(question, top_k=top_k * 2)
+            es_results   = search_sections_es(search_query, top_k=top_k * 2)
             ft_ids       = [r["chunk_id"] for r in es_results]
             ft_score_map = {r["chunk_id"]: r["score"] for r in es_results}
         except Exception as e:
@@ -67,7 +73,7 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
                     YIELD node, score
                     RETURN node.chunk_id AS chunk_id, score
                     ORDER BY score DESC LIMIT $top_k
-                """, q=question, top_k=top_k * 2)
+                """, q=search_query, top_k=top_k * 2)
                 rows         = [dict(r) for r in ft_result]
                 ft_ids       = [r["chunk_id"] for r in rows]
                 ft_score_map = {r["chunk_id"]: r["score"] for r in rows}

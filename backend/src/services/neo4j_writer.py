@@ -31,19 +31,21 @@ def write_document(doc: DocumentSchema) -> None:
         # 第二条请求：批量写入所有 Section 节点并建立关系
         # 写入向量到 Milvus
         texts = [f"{s.title}\n{s.content}" for s in doc.sections]
-        embeddings = embed_texts(texts)
+        embeddings = embed_texts(texts) if texts else []
 
         milvus_data = [
             {
                 "chunk_id":  s.chunk_id,
                 "doc_id":    doc.doc_id,
                 "text":      f"{s.title}\n{s.content}",
-                "embedding": embeddings[i],
+                "embedding": embeddings[i] if i < len(embeddings) else None,
             }
             for i, s in enumerate(doc.sections)
         ]
+        # 过滤掉缺失向量的项，避免 Milvus upsert 崩溃
+        milvus_data = [m for m in milvus_data if m.get("embedding")]
         upsert_sections(milvus_data)
-        logger.info("写入 Milvus 向量 doc_id=%s sections=%d", doc.doc_id, len(doc.sections))
+        logger.info("写入 Milvus 向量 doc_id=%s sections=%d", doc.doc_id, len(milvus_data))
 
         sections_data = [
             {
@@ -51,7 +53,10 @@ def write_document(doc: DocumentSchema) -> None:
                 "number":    s.number,
                 "title":     s.title,
                 "content":   s.content,
-                # "embedding": embeddings[i],
+                "level":     s.level,
+                "seq_index": s.seq_index,
+                "page_idx":  s.page_idx,
+                "bbox":      s.bbox,
             }
             for i, s in enumerate(doc.sections)
         ]
@@ -60,10 +65,14 @@ def write_document(doc: DocumentSchema) -> None:
             MATCH (d:Document {name: $doc_id})
             UNWIND $sections AS s
             MERGE (sec:Section {chunk_id: s.chunk_id})
-            SET sec.doc_id  = $doc_id,
-                sec.number  = s.number,
-                sec.title   = s.title,
-                sec.content = s.content
+            SET sec.doc_id    = $doc_id,
+                sec.number    = s.number,
+                sec.title     = s.title,
+                sec.content   = s.content,
+                sec.level     = s.level,
+                sec.seq_index = s.seq_index,
+                sec.page_idx  = s.page_idx,
+                sec.bbox      = s.bbox
             MERGE (d)-[:HAS_SECTION]->(sec)
         """,
         doc_id=doc.doc_id,
@@ -145,7 +154,153 @@ def write_document(doc: DocumentSchema) -> None:
         # 例：CPS1220A SUPERSEDES CPS1220（无版次）或 CPS1220_prev
         _link_version_lineage(session, doc.doc_id, doc.version or "")
 
+    # ── 表格提取：pdfplumber（主路径）+ PP-Structure/camelot（备用语义分析）──
+    try:
+        from .entity_writer import write_tables
+        from pathlib import Path as _Path
+
+        pdf_path_str = str(doc.pdf_path) if doc.pdf_path else ""
+        if pdf_path_str and _Path(pdf_path_str).exists():
+            sections_list = [
+                {"chunk_id": s.chunk_id, "number": s.number, "page_idx": s.page_idx}
+                for s in doc.sections
+            ]
+
+            # ── pdfplumber 提取（轻量，始终可用）────────────────────────────
+            from .parser import extract_tables_pdfplumber
+            table_data = extract_tables_pdfplumber(_Path(pdf_path_str), doc.doc_id, sections_list)
+
+            # ── PP-Structure / camelot（可选语义增强） ───────────────────────
+            if not table_data:
+                try:
+                    from .table_extractor import extract_tables_structured
+                    table_data = extract_tables_structured(pdf_path_str, doc.doc_id, sections_list)
+                except Exception:
+                    pass
+
+            if table_data:
+                write_tables(driver, doc.doc_id, table_data)
+                # 写入 Milvus：每张表格作为独立 chunk
+                try:
+                    table_texts  = [t["markdown"] for t in table_data]
+                    tbl_embeddings = embed_texts(table_texts)
+                    milvus_tbl = [
+                        {
+                            "chunk_id":  t["table_id"],
+                            "doc_id":    doc.doc_id,
+                            "text":      t["markdown"],
+                            "embedding": tbl_embeddings[i] if i < len(tbl_embeddings) else None,
+                        }
+                        for i, t in enumerate(table_data)
+                    ]
+                    milvus_tbl = [m for m in milvus_tbl if m.get("embedding")]
+                    if milvus_tbl:
+                        upsert_sections(milvus_tbl)
+                        logger.info("表格向量写入 Milvus doc_id=%s tables=%d", doc.doc_id, len(milvus_tbl))
+                except Exception as me:
+                    logger.warning("表格 Milvus 写入失败（不影响主流程）: %s", me)
+    except Exception as e:
+        logger.warning("表格提取/写入失败（不影响主流程）: %s", e)
+
     logger.info("写入完成 doc_id=%s sections=%d", doc.doc_id, len(doc.sections))
+
+
+def rewrite_sections(driver, doc) -> int:
+    """
+    删除文档旧章节并重新写入（用于 reparse 管道）。
+    只更新 Neo4j 结构和 ES 索引，不做 embedding（避免 BGE-M3 OOM）。
+    返回新写入的章节数。
+    """
+    from .es_store import index_sections
+
+    doc_id = doc.doc_id
+
+    with driver.session() as session:
+        # 1. 删除旧 Section 节点（及其所有关系）
+        session.run("""
+            MATCH (d:Document {name: $doc_id})-[:HAS_SECTION]->(s:Section)
+            DETACH DELETE s
+        """, doc_id=doc_id)
+
+        # 2. 更新 Document 元数据（若解析出了新的标题/版本）
+        session.run("""
+            MATCH (d:Document {name: $doc_id})
+            SET d.version    = CASE WHEN $version <> ''    THEN $version    ELSE d.version    END,
+                d.title      = CASE WHEN $title <> ''      THEN $title      ELSE d.title      END,
+                d.issue_date = CASE WHEN $issue_date <> '' THEN $issue_date ELSE d.issue_date END
+        """, doc_id=doc_id,
+             version=doc.version or "",
+             title=doc.title or "",
+             issue_date=doc.issue_date or "")
+
+        if not doc.sections:
+            return 0
+
+        # 3. 写入新 Section 节点
+        sections_data = [
+            {"chunk_id": s.chunk_id, "number": s.number, "title": s.title,
+             "content": s.content, "level": s.level, "seq_index": s.seq_index}
+            for s in doc.sections
+        ]
+        session.run("""
+            MATCH (d:Document {name: $doc_id})
+            UNWIND $sections AS s
+            MERGE (sec:Section {chunk_id: s.chunk_id})
+            SET sec.doc_id    = $doc_id,
+                sec.number    = s.number,
+                sec.title     = s.title,
+                sec.content   = s.content,
+                sec.level     = s.level,
+                sec.seq_index = s.seq_index
+            MERGE (d)-[:HAS_SECTION]->(sec)
+        """, doc_id=doc_id, sections=sections_data)
+
+        # 4. 重建层级关系
+        number_to_chunk = {s.number: s.chunk_id for s in doc.sections}
+        parent_pairs = []
+        for s in doc.sections:
+            parts = s.number.split(".")
+            if len(parts) > 1:
+                parent_number = ".".join(parts[:-1])
+                if parent_number in number_to_chunk:
+                    parent_pairs.append({
+                        "parent_id": number_to_chunk[parent_number],
+                        "child_id":  s.chunk_id,
+                    })
+        if parent_pairs:
+            session.run("""
+                UNWIND $pairs AS p
+                MATCH (parent:Section {chunk_id: p.parent_id})
+                MATCH (child:Section  {chunk_id: p.child_id})
+                MERGE (parent)-[:HAS_SUBSECTION]->(child)
+            """, pairs=parent_pairs)
+
+        # 5. 重建顺序关系
+        next_pairs = [
+            {"from_id": doc.sections[i].chunk_id, "to_id": doc.sections[i + 1].chunk_id}
+            for i in range(len(doc.sections) - 1)
+        ]
+        if next_pairs:
+            session.run("""
+                UNWIND $pairs AS p
+                MATCH (a:Section {chunk_id: p.from_id})
+                MATCH (b:Section {chunk_id: p.to_id})
+                MERGE (a)-[:NEXT_SECTION]->(b)
+            """, pairs=next_pairs)
+
+    # 6. 更新 ES（不做 embedding，Milvus 向量留待下次 embed 管道更新）
+    try:
+        es_data = [
+            {"chunk_id": s.chunk_id, "doc_id": doc_id,
+             "number": s.number, "title": s.title, "content": s.content}
+            for s in doc.sections
+        ]
+        index_sections(es_data)
+    except Exception as e:
+        logger.warning("ES 更新失败（不影响主流程）: %s", e)
+
+    logger.info("rewrite_sections 完成 doc_id=%s sections=%d", doc_id, len(doc.sections))
+    return len(doc.sections)
 
 
 def _link_version_lineage(session, doc_id: str, version: str) -> None:
@@ -230,3 +385,32 @@ def _link_version_lineage(session, doc_id: str, version: str) -> None:
         """, new_id=doc_id, old_id=old_id)
 
         logger.info("章节变更检测完成: %s → %s", old_id, doc_id)
+
+    # ── 变更影响分析（沿 REFERENCES 反向扩散） ────────────────────────────
+    # 基于被替代的旧版本，找出所有引用它的下游文档（含多跳）。
+    impacted = _compute_impact_docs(session, old_ids)
+    if impacted:
+        session.run("""
+            MATCH (new_doc:Document {name: $new_id})
+            SET new_doc.impact_sources      = $sources,
+                new_doc.impact_docs         = $impacted,
+                new_doc.impact_count        = $count,
+                new_doc.impact_generated_at = timestamp()
+        """, new_id=doc_id, sources=old_ids, impacted=impacted, count=len(impacted))
+        logger.info("变更影响分析: %s 影响 %d 个文档", doc_id, len(impacted))
+
+
+def _compute_impact_docs(session, source_ids: list[str]) -> list[str]:
+    """沿 REFERENCES 反向扩散，找出所有引用 source 文档的下游规范（多跳）。"""
+    if not source_ids:
+        return []
+    result = session.run("""
+        MATCH (src:Document)
+        WHERE src.name IN $sources
+        OPTIONAL MATCH (src)<-[:REFERENCES*1..]-(d:Document)
+        WHERE d.name IS NOT NULL AND NOT d.name IN $sources
+        RETURN collect(DISTINCT d.name) AS impacted
+    """, sources=source_ids)
+    row = result.single()
+    impacted = row["impacted"] if row else []
+    return sorted({d for d in (impacted or []) if d})

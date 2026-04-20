@@ -30,6 +30,73 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 结构化错误类型
+# ─────────────────────────────────────────────────────────────────────────────
+
+class LLMError(Exception):
+    """LLM 调用失败，携带用户可见的错误码和消息。"""
+
+    def __init__(
+        self,
+        code:        str,
+        message:     str,
+        status_code: int | None = None,
+        endpoint:    str        = "",
+    ):
+        super().__init__(message)
+        self.code        = code
+        self.message     = message
+        self.status_code = status_code   # 原始 HTTP 状态码（管理员可见）
+        self.endpoint    = endpoint      # 失败的 API 端点（管理员可见）
+
+
+def _map_exception(exc: Exception, endpoint: str = "") -> LLMError:
+    """将底层异常映射为 LLMError，便于上层统一处理。"""
+    try:
+        import requests as _req
+        _req_http  = _req.HTTPError
+        _req_to    = _req.exceptions.Timeout
+        _req_conn  = _req.exceptions.ConnectionError
+    except ImportError:
+        _req_http = _req_to = _req_conn = type(None)  # type: ignore[assignment]
+
+    try:
+        import httpx as _httpx
+        _hx_http = _httpx.HTTPStatusError
+        _hx_to   = _httpx.TimeoutException
+        _hx_conn = _httpx.ConnectError
+    except ImportError:
+        _hx_http = _hx_to = _hx_conn = type(None)  # type: ignore[assignment]
+
+    # 已经是 LLMError，直接返回
+    if isinstance(exc, LLMError):
+        return exc
+
+    # 提取 HTTP 状态码
+    status: int | None = None
+    if isinstance(exc, _req_http) and getattr(exc, "response", None) is not None:
+        status = exc.response.status_code  # type: ignore[union-attr]
+    elif isinstance(exc, _hx_http):
+        status = exc.response.status_code  # type: ignore[union-attr]
+
+    if status == 403:
+        return LLMError("quota_exceeded",      "API 额度不足，请联系管理员充值",    status_code=status, endpoint=endpoint)
+    if status == 429:
+        return LLMError("rate_limited",        "请求过于频繁，请稍后再试",          status_code=status, endpoint=endpoint)
+    if status in (408, 504):
+        return LLMError("timeout",             "模型响应超时，请重试",              status_code=status, endpoint=endpoint)
+    if status is not None:
+        return LLMError("unknown_error",       "AI 服务异常，请联系管理员",         status_code=status, endpoint=endpoint)
+
+    if isinstance(exc, (_req_to, _hx_to)):
+        return LLMError("timeout",             "模型响应超时，请重试",              endpoint=endpoint)
+    if isinstance(exc, (_req_conn, _hx_conn)):
+        return LLMError("service_unavailable", "AI 服务暂时不可用，请稍后再试",     endpoint=endpoint)
+
+    return LLMError("unknown_error",           "AI 服务异常，请联系管理员",         endpoint=endpoint)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 底层提供方
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -393,13 +460,15 @@ class LLMService:
         system_prompt: str = "",
         **kwargs,
     ) -> str:
-        """同步调用，返回 LLM 回复文本。"""
+        """同步调用，返回 LLM 回复文本。失败时抛出 LLMError。"""
         msgs = _prepend_system(messages, system_prompt)
         try:
             return self._provider.chat(msgs, **kwargs)
+        except LLMError:
+            raise
         except Exception as e:
             logger.error("LLMService.chat 失败: %s", e)
-            raise
+            raise _map_exception(e) from e
 
     def chat_with_usage(
         self,
@@ -407,13 +476,15 @@ class LLMService:
         system_prompt: str = "",
         **kwargs,
     ) -> tuple[str, dict]:
-        """同步调用，返回 (文本, token 用量字典)。"""
+        """同步调用，返回 (文本, token 用量字典)。失败时抛出 LLMError。"""
         msgs = _prepend_system(messages, system_prompt)
         try:
             return self._provider.chat_with_usage(msgs, **kwargs)
+        except LLMError:
+            raise
         except Exception as e:
             logger.error("LLMService.chat_with_usage 失败: %s", e)
-            raise
+            raise _map_exception(e) from e
 
     async def stream_chat(
         self,
@@ -421,10 +492,16 @@ class LLMService:
         system_prompt: str = "",
         **kwargs,
     ) -> AsyncGenerator[str, None]:
-        """异步流式调用，yield 每个 token 片段。"""
+        """异步流式调用，yield 每个 token 片段。失败时抛出 LLMError。"""
         msgs = _prepend_system(messages, system_prompt)
-        async for chunk in self._provider.stream_chat(msgs, **kwargs):
-            yield chunk
+        try:
+            async for chunk in self._provider.stream_chat(msgs, **kwargs):
+                yield chunk
+        except LLMError:
+            raise
+        except Exception as e:
+            logger.error("LLMService.stream_chat 失败: %s", e)
+            raise _map_exception(e) from e
 
 
 # ─────────────────────────────────────────────────────────────────────────────

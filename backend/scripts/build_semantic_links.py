@@ -22,9 +22,10 @@ import json
 def run_direct(args):
     # 将 backend/src 加入路径
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from src.core.database  import get_driver
+    from src.core.database  import init_db, get_driver
     from src.services.semantic_linker import build_semantic_links
 
+    init_db()
     driver = get_driver()
     print(f"[直连] 开始构建语义边 threshold={args.threshold} top_k={args.top_k} dry_run={args.dry_run}")
     result = build_semantic_links(

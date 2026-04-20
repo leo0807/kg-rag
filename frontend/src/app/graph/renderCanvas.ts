@@ -160,13 +160,24 @@ export function drawGraphCanvas(
         const rect = canvasEl.getBoundingClientRect();
         const n = getNodeAt(event.clientX - rect.left, event.clientY - rect.top);
         if (n) {
-            const desc = (n as any).description || (n as any).content;
             tooltipEl.classList.remove("hidden");
             tooltipEl.style.left = (event.clientX + 12) + "px";
             tooltipEl.style.top  = (event.clientY - 8)  + "px";
-            tooltipEl.innerHTML  = desc
-                ? `<div class="font-medium">${n.name}</div><div class="text-gray-400 mt-1 max-w-xs">${String(desc).slice(0, 80)}…</div>`
-                : n.name;
+            const nodeType = (n as any).type as string | undefined;
+            if (nodeType === "Image") {
+                const badge = (n as any).is_drawing
+                    ? `<span style="background:#6366f1;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;">图纸</span>`
+                    : "";
+                const caption = n.name || n.id;
+                const hint = `<div style="color:#6b7280;font-size:10px;margin-top:4px;">点击节点查看图片</div>`;
+                tooltipEl.innerHTML =
+                    `<div style="font-weight:500;">${caption}${badge}</div>${hint}`;
+            } else {
+                const desc = (n as any).description || (n as any).content;
+                tooltipEl.innerHTML = desc
+                    ? `<div class="font-medium">${n.name}</div><div class="text-gray-400 mt-1 max-w-xs">${String(desc).slice(0, 80)}…</div>`
+                    : n.name;
+            }
         } else {
             tooltipEl.classList.add("hidden");
         }

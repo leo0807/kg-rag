@@ -16,6 +16,7 @@ interface DrawingImage {
     image_id:          string;
     caption:           string;
     path:              string;
+    url:               string | null;
     description:       string;
     is_drawing:        boolean;
     part_numbers:      string[];
@@ -48,7 +49,7 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 export function DrawingViewer({ image, onClose, onReanalyze, reanalyzing }: Props) {
-    const imgSrc = `http://localhost:8000/${image.path.replace(/\\/g, "/")}`;
+    const imgSrc = image.url ?? null;
 
     return (
         <div
@@ -104,11 +105,20 @@ export function DrawingViewer({ image, onClose, onReanalyze, reanalyzing }: Prop
                 <div className="flex flex-1 overflow-hidden">
                     {/* 图片区 */}
                     <div className="flex-1 overflow-auto bg-gray-900 flex items-center justify-center p-4">
-                        <img
-                            src={imgSrc}
-                            alt={image.caption || "工程图纸"}
-                            className="max-w-full max-h-full object-contain rounded"
-                        />
+                        {imgSrc ? (
+                            <img
+                                src={imgSrc as string}
+                                alt={image.caption || "工程图纸"}
+                                className="max-w-full max-h-full object-contain rounded"
+                                onError={e => {
+                                    const el = e.currentTarget;
+                                    el.style.display = "none";
+                                    const fb = el.nextSibling as HTMLElement | null;
+                                    if (fb) fb.removeAttribute("hidden");
+                                }}
+                            />
+                        ) : null}
+                        <span hidden={!!imgSrc} className="text-sm text-gray-500">图片暂不可用</span>
                     </div>
 
                     {/* 标注侧栏 */}
