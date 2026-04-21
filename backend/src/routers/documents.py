@@ -133,7 +133,8 @@ async def get_document(doc_id: str, driver: Driver = Depends(get_driver)):
             RETURN s.chunk_id                               AS chunk_id,
                    COALESCE(s.number, s.section_number, '') AS number,
                    s.title                                  AS title,
-                   s.content                                AS content
+                   s.content                                AS content,
+                   s.page_idx                               AS page_idx
         """, doc_id=doc_id)
         # 自然排序：按 number 字段的各级数字排序（处理 "10" > "9" 和 "6.1.8" 多级）
         def _section_sort_key(row: dict):
