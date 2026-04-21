@@ -1,9 +1,12 @@
 """
 数据库模型：用户、用户配置、系统配置、审计日志、对话、反馈、收藏夹
 """
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, DateTime, Boolean, ForeignKey, func, Index, Integer, Float
+from typing import Any
+from sqlalchemy import String, Text, DateTime, Boolean, ForeignKey, func, Index, Integer, Float, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
@@ -117,6 +120,31 @@ class CacheHit(Base):
     created_at:               Mapped[datetime] = mapped_column(DateTime,    server_default=func.now())
 
 
+class ObjectiveDocEvalTask(Base):
+    """客观题文档评测任务持久化记录。"""
+    __tablename__ = "objective_doc_eval_tasks"
+    __table_args__ = (
+        Index("ix_objective_doc_eval_tasks_task_id", "task_id", unique=True),
+        Index("ix_objective_doc_eval_tasks_created_at", "created_at"),
+    )
+
+    id:               Mapped[int]      = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id:          Mapped[str]      = mapped_column(String(36), nullable=False)
+    filename:         Mapped[str]      = mapped_column(String(255), default="")
+    strategy:         Mapped[str]      = mapped_column(String(32), default="parallel")
+    top_k:            Mapped[int]      = mapped_column(Integer, default=5)
+    status:           Mapped[str]      = mapped_column(String(32), default="queued")
+    total:            Mapped[int]      = mapped_column(Integer, default=0)
+    completed:        Mapped[int]      = mapped_column(Integer, default=0)
+    current_question: Mapped[str]      = mapped_column(Text, default="")
+    error:            Mapped[str]      = mapped_column(Text, default="")
+    summary:          Mapped[Any] = mapped_column(JSON, nullable=True)
+    results:          Mapped[Any] = mapped_column(JSON, nullable=True)
+    created_at:       Mapped[datetime]  = mapped_column(DateTime, server_default=func.now())
+    started_at:       Mapped[str]       = mapped_column(Text, nullable=True)
+    finished_at:      Mapped[str]       = mapped_column(Text, nullable=True)
+
+
 class NodeAnnotation(Base):
     """图谱节点批注 — 用户对知识节点的现场心得与纠错备注"""
     __tablename__  = "node_annotations"
@@ -149,11 +177,11 @@ class Favorite(Base):
     id:           Mapped[str]           = mapped_column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id:      Mapped[str]           = mapped_column(String(36),  ForeignKey("users.id"), nullable=False)
     type:         Mapped[str]           = mapped_column(String(20),  nullable=False)   # section | document | query
-    doc_id:       Mapped[str | None]    = mapped_column(String(50),  nullable=True)
-    section_id:   Mapped[str | None]    = mapped_column(String(100), nullable=True)
-    query_text:   Mapped[str | None]    = mapped_column(Text,        nullable=True)
+    doc_id:       Mapped[Any]           = mapped_column(String(50),  nullable=True)
+    section_id:   Mapped[Any]           = mapped_column(String(100), nullable=True)
+    query_text:   Mapped[Any]           = mapped_column(Text,        nullable=True)
     title:        Mapped[str]           = mapped_column(String(200), nullable=False)
-    note:         Mapped[str | None]    = mapped_column(Text,        nullable=True)
+    note:         Mapped[Any]           = mapped_column(Text,        nullable=True)
     created_at:   Mapped[datetime]      = mapped_column(DateTime,    server_default=func.now())
 
     user: Mapped["User"] = relationship()
