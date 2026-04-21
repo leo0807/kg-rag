@@ -184,7 +184,8 @@ def _rows_to_constraints(
 
 def is_available() -> bool:
     from .ocr_engine import is_struct_available
-    return is_struct_available()
+    # camelot 可独立提取矢量表格；结构化 OCR 仅作为补充能力。
+    return _CAMELOT_AVAILABLE or is_struct_available()
 
 
 def extract_tables_structured(

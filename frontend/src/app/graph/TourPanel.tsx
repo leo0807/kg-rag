@@ -47,7 +47,7 @@ export function TourPanel({
                                    disabled:opacity-40 disabled:cursor-not-allowed">
                         开始漫游
                     </button>
-                    <button onClick={onClose} className="p-1.5 text-gray-600 hover:text-white transition-colors">
+                    <button onClick={onClose} className="p-1.5 text-gray-600 hover:text-gray-100 transition-colors">
                         <X size={14} />
                     </button>
                 </div>
@@ -74,16 +74,16 @@ export function TourPanel({
                         </div>
                         <div className="ml-auto flex items-center gap-1">
                             <button onClick={() => onNavigate(tourIdx - 1)} disabled={!hasPrev}
-                                className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 transition-colors">
+                                className="p-1 rounded text-gray-400 hover:text-gray-100 hover:bg-gray-800 disabled:opacity-30 transition-colors">
                                 <ChevronLeft size={14} />
                             </button>
                             <span className="text-xs text-gray-600 w-12 text-center">{tourIdx + 1} / {tourTotal || "?"}</span>
                             <button onClick={() => onNavigate(tourIdx + 1)} disabled={!hasNext}
-                                className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 transition-colors">
+                                className="p-1 rounded text-gray-400 hover:text-gray-100 hover:bg-gray-800 disabled:opacity-30 transition-colors">
                                 <ChevronRight size={14} />
                             </button>
                             <button onClick={onStop}
-                                className="flex items-center gap-1 px-2 py-1 ml-1 rounded bg-gray-800 text-red-400 hover:text-white text-xs transition-colors">
+                                className="flex items-center gap-1 px-2 py-1 ml-1 rounded bg-gray-800 text-red-400 hover:text-gray-100 text-xs transition-colors">
                                 <Square size={10} />停止
                             </button>
                         </div>
@@ -102,7 +102,7 @@ export function TourPanel({
                                 </span>
                             </div>
                             <div className="flex-1 min-w-0 overflow-auto" style={{ maxHeight: 90 }}>
-                                <div className="text-sm font-semibold text-white leading-tight mb-1 truncate">
+                                <div className="text-sm font-semibold text-gray-100 leading-tight mb-1 truncate">
                                     {tourStops[tourIdx].node.name}
                                 </div>
                                 <div className="text-xs text-gray-300 leading-relaxed">

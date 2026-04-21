@@ -43,7 +43,15 @@ def get_section_details(driver: Driver, chunk_ids: list[str]) -> list[dict]:
     return [records[cid] for cid in chunk_ids if cid in records]
 
 
-def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
+def do_retrieval(
+    driver:     Driver,
+    question:   str,
+    strategy:   str,
+    top_k:      int,
+    use_hyde:   bool  = False,
+    hyde_alpha: float = 0.5,
+    doc_id:     str   = "",
+):
     """返回 (sections, ft_score_map)"""
 
     # 0. 查询扩展（近义词）
@@ -55,7 +63,7 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
     if health_monitor.elasticsearch.is_ok:
         try:
             from ...services.es_store import search_sections_es
-            es_results   = search_sections_es(search_query, top_k=top_k * 2)
+            es_results   = search_sections_es(search_query, top_k=top_k * 2, doc_id=doc_id)
             ft_ids       = [r["chunk_id"] for r in es_results]
             ft_score_map = {r["chunk_id"]: r["score"] for r in es_results}
         except Exception as e:
@@ -71,9 +79,10 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
                 ft_result = session.run("""
                     CALL db.index.fulltext.queryNodes('cps_fulltext_index', $q)
                     YIELD node, score
+                    WHERE ($doc_id = '' OR node.doc_id = $doc_id)
                     RETURN node.chunk_id AS chunk_id, score
                     ORDER BY score DESC LIMIT $top_k
-                """, q=search_query, top_k=top_k * 2)
+                """, q=search_query, top_k=top_k * 2, doc_id=doc_id)
                 rows         = [dict(r) for r in ft_result]
                 ft_ids       = [r["chunk_id"] for r in rows]
                 ft_score_map = {r["chunk_id"]: r["score"] for r in rows}
@@ -89,7 +98,13 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
             try:
                 from ...services.embedder     import embed_query
                 from ...services.milvus_store import search_sections
-                vector_ids = [r["chunk_id"] for r in search_sections(embed_query(question), top_k=top_k * 2)]
+                if use_hyde:
+                    from ...services.hyde_service import get_hyde_service
+                    query_vec = get_hyde_service().hybrid_embedding(question, alpha=hyde_alpha)
+                    logger.info("HyDE 增强向量检索（alpha=%.2f）", hyde_alpha)
+                else:
+                    query_vec = embed_query(question)
+                vector_ids = [r["chunk_id"] for r in search_sections(query_vec, top_k=top_k * 2, doc_id=doc_id)]
             except Exception as e:
                 logger.warning("向量检索失败: %s", e)
 
@@ -102,7 +117,7 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
             gnn_svc = get_gnn_service()
             if gnn_svc.loaded:
                 q_vec   = embed_query(question)
-                gnn_ids = [r["chunk_id"] for r in gnn_svc.search(q_vec, top_k=top_k * 2)]
+                gnn_ids = [r["chunk_id"] for r in gnn_svc.search(q_vec, top_k=top_k * 2, doc_id=doc_id)]
                 logger.debug("GNN 检索返回 %d 个候选", len(gnn_ids))
             else:
                 logger.warning("GNN 嵌入未加载，降级到全文检索")
@@ -127,8 +142,13 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
             try:
                 from ...services.embedder     import embed_query
                 from ...services.milvus_store import search_sections
+                if use_hyde:
+                    from ...services.hyde_service import get_hyde_service
+                    _seq_vec = get_hyde_service().hybrid_embedding(question, alpha=hyde_alpha)
+                else:
+                    _seq_vec = embed_query(question)
                 seen = set(fused_ids)
-                for r in search_sections(embed_query(question), top_k=top_k):
+                for r in search_sections(_seq_vec, top_k=top_k, doc_id=doc_id):
                     if r["chunk_id"] not in seen and len(fused_ids) < top_k:
                         fused_ids.append(r["chunk_id"])
                         seen.add(r["chunk_id"])
@@ -151,9 +171,10 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
                       AND toLower($question) CONTAINS toLower(e.name)
                     WITH e LIMIT 10
                     MATCH (s:Section)-[:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS]->(e)
+                    WHERE ($doc_id = '' OR s.doc_id = $doc_id)
                     RETURN DISTINCT s.chunk_id AS chunk_id
                     LIMIT 20
-                """, question=question)
+                """, question=question, doc_id=doc_id)
                 entity_section_ids = [r["chunk_id"] for r in entity_result]
                 if entity_section_ids:
                     seen_fused = set(fused_ids)
@@ -170,10 +191,12 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
                     UNWIND $chunk_ids AS cid
                     MATCH (s:Section {chunk_id: cid})
                     OPTIONAL MATCH (s)-[:HAS_SUBSECTION|NEXT_SECTION]-(nb:Section)
+                    WHERE ($doc_id = '' OR nb.doc_id = $doc_id)
                     OPTIONAL MATCH (p:Section)-[:HAS_SUBSECTION]->(s)
+                    WHERE ($doc_id = '' OR p.doc_id = $doc_id)
                     OPTIONAL MATCH (s)-[:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS]->(e)
                     OPTIONAL MATCH (sibling:Section)-[:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS]->(e)
-                    WHERE sibling.chunk_id <> cid
+                    WHERE sibling.chunk_id <> cid AND ($doc_id = '' OR sibling.doc_id = $doc_id)
                     WITH collect(DISTINCT s.chunk_id) +
                          collect(DISTINCT nb.chunk_id) +
                          collect(DISTINCT p.chunk_id) +
@@ -181,7 +204,7 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
                     UNWIND all_ids AS id
                     WITH id WHERE id IS NOT NULL
                     RETURN collect(DISTINCT id) AS expanded_ids
-                """, chunk_ids=fused_ids[:5])
+                """, chunk_ids=fused_ids[:5], doc_id=doc_id)
                 record = result.single()
                 seen   = set(fused_ids)
                 for eid in (record["expanded_ids"] if record else []):
@@ -192,25 +215,26 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
             logger.warning("图谱增强失败: %s", e)
 
         # ── 跨文档推理：沿 REFERENCES 边追踪被引用规范 ────────────────────────
-        try:
-            with driver.session() as session:
-                ref_result = session.run("""
-                    UNWIND $chunk_ids AS cid
-                    MATCH (s:Section {chunk_id: cid})<-[:HAS_SECTION]-(d:Document)
-                    MATCH (d)-[:REFERENCES]->(ref_doc:Document)
-                    MATCH (ref_doc)-[:HAS_SECTION]->(ref_sec:Section)
-                    WHERE NOT ref_sec.chunk_id IN $chunk_ids
-                    RETURN DISTINCT ref_sec.chunk_id AS chunk_id
-                    LIMIT 10
-                """, chunk_ids=fused_ids[:5])
-                ref_ids = [r["chunk_id"] for r in ref_result]
-                seen    = set(fused_ids)
-                for rid in ref_ids:
-                    if rid not in seen:
-                        fused_ids.append(rid)
-                        seen.add(rid)
-        except Exception as e:
-            logger.warning("跨文档推理失败: %s", e)
+        if not doc_id:
+            try:
+                with driver.session() as session:
+                    ref_result = session.run("""
+                        UNWIND $chunk_ids AS cid
+                        MATCH (s:Section {chunk_id: cid})<-[:HAS_SECTION]-(d:Document)
+                        MATCH (d)-[:REFERENCES]->(ref_doc:Document)
+                        MATCH (ref_doc)-[:HAS_SECTION]->(ref_sec:Section)
+                        WHERE NOT ref_sec.chunk_id IN $chunk_ids
+                        RETURN DISTINCT ref_sec.chunk_id AS chunk_id
+                        LIMIT 10
+                    """, chunk_ids=fused_ids[:5])
+                    ref_ids = [r["chunk_id"] for r in ref_result]
+                    seen    = set(fused_ids)
+                    for rid in ref_ids:
+                        if rid not in seen:
+                            fused_ids.append(rid)
+                            seen.add(rid)
+            except Exception as e:
+                logger.warning("跨文档推理失败: %s", e)
 
     # ── 获取章节详情（Neo4j 不可用时从 ES 降级） ─────────────────────────────
     if health_monitor.neo4j.is_ok:
@@ -219,7 +243,7 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
         # Neo4j 不可用：从 ES 获取章节内容作为降级方案
         try:
             from ...services.es_store import search_sections_es
-            es_fallback = search_sections_es(question, top_k=top_k * 2)
+            es_fallback = search_sections_es(question, top_k=top_k * 2, doc_id=doc_id)
             sections = [
                 {k: r[k] for k in ("chunk_id", "doc_id", "number", "title", "content") if k in r}
                 for r in es_fallback
@@ -229,7 +253,8 @@ def do_retrieval(driver: Driver, question: str, strategy: str, top_k: int):
             sections = []
 
     # Reranker 应用于 parallel / graph_augmented / sequential / gnn
-    if sections and strategy in ("parallel", "graph_augmented", "sequential", "gnn"):
+    from ...core.config import settings as _s
+    if _s.RERANKER_ENABLED and sections and strategy in ("parallel", "graph_augmented", "sequential", "gnn"):
         try:
             from ...services.reranker import rerank
             sections = rerank(question, sections, top_k=top_k)

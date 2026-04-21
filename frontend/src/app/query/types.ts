@@ -4,6 +4,7 @@ export interface SourceSection {
     number: string;
     title: string;
     score: number;
+    rerank_score?: number;
     page_idx?: number;
     bbox?: [number, number, number, number];
 }

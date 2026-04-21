@@ -50,6 +50,13 @@ class LLMError(Exception):
         self.endpoint    = endpoint      # 失败的 API 端点（管理员可见）
 
 
+def _trim_preview(text: str, limit: int = 400) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "..."
+
+
 def _map_exception(exc: Exception, endpoint: str = "") -> LLMError:
     """将底层异常映射为 LLMError，便于上层统一处理。"""
     try:
@@ -162,11 +169,14 @@ class _OpenAICompatProvider:
                 },
             ) as response:
                 response.raise_for_status()
+                saw_done = False
+                saw_delta = False
                 async for line in response.aiter_lines():
                     if not line or not line.startswith("data: "):
                         continue
                     data = line[6:]
                     if data == "[DONE]":
+                        saw_done = True
                         break
                     try:
                         chunk = json.loads(data)
@@ -174,9 +184,12 @@ class _OpenAICompatProvider:
                             continue
                         delta = chunk["choices"][0]["delta"].get("content", "")
                         if delta:
+                            saw_delta = True
                             yield delta
                     except Exception:
-                        pass
+                        logger.warning("OpenAI兼容流式分片解析失败 model=%s chunk=%s", model, _trim_preview(data))
+                if not saw_done and not saw_delta:
+                    raise RuntimeError(f"上游返回了空的流式响应 model={model}")
 
 
 class _AnthropicProvider:
@@ -260,6 +273,7 @@ class _AnthropicProvider:
                 json=payload,
             ) as response:
                 response.raise_for_status()
+                saw_delta = False
                 async for line in response.aiter_lines():
                     if not line or not line.startswith("data: "):
                         continue
@@ -269,9 +283,12 @@ class _AnthropicProvider:
                         if chunk.get("type") == "content_block_delta":
                             delta = chunk.get("delta", {}).get("text", "")
                             if delta:
+                                saw_delta = True
                                 yield delta
                     except Exception:
-                        pass
+                        logger.warning("Anthropic流式分片解析失败 model=%s chunk=%s", self._model, _trim_preview(data))
+                if not saw_delta:
+                    raise RuntimeError(f"Anthropic 返回了空的流式响应 model={self._model}")
 
 
 class _ErnieProvider:
@@ -354,19 +371,25 @@ class _ErnieProvider:
                 },
             ) as response:
                 response.raise_for_status()
+                saw_done = False
+                saw_delta = False
                 async for line in response.aiter_lines():
                     if not line or not line.startswith("data: "):
                         continue
                     data = line[6:]
                     if data == "[DONE]":
+                        saw_done = True
                         break
                     try:
                         chunk = json.loads(data)
                         text = chunk.get("result", "")
                         if text:
+                            saw_delta = True
                             yield text
                     except Exception:
-                        pass
+                        logger.warning("ERNIE流式分片解析失败 model=%s chunk=%s", self._model, _trim_preview(data))
+                if not saw_done and not saw_delta:
+                    raise RuntimeError(f"ERNIE 返回了空的流式响应 model={self._model}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -467,7 +490,7 @@ class LLMService:
         except LLMError:
             raise
         except Exception as e:
-            logger.error("LLMService.chat 失败: %s", e)
+            logger.exception("LLMService.chat 失败 provider=%s model=%s", type(self._provider).__name__, self.model_name)
             raise _map_exception(e) from e
 
     def chat_with_usage(
@@ -483,7 +506,7 @@ class LLMService:
         except LLMError:
             raise
         except Exception as e:
-            logger.error("LLMService.chat_with_usage 失败: %s", e)
+            logger.exception("LLMService.chat_with_usage 失败 provider=%s model=%s", type(self._provider).__name__, self.model_name)
             raise _map_exception(e) from e
 
     async def stream_chat(
@@ -500,7 +523,12 @@ class LLMService:
         except LLMError:
             raise
         except Exception as e:
-            logger.error("LLMService.stream_chat 失败: %s", e)
+            logger.exception(
+                "LLMService.stream_chat 失败 provider=%s model=%s message_count=%d",
+                type(self._provider).__name__,
+                self.model_name,
+                len(msgs),
+            )
             raise _map_exception(e) from e
 
 

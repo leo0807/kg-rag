@@ -15,6 +15,7 @@ import { NodeDetailSidebar } from "./NodeDetailSidebar";
 import { GraphToolbar }      from "./GraphToolbar";
 import { TourPanel }         from "./TourPanel";
 import { useTour }           from "./useTour";
+import { useGraphTheme, getGraphThemeColors } from "./useGraphTheme";
 
 export default function GraphPage() {
     const svgRef         = useRef<SVGSVGElement>(null);
@@ -28,8 +29,8 @@ export default function GraphPage() {
 
     const containerRef   = useRef<HTMLDivElement>(null);
     const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const [renderMode,  setRenderMode]       = useState<RenderMode>("svg");
-    const [manualMode,  setManualMode]       = useState<RenderMode | null>(null);
+    const [renderMode,  setRenderMode]       = useState<RenderMode>("canvas");
+    const [manualMode,  setManualMode]       = useState<RenderMode | null>("canvas");
     const [redrawKey,   setRedrawKey]        = useState(0);
     const [data,       setData]             = useState<GraphData | null>(null);
     const [heatMap,    setHeatMap]          = useState<Map<string, number>>(new Map());
@@ -48,6 +49,8 @@ export default function GraphPage() {
     const [showLegend, setShowLegend]       = useState(false);
     const [showExport, setShowExport]       = useState(false);
     const [copied,     setCopied]           = useState(false);
+    const isDarkTheme = useGraphTheme();
+    const graphTheme = getGraphThemeColors(isDarkTheme);
 
     function activeEl() {
         if (renderMode === "webgl") return webglRef.current as Element | null;
@@ -225,14 +228,14 @@ export default function GraphPage() {
             zoomRef.current = drawGraphHeatmap({ nodes: filteredNodes, edges: filteredEdges }, canvasRef.current, heatMap, docId => { window.location.href = `/library/${docId}`; });
         } else if (mode === "webgl" && webglRef.current && tooltipRef.current) {
             const wRef = webglRef.current, tRef = tooltipRef.current;
-            import("pixi.js").then(PIXI => { if (canceled) return; drawGraphWebGL(PIXI, { nodes: filteredNodes, edges: filteredEdges }, wRef, tRef, setScale, node => setSelectedNode(node), highlightedIds, heatMap).then(({ zoom, destroy }) => { if (canceled) { destroy(); return; } zoomRef.current = zoom; pixiDestroyRef.current = destroy; }).catch(() => {}); }).catch(() => {});
+            import("pixi.js").then(PIXI => { if (canceled) return; drawGraphWebGL(PIXI, { nodes: filteredNodes, edges: filteredEdges }, wRef, tRef, setScale, node => setSelectedNode(node), highlightedIds, heatMap, isDarkTheme).then(({ zoom, destroy }) => { if (canceled) { destroy(); return; } zoomRef.current = zoom; pixiDestroyRef.current = destroy; }).catch(() => {}); }).catch(() => {});
         } else if (mode === "canvas" && canvasRef.current) {
-            zoomRef.current = drawGraphCanvas({ nodes: filteredNodes, edges: filteredEdges }, canvasRef.current, tooltipRef.current!, setScale, node => setSelectedNode(node), highlightedIds, heatMap, tour.tourOpen ? tour.tourNodeIds : undefined, tour.tourOpen ? tour.tourCurrentId : undefined);
+            zoomRef.current = drawGraphCanvas({ nodes: filteredNodes, edges: filteredEdges }, canvasRef.current, tooltipRef.current!, setScale, node => setSelectedNode(node), highlightedIds, heatMap, tour.tourOpen ? tour.tourNodeIds : undefined, tour.tourOpen ? tour.tourCurrentId : undefined, isDarkTheme);
         } else if (svgRef.current) {
-            zoomRef.current = drawGraph({ nodes: filteredNodes, edges: filteredEdges }, svgRef.current, tooltipRef.current!, setScale, node => setSelectedNode(node), highlightedIds, heatMap, tour.tourOpen ? tour.tourNodeIds : undefined, tour.tourOpen ? tour.tourCurrentId : undefined);
+            zoomRef.current = drawGraph({ nodes: filteredNodes, edges: filteredEdges }, svgRef.current, tooltipRef.current!, setScale, node => setSelectedNode(node), highlightedIds, heatMap, tour.tourOpen ? tour.tourNodeIds : undefined, tour.tourOpen ? tour.tourCurrentId : undefined, isDarkTheme);
         }
         return () => { canceled = true; if (pixiDestroyRef.current) { pixiDestroyRef.current(); pixiDestroyRef.current = null; } };
-    }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, heatMap, manualMode, tour.tourNodeIds, tour.tourCurrentId, tour.tourOpen, redrawKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, heatMap, manualMode, tour.tourNodeIds, tour.tourCurrentId, tour.tourOpen, redrawKey, isDarkTheme]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="w-full h-full bg-gray-950 select-none flex flex-col" onClick={() => { if (showExport) setShowExport(false); }}>
@@ -344,12 +347,12 @@ export default function GraphPage() {
 
                         <div className="absolute bottom-4 right-4 flex items-center gap-2">
                             <span className="text-xs text-gray-600 mr-1">拖拽平移 · 滚轮缩放</span>
-                            <button onClick={zoomOut} disabled={scale <= MIN_SCALE} className="w-7 h-7 rounded bg-gray-800 text-white text-sm hover:bg-gray-700 disabled:opacity-30 flex items-center justify-center">−</button>
+                            <button onClick={zoomOut} disabled={scale <= MIN_SCALE} className="w-7 h-7 rounded bg-gray-800 text-gray-100 text-sm hover:bg-gray-700 disabled:opacity-30 flex items-center justify-center">−</button>
                             <button onClick={() => { zoomReset(); setNodeFilter("全部"); setEdgeFilter("全部关系"); }} className="px-2 h-7 rounded bg-gray-800 text-xs text-gray-300 hover:bg-gray-700">重置</button>
-                            <button onClick={zoomIn}  disabled={scale >= MAX_SCALE}  className="w-7 h-7 rounded bg-gray-800 text-white text-sm hover:bg-gray-700 disabled:opacity-30 flex items-center justify-center">+</button>
+                            <button onClick={zoomIn}  disabled={scale >= MAX_SCALE}  className="w-7 h-7 rounded bg-gray-800 text-gray-100 text-sm hover:bg-gray-700 disabled:opacity-30 flex items-center justify-center">+</button>
                         </div>
 
-                        <div ref={tooltipRef} className="fixed hidden px-2 py-1 bg-gray-800 text-white text-xs rounded pointer-events-none border border-gray-700 max-w-xs" />
+                        <div ref={tooltipRef} className={graphTheme.tooltipClassName} />
                     </div>
 
                     {selectedNode && (

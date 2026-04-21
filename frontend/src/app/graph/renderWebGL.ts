@@ -10,6 +10,7 @@ export async function drawGraphWebGL(
     onNodeClick: (node: GraphNode) => void,
     highlightedIds: Set<string>,
     heatMap: Map<string, number>,
+    isDarkTheme = true,
 ): Promise<{ zoom: d3.ZoomBehavior<HTMLCanvasElement, unknown>; destroy: () => void }> {
     const width  = canvasEl.clientWidth;
     const height = canvasEl.clientHeight;
@@ -17,7 +18,7 @@ export async function drawGraphWebGL(
     const app = new PIXI.Application({
         view:            canvasEl,
         width, height,
-        backgroundColor: 0x030712,
+        backgroundColor: isDarkTheme ? 0x030712 : 0xf8fafc,
         antialias:       true,
         resolution:      window.devicePixelRatio || 1,
         autoDensity:     true,
@@ -75,7 +76,7 @@ export async function drawGraphWebGL(
         // Add Label
         const txt = new PIXI.Text(n.name || n.label || n.id, {
             fontSize:   12,
-            fill:       0xffffff,
+            fill:       isDarkTheme ? 0xffffff : 0x0f172a,
             align:      "center",
             fontWeight: "normal",
         });
@@ -148,10 +149,10 @@ export async function drawGraphWebGL(
             const nodeType = (found as any).type as string | undefined;
             if (nodeType === "Image") {
                 const badge = (found as any).is_drawing
-                    ? `<span style="background:#6366f1;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;">图纸</span>`
+                    ? `<span style="background:#6366f1;color:${isDarkTheme ? "#ffffff" : "#0f172a"};font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;">图纸</span>`
                     : "";
                 const caption = found.name || found.id;
-                const hint = `<div style="color:#6b7280;font-size:10px;margin-top:4px;">点击节点查看图片</div>`;
+                const hint = `<div style="color:${isDarkTheme ? "#6b7280" : "#64748b"};font-size:10px;margin-top:4px;">点击节点查看图片</div>`;
                 tooltipEl.innerHTML =
                     `<div style="font-weight:500;">${caption}${badge}</div>${hint}`;
             } else {

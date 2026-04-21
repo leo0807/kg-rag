@@ -17,7 +17,7 @@ interface Props {
 }
 
 export default function PdfPanel({
-    docId, pdfUrl, pdfLoading, watermarkUrl, canDownload, onDownload, onLoadStart, onLoad, onClose,
+    docId, pdfUrl, pdfLoading, watermarkUrl, canDownload, anchorPage, onDownload, onLoadStart, onLoad, onClose,
 }: Props) {
     const [previewError, setPreviewError] = useState<string | null>(null);
     const [checking,     setChecking]     = useState(true);

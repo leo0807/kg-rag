@@ -38,6 +38,8 @@ export default function QueryPage() {
 
     const [input,         setInput]         = useState("");
     const [strategy,      setStrategy]      = useState<Strategy>("parallel");
+    const [useHyde,       setUseHyde]       = useState(false);
+    const hydeAlpha = 0.5;
     const [pendingImages, setPendingImages] = useState<string[]>([]);
     const [quoteSource,   setQuoteSource]   = useState<SourceSection | null>(null);
     const [netToast,      setNetToast]      = useState<{ type: NetToastType; label: string } | null>(null);
@@ -63,7 +65,7 @@ export default function QueryPage() {
 
     const {
         loading, streaming, streamingMsgId, reasoningSteps, causalChain, submit,
-    } = useStreamQuery({ strategy, activeId, activeConv, conversations, createConversation, updateConversation, showNetToast });
+    } = useStreamQuery({ strategy, useHyde, hydeAlpha, activeId, activeConv, conversations, createConversation, updateConversation, showNetToast });
 
     const {
         loading: compareLoading, question: compareQuestion,
@@ -307,9 +309,11 @@ export default function QueryPage() {
                 </div>
 
                 <ConversationInput
-                    value={input} strategy={strategy} loading={loading} streaming={streaming}
+                    value={input} strategy={strategy} useHyde={useHyde}
+                    loading={loading} streaming={streaming}
                     historyLen={historyLen} pendingImages={pendingImages} quoteSource={quoteSource}
-                    onChange={setInput} onStrategy={setStrategy} onSubmit={handleSubmit}
+                    onChange={setInput} onStrategy={setStrategy}
+                    onHydeToggle={setUseHyde} onSubmit={handleSubmit}
                     onClear={clearConversation}
                     onAddImages={imgs => setPendingImages(prev => [...prev, ...imgs])}
                     onRemoveImage={idx => setPendingImages(prev => prev.filter((_, i) => i !== idx))}

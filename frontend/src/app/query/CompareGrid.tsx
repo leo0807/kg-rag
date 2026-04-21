@@ -129,9 +129,32 @@ export default function CompareGrid({
                             {!loading && !isRetrying && (
                                 <div className={`flex items-center justify-between px-3 py-1.5 border-t
                                     ${hasError ? "border-red-800/40" : "border-gray-800/50"}`}>
-                                    <span className="text-[10px] text-gray-600">
-                                        {hasError ? "—" : `${r.sources.length} 个来源`}
-                                    </span>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[10px] text-gray-600">
+                                            {hasError ? "—" : `${r.sources.length} 个来源`}
+                                        </span>
+                                        {!hasError && r.sources.some(s => s.rerank_score !== undefined) && (
+                                            <div className="flex gap-1 flex-wrap">
+                                                {r.sources.slice(0, 3).map((s, i) => {
+                                                    const rs = s.rerank_score ?? 0;
+                                                    const color = rs >= 0.8
+                                                        ? "text-emerald-400 border-emerald-700/50"
+                                                        : rs >= 0.5
+                                                        ? "text-amber-400 border-amber-700/50"
+                                                        : "text-gray-500 border-gray-700/50";
+                                                    return (
+                                                        <span
+                                                            key={i}
+                                                            title={`相关性分数：${rs.toFixed(2)}`}
+                                                            className={`text-[9px] px-1 py-0.5 border rounded font-mono ${color}`}
+                                                        >
+                                                            {rs.toFixed(2)}
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
                                     <div className="flex items-center gap-1.5">
                                         {/* 重试按钮（失败和成功都可用） */}
                                         <button

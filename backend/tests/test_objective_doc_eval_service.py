@@ -2,6 +2,7 @@ from src.services.objective_doc_eval_service import (
     _apply_choice_support_override,
     _build_objective_retrieval_query,
     _answer_objective_question,
+    _infer_answer_from_option_content,
     _parse_question_block,
     _parse_objective_llm_response,
 )
@@ -33,6 +34,24 @@ def test_parse_objective_llm_response_parses_malformed_multi_choice_json():
 
     assert answer == "BCD"
     assert reason == "选项B、C、D均正确。"
+
+
+def test_parse_objective_llm_response_cleans_reason_prefix_noise():
+    raw = '{final_answer:"C",reason:"final_answer:\\"C\\",,（根据证据支持度纠正为 A）"}'
+
+    answer, reason = _parse_objective_llm_response(raw, "choice", ["A", "B", "C", "D"])
+
+    assert answer == "C"
+    assert reason == "（根据证据支持度纠正为 A）"
+
+
+def test_parse_objective_llm_response_infers_answer_from_natural_language_hint():
+    raw = "依据规范，正确答案为B，因此选择B。"
+
+    answer, reason = _parse_objective_llm_response(raw, "choice", ["A", "B", "C", "D"])
+
+    assert answer == "B"
+    assert "正确答案" in reason
 
 
 def test_build_objective_retrieval_query_prefers_core_keywords():
@@ -80,13 +99,14 @@ def test_answer_objective_question_uses_stem_only_on_primary_retrieval():
 
     calls = []
 
-    def fake_retrieval(driver, query, strategy, top_k, use_hyde=False, hyde_alpha=0.5):
+    def fake_retrieval(driver, query, strategy, top_k, use_hyde=False, hyde_alpha=0.5, doc_id=""):
         calls.append({
             "query": query,
             "strategy": strategy,
             "top_k": top_k,
             "use_hyde": use_hyde,
             "hyde_alpha": hyde_alpha,
+            "doc_id": doc_id,
         })
         return [], {}
 
@@ -104,8 +124,11 @@ def test_answer_objective_question_uses_stem_only_on_primary_retrieval():
     assert result["predicted_answer"] == ""
     assert "通用密封" in calls[0]["query"]
     assert "整体油箱" not in calls[0]["query"]
-    assert calls[1]["use_hyde"] is True
-    assert "整体油箱" in calls[1]["query"]
+    assert calls[0]["doc_id"] == ""
+    assert calls[1]["strategy"] == "graph_augmented"
+    assert calls[1]["use_hyde"] is False
+    assert calls[2]["use_hyde"] is True
+    assert "整体油箱" in calls[2]["query"]
 
 
 def test_apply_choice_support_override_prefers_better_supported_option():
@@ -121,3 +144,86 @@ def test_apply_choice_support_override_prefers_better_supported_option():
 
     assert answer == "B"
     assert "证据支持度" in reason
+
+
+def test_apply_choice_support_override_can_fill_blank_answer_from_context():
+    context = "沿接缝涂密封剂胶，以形成一个基本密封胶缝的方法称为包胶密封，应涂在密封边界的紧固件处。"
+    options = [
+        {"label": "A", "text": "贴合面密封、压力侧"},
+        {"label": "B", "text": "包胶密封、紧固件处"},
+        {"label": "C", "text": "填角密封、压力侧"},
+        {"label": "D", "text": "对接密封、接触表面"},
+    ]
+
+    answer, reason = _apply_choice_support_override(context, options, "", "根据规范描述可定位到选项文本。")
+
+    assert answer == "B"
+    assert "推断为 B" in reason
+
+
+def test_infer_answer_from_option_content_uses_reason_text():
+    options = [
+        {"label": "A", "text": "贴合面密封、压力侧"},
+        {"label": "B", "text": "包胶密封、紧固件处"},
+        {"label": "C", "text": "填角密封、压力侧"},
+        {"label": "D", "text": "对接密封、接触表面"},
+    ]
+
+    answer = _infer_answer_from_option_content(
+        "根据规范描述，这与选项中的包胶密封、紧固件处描述一致。",
+        "choice",
+        options,
+    )
+
+    assert answer == "B"
+
+
+def test_answer_objective_question_uses_graph_augmented_as_soft_supplement():
+    options = [
+        {"label": "A", "text": "客舱增压、整体油箱、防腐蚀、防漏油"},
+        {"label": "B", "text": "防漏水、防腐蚀、防漏油、防漏气"},
+        {"label": "C", "text": "气动性能的改进、防漏气、客舱增压、整体油箱"},
+        {"label": "D", "text": "整体油箱、防腐蚀、防漏水、防漏气"},
+    ]
+    calls = []
+
+    def fake_retrieval(driver, query, strategy, top_k, use_hyde=False, hyde_alpha=0.5, doc_id=""):
+        calls.append({
+            "strategy": strategy,
+            "use_hyde": use_hyde,
+            "doc_id": doc_id,
+        })
+        section = {
+            "chunk_id": f"{strategy}_1",
+            "doc_id": "CPS1000" if strategy != "parallel" or use_hyde else "CPS1304",
+            "number": "6.2",
+            "title": "通用密封",
+            "content": "通用密封的目的是防漏水、防腐蚀、防漏油、防漏气。",
+            "page_idx": 0,
+            "seq_index": 10,
+        }
+        return ([section], {section["chunk_id"]: 10.0})
+
+    fake_llm = MagicMock()
+    fake_llm.chat.return_value = '{"final_answer":"","reason":"根据规范描述可知其对应防漏水、防腐蚀、防漏油、防漏气。"}'
+
+    with patch("src.services.objective_doc_eval_service.DO_RETRIEVAL", side_effect=fake_retrieval), \
+         patch("src.services.objective_doc_eval_service.get_llm_service", return_value=fake_llm), \
+         patch("src.services.objective_doc_eval_service._expand_objective_graph_neighbors", return_value=[]), \
+         patch("src.services.objective_doc_eval_service._expand_objective_local_neighbors", return_value=[]):
+        result = _answer_objective_question(
+            question="通用密封的目的是______、______、______、______。",
+            options=options,
+            question_type="choice",
+            answer_key="",
+            strategy="parallel",
+            top_k=5,
+            driver=MagicMock(),
+        )
+
+    assert calls[0]["strategy"] == "parallel"
+    assert calls[1]["strategy"] == "graph_augmented"
+    assert calls[2]["use_hyde"] is True
+    assert all(call["doc_id"] == "" for call in calls)
+    assert result["predicted_answer"] == "B"
+    assert any(ref.startswith("CPS1000") for ref in result["source_refs"])

@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useEffect, useCallback, useState } from "react";
-import { Send, RotateCcw, Paperclip, X, Reply, Star, ChevronRight, Hash, FileText, Database } from "lucide-react";
+import { Send, RotateCcw, Paperclip, X, Reply, Star, ChevronRight, Hash, FileText, Database, Zap } from "lucide-react";
 import { useFavorites } from "@/app/favorites/useFavorites";
 import { Strategy, SourceSection } from "./types";
 
@@ -23,6 +23,7 @@ interface Suggestion {
 interface Props {
     value: string;
     strategy: Strategy;
+    useHyde: boolean;
     loading: boolean;
     streaming: boolean;
     historyLen: number;
@@ -30,6 +31,7 @@ interface Props {
     quoteSource?: SourceSection | null;
     onChange: (v: string) => void;
     onStrategy: (s: Strategy) => void;
+    onHydeToggle: (v: boolean) => void;
     onSubmit: () => void;
     onClear: () => void;
     onAddImages: (imgs: string[]) => void;
@@ -38,8 +40,8 @@ interface Props {
 }
 
 export default function ConversationInput({
-    value, strategy, loading, streaming, historyLen, pendingImages,
-    quoteSource, onChange, onStrategy, onSubmit, onClear,
+    value, strategy, useHyde, loading, streaming, historyLen, pendingImages,
+    quoteSource, onChange, onStrategy, onHydeToggle, onSubmit, onClear,
     onAddImages, onRemoveImage, onClearQuote,
 }: Props) {
     const { getFavoriteId, addFavorite, removeFavorite } = useFavorites();
@@ -172,7 +174,7 @@ export default function ConversationInput({
                 </div>
             )}
 
-            {/* 策略 + 清空 */}
+            {/* 策略 + HyDE 开关 + 清空 */}
             <div className="flex items-center gap-2 mb-3">
                 <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-lg p-0.5">
                     {strategies.map(s => (
@@ -187,6 +189,21 @@ export default function ConversationInput({
                         </button>
                     ))}
                 </div>
+
+                {/* HyDE 增强模式开关 */}
+                <button
+                    onClick={() => onHydeToggle(!useHyde)}
+                    title="启用后系统先生成假设答案再检索，适合复杂技术问题，响应稍慢"
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-colors ${
+                        useHyde
+                            ? "bg-violet-600 border-violet-500 text-white"
+                            : "bg-gray-900 border-gray-800 text-gray-500 hover:text-gray-300"
+                    }`}
+                >
+                    <Zap size={11} className={useHyde ? "text-violet-200" : ""} />
+                    增强
+                </button>
+
                 {historyLen > 0 && (
                     <span className="text-xs text-gray-600 ml-1">
                         {Math.floor(historyLen / 2)} 轮对话

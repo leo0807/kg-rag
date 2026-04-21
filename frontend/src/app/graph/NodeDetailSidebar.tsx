@@ -141,13 +141,13 @@ export function NodeDetailSidebar({ node, onClose, onExpandSection, expandingId 
                     style={{ backgroundColor: color + "33", color }}>
                     {type}
                 </span>
-                <button onClick={onClose} className="p-1 rounded hover:bg-gray-800 text-gray-500 hover:text-white transition-colors">
+                <button onClick={onClose} className="p-1 rounded hover:bg-gray-800 text-gray-500 hover:text-gray-100 transition-colors">
                     <X size={14} />
                 </button>
             </div>
 
             <div className="px-4 py-3 border-b border-gray-800">
-                <div className="text-sm font-semibold text-white leading-snug">{node.name || node.id}</div>
+                <div className="text-sm font-semibold text-gray-100 leading-snug">{node.name || node.id}</div>
                 {node.doc_id && <div className="text-xs text-gray-500 font-mono mt-1">{node.doc_id}</div>}
             </div>
 
@@ -391,7 +391,7 @@ export function NodeDetailSidebar({ node, onClose, onExpandSection, expandingId 
                         <div className="absolute -top-10 right-0 flex items-center gap-2">
                             <button
                                 onClick={() => setZoom(z => Math.max(0.25, +(z - 0.25).toFixed(2)))}
-                                className="w-8 h-8 rounded bg-gray-900/80 text-gray-200 hover:text-white border border-gray-700 flex items-center justify-center"
+                                className="w-8 h-8 rounded bg-gray-900/80 text-gray-200 hover:text-gray-100 border border-gray-700 flex items-center justify-center"
                                 title="缩小"
                             >
                                 <ZoomOut size={14} />
@@ -399,14 +399,14 @@ export function NodeDetailSidebar({ node, onClose, onExpandSection, expandingId 
                             <div className="text-xs text-gray-300 w-12 text-center">{Math.round(zoom * 100)}%</div>
                             <button
                                 onClick={() => setZoom(z => Math.min(4, +(z + 0.25).toFixed(2)))}
-                                className="w-8 h-8 rounded bg-gray-900/80 text-gray-200 hover:text-white border border-gray-700 flex items-center justify-center"
+                                className="w-8 h-8 rounded bg-gray-900/80 text-gray-200 hover:text-gray-100 border border-gray-700 flex items-center justify-center"
                                 title="放大"
                             >
                                 <ZoomIn size={14} />
                             </button>
                             <button
                                 onClick={() => setImgOpen(false)}
-                                className="ml-2 w-8 h-8 rounded bg-gray-900/80 text-gray-200 hover:text-white border border-gray-700 flex items-center justify-center"
+                                className="ml-2 w-8 h-8 rounded bg-gray-900/80 text-gray-200 hover:text-gray-100 border border-gray-700 flex items-center justify-center"
                                 title="关闭"
                             >
                                 <X size={14} />

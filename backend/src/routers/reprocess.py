@@ -62,8 +62,8 @@ _tasks: dict[str, dict] = {}
 # ── 批量任务状态（进程内 + 持久化文件）─────────────────────────────────────────
 _batch: dict = _load_batch_state()
 
-VALID = {"reparse", "entities", "constraints", "tables", "drawings", "defects"}
-ALL   = ["reparse", "entities", "constraints", "tables", "drawings", "defects"]
+VALID = {"reparse", "images", "entities", "constraints", "tables", "drawings", "defects"}
+ALL   = ["reparse", "images", "entities", "constraints", "tables", "drawings", "defects"]
 
 
 class ReprocessReq(BaseModel):

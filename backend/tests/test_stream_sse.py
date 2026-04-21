@@ -2,9 +2,27 @@
 tests/test_stream_sse.py
 流式 SSE 响应测试：验证 /api/query/stream 的事件格式
 """
+import asyncio
 import json
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+import sys
+import types
+from unittest.mock import MagicMock, patch
+from starlette.requests import Request
+
+
+def _optional_dependency_stubs() -> dict[str, object]:
+    fake_jose = types.SimpleNamespace(jwt=types.SimpleNamespace(), JWTError=Exception)
+    fake_auth_deps = types.SimpleNamespace(get_optional_user=lambda: None)
+    fake_observability = types.SimpleNamespace(send_generation=lambda *args, **kwargs: None)
+    fake_query_sync = types.SimpleNamespace(query_sync=lambda *args, **kwargs: None)
+    fake_query_compare = types.SimpleNamespace(query_compare=lambda *args, **kwargs: None)
+    return {
+        "jose": fake_jose,
+        "src.auth.deps": fake_auth_deps,
+        "src.core.observability": fake_observability,
+        "src.routers.query.sync": fake_query_sync,
+        "src.routers.query.compare": fake_query_compare,
+    }
 
 
 def parse_sse_events(raw: str) -> list[dict]:
@@ -71,29 +89,92 @@ class TestSSEFormat:
         assert "titles" in step
 
 
-@pytest.mark.asyncio
 class TestStreamEndpoint:
     """集成测试：/api/query/stream 返回正确的 SSE 流"""
 
-    async def test_stream_returns_event_stream_content_type(self):
-        from fastapi.testclient import TestClient
-        from src.main import app
+    def test_stream_returns_event_stream_content_type(self):
+        async def _run():
+            with patch.dict(sys.modules, _optional_dependency_stubs()):
+                from src.routers.query.stream import query_stream
 
-        # Mock 所有外部依赖
-        with patch("src.routers.query.stream.do_retrieval") as mock_retrieval, \
-             patch("src.routers.query.stream.get_driver"):
-            mock_retrieval.return_value = ([], {})
+                async def _receive():
+                    return {"type": "http.request", "body": b"", "more_body": False}
 
-            client = TestClient(app)
-            # 需要 auth token，跳过此测试
-            # 此处仅验证端点存在
-            response = client.post("/api/query/stream",
-                                   json={"question": "test", "strategy": "parallel"})
-            # 未登录，期望 401
-            assert response.status_code == 401
+                request = Request({
+                    "type": "http",
+                    "method": "POST",
+                    "path": "/api/query/stream",
+                    "headers": [],
+                }, _receive)
+
+                req = types.SimpleNamespace(
+                    question="test",
+                    strategy="parallel",
+                    top_k=5,
+                    history=[],
+                    images=[],
+                    use_hyde=False,
+                    hyde_alpha=0.5,
+                )
+                response = await query_stream(
+                    request=request,
+                    req=req,
+                    driver=MagicMock(),
+                    current_user=None,
+                )
+                return response
+
+        response = asyncio.run(_run())
+        assert response.media_type == "text/event-stream"
 
     def test_sse_error_event_format(self):
         """错误事件格式"""
         event = {"type": "error", "content": "连接失败"}
         assert event["type"] == "error"
         assert isinstance(event["content"], str)
+
+    def test_stream_wraps_unhandled_generator_errors_as_sse_error(self):
+        async def _run():
+            with patch.dict(sys.modules, _optional_dependency_stubs()):
+                from src.routers.query.stream import query_stream
+
+                async def _receive():
+                    return {"type": "http.request", "body": b"", "more_body": False}
+
+                request = Request({
+                    "type": "http",
+                    "method": "POST",
+                    "path": "/api/query/stream",
+                    "headers": [],
+                }, _receive)
+
+                req = types.SimpleNamespace(
+                    question="test",
+                    strategy="parallel",
+                    top_k=5,
+                    history=[],
+                    images=[],
+                    use_hyde=False,
+                    hyde_alpha=0.5,
+                )
+                with patch("src.routers.query.stream.do_retrieval", side_effect=RuntimeError("boom")), \
+                     patch("src.services.embedder.embed_texts", return_value=[None]):
+                    response = await query_stream(
+                        request=request,
+                        req=req,
+                        driver=MagicMock(),
+                        current_user=None,
+                    )
+
+                    chunks = []
+                    async for chunk in response.body_iterator:
+                        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+            return "".join(chunks)
+
+        raw = asyncio.run(_run())
+        events = parse_sse_events(raw)
+
+        assert any(e.get("type") == "status" for e in events)
+        assert any(e.get("type") == "error" for e in events)
+        assert events[-1]["type"] == "__done__"

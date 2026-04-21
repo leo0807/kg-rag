@@ -2,6 +2,10 @@
 src/routers/query/__init__.py
 查询模块路由注册
 """
+from __future__ import annotations
+
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Request
 from neo4j import Driver
 from slowapi import Limiter
@@ -24,7 +28,7 @@ async def query(
     request:      Request,
     req:          QueryRequest,
     driver:       Driver     = Depends(get_driver),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     return await query_sync(request, req, driver, current_user)
 
@@ -35,7 +39,7 @@ async def query_stream_route(
     request:      Request,
     req:          QueryRequest,
     driver:       Driver     = Depends(get_driver),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     return await query_stream(request, req, driver, current_user)
 

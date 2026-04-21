@@ -6,7 +6,7 @@ import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
 import {
     LogOut, BookOpen, Search, MessageSquare,
-    Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch, BrainCircuit, BarChart2, Share2, Star, Server, Activity,
+    Network, GitCompare, Settings, ChevronLeft, ChevronRight, ShieldCheck, GitBranch, BrainCircuit, BarChart2, Share2, Star, Server, Activity, FlaskConical,
 } from "lucide-react";
 import { useFavorites } from "@/app/favorites/useFavorites";
 
@@ -24,6 +24,7 @@ const navItems = [
     { href: "/admin/status",        label: "系统状态",   shortcut: "",   Icon: Server       },
     { href: "/admin/gnn",           label: "GNN 训练",   shortcut: "",   Icon: BrainCircuit },
     { href: "/admin/analytics",     label: "活跃度报表", shortcut: "",   Icon: BarChart2    },
+    { href: "/admin/eval",          label: "测试集评测", shortcut: "",   Icon: FlaskConical },
     { href: "/settings",            label: "设置",       shortcut: "",   Icon: Settings     },
 ];
 

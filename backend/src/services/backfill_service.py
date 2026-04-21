@@ -208,6 +208,11 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
     return len(image_nodes)
 
 
+def extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver) -> int:
+    """公开封装：提取 PDF 图片并写入图谱。"""
+    return _extract_images_for_doc(doc_id, pdf_path, sections, driver)
+
+
 # ── 异步后台主循环 ─────────────────────────────────────────────────────────────
 
 async def _backfill_loop(doc_ids: list[str]) -> None:

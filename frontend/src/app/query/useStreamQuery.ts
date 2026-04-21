@@ -7,6 +7,8 @@ import { ReasoningStep } from "./ReasoningChain";
 
 interface UseStreamQueryParams {
     strategy:           Strategy;
+    useHyde:            boolean;
+    hydeAlpha:          number;
     activeId:           string | null;
     activeConv:         { id: string; messages: Message[] } | null;
     conversations:      { id: string; messages: Message[] }[];
@@ -16,7 +18,7 @@ interface UseStreamQueryParams {
 }
 
 export function useStreamQuery({
-    strategy, activeId, activeConv, conversations,
+    strategy, useHyde, hydeAlpha, activeId, activeConv, conversations,
     createConversation, updateConversation, showNetToast,
 }: UseStreamQueryParams) {
     const [loading,        setLoading]        = useState(false);
@@ -83,11 +85,15 @@ export function useStreamQuery({
 
                 let streamDone = false;
                 try {
+                    sources = [];
+                    streamCausalChain = null;
+                    streamFollowUps = [];
+                    streamError = null;
                     const token = localStorage.getItem("token") ?? "";
                     const res = await fetch("http://localhost:8000/api/query/stream", {
                         method:  "POST",
                         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-                        body:    JSON.stringify({ question, strategy, history, images }),
+                        body:    JSON.stringify({ question, strategy, history, images, use_hyde: useHyde, hyde_alpha: hydeAlpha }),
                     });
                     if (!res.ok) throw new Error("请求失败");
 
@@ -100,8 +106,40 @@ export function useStreamQuery({
 
                     while (true) {
                         const { done, value } = await reader.read();
-                        if (done) break;
-                        
+                        if (done) {
+                            buffer += decoder.decode();
+                            if (buffer.trim()) {
+                                const lines = buffer.split("\n");
+                                buffer = "";
+                                for (const line of lines) {
+                                    if (!line.startsWith("data: ")) continue;
+                                    const data = line.slice(6);
+                                    if (data === "[DONE]") {
+                                        streamDone = true;
+                                        break;
+                                    }
+                                    try {
+                                        const event = JSON.parse(data);
+                                        if (event.type === "sources") {
+                                            sources = [...sources, ...event.content];
+                                        }
+                                        else if (event.type === "delta")        answerRef.current += event.content;
+                                        else if (event.type === "steps")        setReasoningSteps(prev => [...prev, ...event.content]);
+                                        else if (event.type === "status")       showNetToast("online", event.content, 2000);
+                                        else if (event.type === "causal_chain") { streamCausalChain = event.content; setCausalChain(event.content); }
+                                        else if (event.type === "follow_up")    streamFollowUps = event.content || [];
+                                        else if (event.type === "error")        streamError = {
+                                            code:        event.code        ?? "unknown_error",
+                                            message:     event.message     ?? event.content ?? "AI 服务异常",
+                                            status_code: event.status_code ?? null,
+                                            endpoint:    event.endpoint    ?? "",
+                                        };
+                                    } catch { }
+                                }
+                            }
+                            break;
+                        }
+
                         buffer += decoder.decode(value, { stream: true });
                         const lines = buffer.split("\n");
                         buffer = lines.pop() || ""; // 最后一项可能不完整，留入缓冲区
@@ -132,7 +170,7 @@ export function useStreamQuery({
                             } catch { }
                         }
                     }
-                    streamDone = true;
+                    if (!streamDone) throw new Error("流式响应异常结束");
                 } catch {
                     if (attempt >= MAX_RETRIES) throw new Error("网络异常，已达最大重试次数");
                 }

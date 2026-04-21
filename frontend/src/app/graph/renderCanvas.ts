@@ -11,7 +11,10 @@ export function drawGraphCanvas(
     heatMap: Map<string, number>,
     tourNodeIds?: Set<string>,
     tourCurrentId?: string,
+    isDarkTheme = true,
 ): d3.ZoomBehavior<HTMLCanvasElement, unknown> {
+    const labelFill = isDarkTheme ? "#ffffff" : "#0f172a";
+    const tooltipHint = isDarkTheme ? "#6b7280" : "#64748b";
     const tourMode = (tourNodeIds?.size ?? 0) > 0;
     const dpr    = window.devicePixelRatio || 1;
     const width  = canvasEl.clientWidth;
@@ -120,7 +123,7 @@ export function drawGraphCanvas(
                 ctx.stroke();
             }
             ctx.globalAlpha    = (tourMode && !inPath && !isCurrent) ? 0.3 : 1;
-            ctx.fillStyle      = "#fff";
+            ctx.fillStyle      = labelFill;
             ctx.font           = `${(n.type || n.label) === "Document" ? 12 : 10}px Arial`;
             ctx.textAlign      = "center";
             ctx.textBaseline   = "middle";
@@ -166,10 +169,10 @@ export function drawGraphCanvas(
             const nodeType = (n as any).type as string | undefined;
             if (nodeType === "Image") {
                 const badge = (n as any).is_drawing
-                    ? `<span style="background:#6366f1;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;">图纸</span>`
+                    ? `<span style="background:#6366f1;color:${labelFill};font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;">图纸</span>`
                     : "";
                 const caption = n.name || n.id;
-                const hint = `<div style="color:#6b7280;font-size:10px;margin-top:4px;">点击节点查看图片</div>`;
+                const hint = `<div style="color:${tooltipHint};font-size:10px;margin-top:4px;">点击节点查看图片</div>`;
                 tooltipEl.innerHTML =
                     `<div style="font-weight:500;">${caption}${badge}</div>${hint}`;
             } else {

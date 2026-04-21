@@ -1,9 +1,11 @@
 """
 文档重新处理服务 — 对已入库文档执行新数据处理管道
 
-支持管道: entities / constraints / tables / drawings / defects
+支持管道: reparse / images / entities / constraints / tables / drawings / defects
 支持中止（task["cancel_requested"] = True）和快照回滚
 """
+from __future__ import annotations
+
 import logging
 import time
 from pathlib import Path
@@ -32,7 +34,8 @@ def load_sections(driver, doc_id: str) -> list[dict]:
         result = session.run("""
             MATCH (d:Document {name: $doc_id})-[:HAS_SECTION]->(s:Section)
             RETURN s.chunk_id AS chunk_id, s.number AS number,
-                   s.title AS title, s.content AS content
+                   s.title AS title, s.content AS content,
+                   s.page_idx AS page_idx, s.bbox AS bbox
             ORDER BY s.number
         """, doc_id=doc_id)
         return [dict(r) for r in result]
@@ -48,6 +51,34 @@ def load_images(driver, doc_id: str) -> list[dict]:
                    i.caption AS caption, i.is_drawing AS is_drawing
         """, doc_id=doc_id)
         return [dict(r) for r in result]
+
+
+def _prepare_reprocess_pdf(doc_id: str, source_path: Path | None, driver) -> tuple[Path | None, list[Path]]:
+    """
+    为图片/表格抽取准备一个可直接打开的 PDF 路径。
+    返回 `(pdf_path, cleanup_paths)`，由调用方在流程结束后统一清理。
+    """
+    cleanup_paths: list[Path] = []
+    path = source_path
+
+    if not path:
+        storage_key = _get_storage_key(driver, doc_id)
+        if storage_key:
+            path = _download_from_minio(doc_id, storage_key)
+            if path:
+                cleanup_paths.append(path)
+        if not path:
+            return None, cleanup_paths
+
+    if path.suffix.lower() in {".doc", ".docx"}:
+        from .parser import _convert_office_to_pdf
+
+        pdf_path = _convert_office_to_pdf(path)
+        if pdf_path != path:
+            cleanup_paths.append(pdf_path)
+        return pdf_path, cleanup_paths
+
+    return path, cleanup_paths
 
 
 def _cancelled(task: dict) -> bool:
@@ -82,6 +113,17 @@ def _run_constraints(driver, doc_id, sections, task, step):
     data = extract_constraints_from_sections(sections, on_progress=on_prog)
     write_constraints(driver, doc_id, data)
     return len(data) if isinstance(data, list) else 0
+
+
+def _run_images(driver, doc_id, pdf_path, sections, task, step):
+    step("images", "重新提取图片节点...")
+    if _cancelled(task): return -1
+    try:
+        from .backfill_service import extract_images_for_doc
+        return extract_images_for_doc(doc_id, Path(pdf_path), sections, driver)
+    except Exception as e:
+        logger.warning("[reprocess %s] 图片提取失败: %s", doc_id, e)
+        return -1
 
 
 def _run_tables(driver, doc_id, pdf_path, sections, task, step):
@@ -221,37 +263,28 @@ def _download_from_minio(doc_id: str, storage_key: str) -> Path | None:
 
 
 def _run_reparse(driver, doc_id, pdf_path, task, step):
-    """重新从 PDF/DOCX 解析章节，写回 Neo4j / Milvus / ES。"""
+    """重新解析章节，并返回 (章节数, 可复用的 PDF 路径, 待清理路径列表)。"""
     step("reparse", "重新解析文档提取章节结构...")
-    tmp_path = None
-    if not pdf_path:
-        # 尝试从 MinIO 下载
-        storage_key = _get_storage_key(driver, doc_id)
-        if storage_key:
-            step("reparse", f"本地文件未找到，从 MinIO 下载 {storage_key}...")
-            pdf_path = _download_from_minio(doc_id, storage_key)
-            tmp_path = pdf_path  # 记录临时文件，稍后清理
-        if not pdf_path:
-            logger.warning("[reparse %s] 未找到文档文件，跳过", doc_id)
-            return 0
     doc = None
-    try:
-        from .parser import parse
-        from .neo4j_writer import rewrite_sections
-        doc = parse(pdf_path)
-        count = rewrite_sections(driver, doc)
-        step("reparse", f"章节重新解析完成，共 {count} 个章节")
-        return count
-    finally:
-        # 清理从 MinIO 下载的原始临时文件
-        if tmp_path and tmp_path.exists():
-            try:
-                tmp_path.unlink()
-            except Exception:
-                pass
-        # 清理 .doc/.docx 转换生成的临时 PDF（reparse 不提取图片，直接清理）
-        if doc is not None and doc.pdf_path and doc.pdf_path != pdf_path:
-            doc.pdf_path.unlink(missing_ok=True)
+    cleanup_paths: list[Path] = []
+    source_path = pdf_path
+    prepared_pdf, prepared_cleanup = _prepare_reprocess_pdf(doc_id, source_path, driver)
+    cleanup_paths.extend(prepared_cleanup)
+    if not prepared_pdf:
+        logger.warning("[reparse %s] 未找到文档文件，跳过", doc_id)
+        return 0, None, cleanup_paths
+
+    from .parser import parse
+    from .neo4j_writer import rewrite_sections
+
+    doc = parse(prepared_pdf if prepared_pdf.suffix.lower() == ".pdf" else source_path or prepared_pdf)
+    effective_pdf = doc.pdf_path if doc and doc.pdf_path and doc.pdf_path.exists() else prepared_pdf
+    if doc and doc.pdf_path and doc.pdf_path not in cleanup_paths and doc.pdf_path != source_path:
+        cleanup_paths.append(doc.pdf_path)
+
+    count = rewrite_sections(driver, doc)
+    step("reparse", f"章节重新解析完成，共 {count} 个章节")
+    return count, effective_pdf, cleanup_paths
 
 
 def _run_defects(driver, doc_id, images, task, step):
@@ -303,11 +336,13 @@ def reprocess_document(doc_id: str, driver, pipelines: list[str], task: dict, on
 
         sections = load_sections(driver, doc_id)
         images   = load_images(driver, doc_id)
-        pdf_path = find_pdf(doc_id)
+        source_path = find_pdf(doc_id)
+        extract_pdf_path = source_path
+        cleanup_paths: list[Path] = []
         results: dict[str, int] = {}
 
         # reparse 必须先于其他管道执行（它会更新 sections/images）
-        PIPELINE_ORDER = ["reparse", "entities", "constraints", "tables", "drawings", "defects"]
+        PIPELINE_ORDER = ["reparse", "images", "entities", "constraints", "tables", "drawings", "defects"]
         ordered_pipelines = sorted(
             pipelines,
             key=lambda p: PIPELINE_ORDER.index(p) if p in PIPELINE_ORDER else 999,
@@ -326,14 +361,31 @@ def reprocess_document(doc_id: str, driver, pipelines: list[str], task: dict, on
 
             try:
                 if pipeline == "reparse":
-                    results[pipeline] = _run_reparse(driver, doc_id, pdf_path, task, step)
+                    count, extract_pdf_path, new_cleanup = _run_reparse(driver, doc_id, source_path, task, step)
+                    results[pipeline] = count
+                    for path in new_cleanup:
+                        if path and path not in cleanup_paths:
+                            cleanup_paths.append(path)
+                elif pipeline == "images":
+                    if not extract_pdf_path:
+                        extract_pdf_path, new_cleanup = _prepare_reprocess_pdf(doc_id, source_path, driver)
+                        for path in new_cleanup:
+                            if path and path not in cleanup_paths:
+                                cleanup_paths.append(path)
+                    results[pipeline] = (_run_images(driver, doc_id, extract_pdf_path, sections, task, step)
+                                     if extract_pdf_path else 0)
                 elif pipeline == "entities":
                     results[pipeline] = _run_entities(driver, doc_id, sections, task, step)
                 elif pipeline == "constraints":
                     results[pipeline] = _run_constraints(driver, doc_id, sections, task, step)
                 elif pipeline == "tables":
-                    results[pipeline] = (_run_tables(driver, doc_id, pdf_path, sections, task, step)
-                                         if pdf_path else 0)
+                    if not extract_pdf_path:
+                        extract_pdf_path, new_cleanup = _prepare_reprocess_pdf(doc_id, source_path, driver)
+                        for path in new_cleanup:
+                            if path and path not in cleanup_paths:
+                                cleanup_paths.append(path)
+                    results[pipeline] = (_run_tables(driver, doc_id, extract_pdf_path, sections, task, step)
+                                     if extract_pdf_path else 0)
                 elif pipeline == "drawings":
                     results[pipeline] = _run_drawings(driver, doc_id, images, task, step)
                 elif pipeline == "defects":
@@ -349,3 +401,10 @@ def reprocess_document(doc_id: str, driver, pipelines: list[str], task: dict, on
     except Exception as e:
         logger.error("[reprocess %s] 总体失败: %s", doc_id, e)
         task.update({"status": "failed", "error": str(e), "finished_at": int(time.time())})
+    finally:
+        for path in locals().get("cleanup_paths", []):
+            try:
+                if path and path.exists():
+                    path.unlink(missing_ok=True)
+            except Exception as cleanup_exc:
+                logger.warning("[reprocess %s] 清理临时文件失败 %s: %s", doc_id, path, cleanup_exc)

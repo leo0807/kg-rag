@@ -11,7 +11,10 @@ export function drawGraph(
     heatMap: Map<string, number>,
     tourNodeIds?: Set<string>,
     tourCurrentId?: string,
+    isDarkTheme = true,
 ): d3.ZoomBehavior<SVGSVGElement, unknown> {
+    const labelFill = isDarkTheme ? "#ffffff" : "#0f172a";
+    const mutedLabelFill = isDarkTheme ? "#475569" : "#64748b";
     const width  = svgEl.clientWidth;
     const height = svgEl.clientHeight;
     const tourMode = (tourNodeIds?.size ?? 0) > 0;
@@ -129,7 +132,7 @@ export function drawGraph(
     node.append("text")
         .text(d => { const name = d.name || d.label || ""; return name.length > 6 ? name.slice(0, 6) + "…" : name; })
         .attr("font-size",         d => (d.type || d.label) === "Document" ? 12 : 10)
-        .attr("fill",              d => tourMode && !tourNodeIds!.has(d.id) && d.id !== tourCurrentId ? "#444" : "#fff")
+        .attr("fill",              d => tourMode && !tourNodeIds!.has(d.id) && d.id !== tourCurrentId ? mutedLabelFill : labelFill)
         .attr("text-anchor",       "middle")
         .attr("dominant-baseline", "central")
         .attr("pointer-events",    "none");

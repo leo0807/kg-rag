@@ -47,10 +47,13 @@ class Settings(BaseSettings):
     EMBEDDING_QWEN_MODEL: str = "text-embedding-v3"
     EMBEDDING_QWEN_DIM:   int = 1024
 
-    RERANKER_MODE:    str = "local"
-    RERANKER_MODEL:   str = "models/bge-reranker-v2-m3"
-    RERANKER_API_URL: str = ""
-    RERANKER_API_KEY: str = ""
+    RERANKER_MODE:        str  = "local"
+    RERANKER_MODEL:       str  = "models/bge-reranker-v2-m3"
+    RERANKER_API_URL:     str  = ""
+    RERANKER_API_KEY:     str  = ""
+    RERANKER_ENABLED:     bool = True
+    RERANKER_TOP_K:       int  = 5
+    RERANKER_CANDIDATE_K: int  = 20   # 初始召回倍数（top_k * candidate_k 上取整）
 
     LLM_MODE:     str = "api"
     LLM_PROVIDER: str = ""            # qwen / deepseek / ernie / anthropic / ""(通用兼容)

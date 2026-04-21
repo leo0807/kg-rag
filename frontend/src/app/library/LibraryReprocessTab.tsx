@@ -9,6 +9,7 @@ import {
 
 const PIPELINES = [
     { key: "reparse",     label: "重新解析章节", desc: "修复 0 章节文档（重新提取章节结构）" },
+    { key: "images",      label: "图片补全",     desc: "重新提取图片节点并写入图谱" },
     { key: "entities",    label: "实体提取",     desc: "Tool / Material / Process 节点" },
     { key: "constraints", label: "约束参数",     desc: "LLM 提取力矩/公差/温度" },
     { key: "tables",      label: "表格提取",     desc: "PP-Structure → Constraint 节点" },
@@ -286,7 +287,7 @@ export function LibraryReprocessTab({ isAdmin = true }: { isAdmin?: boolean }) {
                 if (valid.length > 0) return new Set(valid);
             } catch {}
         }
-        return new Set<PK>(["entities", "constraints", "tables", "drawings"]);
+        return new Set<PK>(["images", "entities", "constraints", "tables", "drawings"]);
     });
 
     // ── 文档列表 & 选择（从 localStorage reparse:doc:* 恢复）──────────────────

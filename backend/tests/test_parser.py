@@ -1,5 +1,12 @@
 import pytest
-from src.services.parser import extract_meta, extract_sections, clean_content
+from src.services.parser import (
+    extract_meta,
+    extract_sections,
+    clean_content,
+    _looks_like_toc,
+    _trim_front_matter_headings,
+    is_likely_section_title,
+)
 from pathlib import Path
 
 class TestCleanContent:
@@ -95,3 +102,26 @@ class TestSectionPattern:
         text = "2021-04-27发布"
         matches = pattern.findall(text)
         assert len(matches) == 0
+
+
+class TestTocFiltering:
+    def test_detects_toc_lines(self):
+        assert _looks_like_toc("1.2 密封要求 .......... 12")
+        assert _looks_like_toc("目录")
+        assert _looks_like_toc("Table of Contents")
+
+    def test_keeps_real_headings(self):
+        assert not _looks_like_toc("1.2 密封要求")
+        assert is_likely_section_title("1.2", "1.2 密封要求")
+
+    def test_trims_fake_front_matter_before_scope(self):
+        headings = [
+            {"number": "0.1", "title": "修订记录"},
+            {"number": "0.2", "title": "目录"},
+            {"number": "1", "title": "范围（Scope）"},
+            {"number": "2", "title": "引用文件"},
+        ]
+
+        trimmed = _trim_front_matter_headings(headings)
+
+        assert [item["number"] for item in trimmed] == ["1", "2"]

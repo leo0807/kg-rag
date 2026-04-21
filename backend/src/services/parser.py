@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 import logging
 import pdfplumber
@@ -48,6 +50,25 @@ SECTION_PATTERNS = [
 # 向后兼容：保留 SECTION_PATTERN 指向第一个（最常用）模式
 SECTION_PATTERN = SECTION_PATTERNS[0]
 
+_TOC_HINT_RE = re.compile(r'(目录|目\s*录|contents?|table\s+of\s+contents|toc)', re.IGNORECASE)
+_TOC_TRAIL_RE = re.compile(r'(?:\.{3,}|·{3,}|…{2,})\s*\d{1,4}\s*$')
+_PAGE_TRAIL_RE = re.compile(r'\s\d{1,4}\s*$')
+
+
+def _looks_like_toc(title: str) -> bool:
+    """识别目录项 / 页码引导行，避免把目录误当成正文标题。"""
+    t = re.sub(r'\s+', ' ', title).strip()
+    if not t:
+        return False
+    if _TOC_HINT_RE.search(t):
+        return True
+    if _TOC_TRAIL_RE.search(t):
+        return True
+    # 目录项常以短标题 + 页码结束，例如 "1.2 密封要求  12"
+    if _PAGE_TRAIL_RE.search(t) and len(t) <= 48:
+        return True
+    return False
+
 def fix_token_spacing(text: str) -> str:
     """
     修复 pdfplumber extract_words 拼接后缺少空格的问题：
@@ -77,6 +98,12 @@ def is_likely_section_title(number: str, title: str) -> bool:
     """
     判断匹配到的 (number, title) 是否为真实章节标题，还是正文列举项或目录条目的误匹配。
     """
+    title = title.strip()
+
+    # 0. 明确的目录项 / TOC 行
+    if _looks_like_toc(title):
+        return False
+
     # 1. 排除目录条目：标题包含连续3个以上的点（TOC 页码引导点）
     if re.search(r'\.{3,}', title):
         return False
@@ -119,7 +146,34 @@ def is_likely_section_title(number: str, title: str) -> bool:
     # 9. 纯数字/分隔符行（表格列数据，如 "115/125 143/153 -"）
     if re.match(r'^[\d\s/\-–—.]+$', title):
         return False
+    # 10. 图/表标题不应被当作章节标题
+    if re.match(r'^(图|表)\s*\d+', title):
+        return False
     return True
+
+
+def _trim_front_matter_headings(headings: list[dict]) -> list[dict]:
+    """
+    丢弃正文首个一级章节之前的伪标题。
+    很多规范在封面/目录/修订记录页上会出现被误判成 heading 的行，
+    但真正的正文通常从 `1 范围（Scope）` 或首个一级数字章节开始。
+    """
+    if not headings:
+        return headings
+
+    anchor_idx = None
+    for idx, heading in enumerate(headings):
+        number = str(heading.get("number", "")).strip()
+        title = str(heading.get("title", "")).strip()
+        if number == "1":
+            anchor_idx = idx
+            if re.search(r"(范围|scope)", title, re.IGNORECASE):
+                break
+
+    if anchor_idx is None or anchor_idx == 0:
+        return headings
+
+    return headings[anchor_idx:]
 
 
 def clean_content(text: str) -> str:
@@ -383,6 +437,7 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
                     _seen_nums.add(h["number"])
                     _deduped.append(h)
             headings = _deduped
+            headings = _trim_front_matter_headings(headings)
 
             for i, h in enumerate(headings):
                 # 收集当前标题到下一个标题之间的所有文本
@@ -456,6 +511,11 @@ def _extract_sections_legacy(pdf_path: Path, doc_id: str) -> list[dict]:
             seen_numbers.add(n)
             deduped_matches.append(m)
     matches = deduped_matches
+    matches = _trim_front_matter_headings([
+        {"number": m.group(1), "title": m.group(2).strip(), "_match": m}
+        for m in matches
+    ])
+    matches = [item["_match"] for item in matches]
 
     sections = []
     for i, match in enumerate(matches):

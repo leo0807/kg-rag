@@ -15,6 +15,10 @@ from .core.database import get_driver
 from .services.parser import parse
 from .services.neo4j_writer import write_document
 from .startup import lifespan
+from .routers.document_files     import router as document_files_router
+from .routers.document_analysis  import router as document_analysis_router
+from .routers.document_backfill  import router as document_backfill_router
+from .routers.search             import router as search_router
 from .routers.documents          import router as documents_router
 from .routers.documents_entities import router as documents_entities_router
 from .routers.graph              import router as graph_router
@@ -32,6 +36,7 @@ from .routers.admin_activity     import router as admin_activity_router
 from .routers.admin_analytics    import router as admin_analytics_router
 from .routers.admin_dashboard    import router as admin_dashboard_router
 from .routers.admin_batch_ingest import router as admin_batch_ingest_router
+from .routers.admin_eval         import router as admin_eval_router
 from .routers.mobile             import router as mobile_router
 from .routers.gnn                import router as gnn_router
 from .routers.visual_qc          import router as visual_qc_router
@@ -107,6 +112,10 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(sessions_router)
+app.include_router(document_files_router)
+app.include_router(document_analysis_router)
+app.include_router(document_backfill_router)
+app.include_router(search_router)
 app.include_router(documents_router)
 app.include_router(documents_entities_router)
 app.include_router(graph_router)
@@ -122,6 +131,7 @@ app.include_router(admin_entities_router)
 app.include_router(admin_activity_router)
 app.include_router(admin_analytics_router)
 app.include_router(admin_batch_ingest_router)
+app.include_router(admin_eval_router)
 app.include_router(gnn_router)
 app.include_router(visual_qc_router)
 app.include_router(reprocess_router)

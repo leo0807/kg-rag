@@ -66,7 +66,7 @@ export function GraphToolbar({
                     {NODE_TYPES.map(type => (
                         <button key={type} onClick={() => setNodeFilter(type)} title={type}
                             className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors whitespace-nowrap ${
-                                nodeFilter === type ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+                                nodeFilter === type ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
                             }`}>
                             {type !== "全部" && (
                                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: NODE_COLOR[type] }} />
@@ -79,7 +79,7 @@ export function GraphToolbar({
                 {/* Table toggle */}
                 <button onClick={onToggleTables} title={showTables ? "隐藏表格节点" : "显示表格节点（默认关闭）"}
                     className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
-                        showTables ? "bg-green-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800 border border-dashed border-gray-700"
+                        showTables ? "bg-green-600 text-white" : "text-gray-500 hover:text-gray-100 hover:bg-gray-800 border border-dashed border-gray-700"
                     }`}>
                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: "#22c55e" }} />
                     表格
@@ -130,7 +130,7 @@ export function GraphToolbar({
                 {/* Tour */}
                 <button onClick={onTourToggle}
                     className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
-                        tourOpen ? "bg-amber-500 text-gray-950" : "text-gray-400 hover:text-white hover:bg-gray-800"
+                        tourOpen ? "bg-amber-500 text-gray-950" : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
                     }`} title="图谱漫游">
                     <Compass size={13} />
                     {!tourOpen && <span className="hidden sm:inline">漫游</span>}
@@ -138,21 +138,21 @@ export function GraphToolbar({
 
                 {/* Settings */}
                 <button onClick={() => { setShowLimits(!showLimits); setShowLegend(false); }}
-                    className={`p-1.5 rounded transition-colors ${showLimits ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"}`}
+                    className={`p-1.5 rounded transition-colors ${showLimits ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-100 hover:bg-gray-800"}`}
                     title="节点数量">
                     <Settings size={14} />
                 </button>
 
                 {/* Legend */}
                 <button onClick={() => { setShowLegend(!showLegend); setShowLimits(false); }}
-                    className={`p-1.5 rounded transition-colors ${showLegend ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"}`}
+                    className={`p-1.5 rounded transition-colors ${showLegend ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-100 hover:bg-gray-800"}`}
                     title="图例">
                     <Layers size={14} />
                 </button>
 
                 {/* Share */}
                 <button onClick={shareSnapshot}
-                    className={`p-1.5 rounded transition-colors ${copied ? "bg-emerald-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"}`}
+                    className={`p-1.5 rounded transition-colors ${copied ? "bg-emerald-600 text-white" : "text-gray-500 hover:text-gray-100 hover:bg-gray-800"}`}
                     title="复制分享链接">
                     {copied ? <Check size={14} /> : <Share2 size={14} />}
                 </button>
@@ -160,7 +160,7 @@ export function GraphToolbar({
                 {/* Export */}
                 <div className="relative" onClick={e => e.stopPropagation()}>
                     <button onClick={() => setShowExport(!showExport)}
-                        className={`p-1.5 rounded transition-colors ${showExport ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-white hover:bg-gray-800"}`}
+                        className={`p-1.5 rounded transition-colors ${showExport ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-100 hover:bg-gray-800"}`}
                         title="导出">
                         <Download size={14} />
                     </button>
@@ -187,7 +187,7 @@ export function GraphToolbar({
                             className={`px-2 h-6 rounded text-xs font-medium transition-colors ${
                                 showLevel === lv
                                     ? "bg-amber-500 text-gray-950 font-semibold"
-                                    : "text-gray-500 hover:text-white hover:bg-gray-800"
+                                    : "text-gray-500 hover:text-gray-100 hover:bg-gray-800"
                             }`}
                         >
                             {LEVEL_LABELS[lv]}
@@ -217,12 +217,12 @@ export function GraphToolbar({
 
                 {/* 展开/收起按钮 */}
                 <button onClick={onExpandAll}
-                    className="flex items-center gap-1 px-2 h-6 rounded text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
+                    className="flex items-center gap-1 px-2 h-6 rounded text-xs text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors">
                     <ChevronDown size={11} />
                     展开全部
                 </button>
                 <button onClick={onCollapseToLevel1}
-                    className="flex items-center gap-1 px-2 h-6 rounded text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
+                    className="flex items-center gap-1 px-2 h-6 rounded text-xs text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors">
                     <ChevronUp size={11} />
                     收起到一级
                 </button>

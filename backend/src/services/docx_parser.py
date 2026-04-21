@@ -2,6 +2,8 @@
 DOCX 文档解析器
 支持 .docx 格式，按 Word 标题样式或粗体段落划分章节
 """
+from __future__ import annotations
+
 import re
 import logging
 from pathlib import Path
@@ -19,18 +21,36 @@ _NUM_RE = re.compile(
     r'$'
 )
 
+_TOC_HINT_RE = re.compile(r'(目录|目\s*录|contents?|table\s+of\s+contents|toc)', re.IGNORECASE)
+_TOC_TRAIL_RE = re.compile(r'(?:\.{3,}|·{3,}|…{2,})\s*\d{1,4}\s*$')
+_PAGE_TRAIL_RE = re.compile(r'\s\d{1,4}\s*$')
+
+
+def _looks_like_toc(text: str) -> bool:
+    """识别目录条目，避免把目录、页码引导误当章节标题。"""
+    t = re.sub(r'\s+', ' ', text).strip()
+    if not t:
+        return False
+    if _TOC_HINT_RE.search(t):
+        return True
+    if _TOC_TRAIL_RE.search(t):
+        return True
+    if _PAGE_TRAIL_RE.search(t) and len(t) <= 48:
+        return True
+    return False
+
 
 def _is_heading(para) -> bool:
     """判断段落是否为标题（Word 样式、手动加粗大字号、或文本以章节号开头）"""
     style = para.style.name if para.style else ""
     if style.startswith("Heading") or style.startswith("标题"):
-        return True
+        return not _looks_like_toc(para.text)
     text = para.text.strip()
     if not text:
         return False
     # 文本第一行以章节号格式开头 → 视为标题行（覆盖自定义样式如 NewNormal2）
     first_line = text.split("\n")[0].strip()
-    if _NUM_RE.match(first_line):
+    if _NUM_RE.match(first_line) and not _looks_like_toc(text):
         return True
     # 加粗大字号
     runs = para.runs
@@ -50,6 +70,28 @@ def _section_number(text: str) -> str | None:
     first_line = text.strip().split("\n")[0].strip()
     m = _NUM_RE.match(first_line)
     return m.group(1) if m else None
+
+
+def _trim_front_matter_sections(sections: list[dict]) -> list[dict]:
+    if not sections:
+        return sections
+
+    anchor_idx = None
+    for idx, section in enumerate(sections):
+        number = str(section.get("number", "")).strip()
+        title = str(section.get("title", "")).strip()
+        if number == "1":
+            anchor_idx = idx
+            if re.search(r"(范围|scope)", title, re.IGNORECASE):
+                break
+
+    if anchor_idx is None or anchor_idx == 0:
+        return sections
+
+    trimmed = sections[anchor_idx:]
+    for idx, section in enumerate(trimmed):
+        section["seq_index"] = idx
+    return trimmed
 
 
 def parse_docx(path: Path) -> dict:
@@ -117,7 +159,7 @@ def parse_docx(path: Path) -> dict:
         if not text:
             continue
         # 跳过目录条目
-        if _TOC_LINE.search(text):
+        if _TOC_LINE.search(text) or _looks_like_toc(text):
             continue
         if _is_heading(para):
             _flush()
@@ -131,6 +173,7 @@ def parse_docx(path: Path) -> dict:
             current_lines.append(text)
 
     _flush()
+    sections = _trim_front_matter_sections(sections)
 
     # 处理表格内容（追加到最近章节）
     for table in doc.tables:
