@@ -35,16 +35,6 @@ SECTION_PATTERNS = [
         r'^(X{0,3}(?:IX|IV|V?I{0,3})\.)[ \t]+' + _TITLE_RE,
         re.MULTILINE,
     ),
-    # 5. 数字加顿号：1、2、（单级，常见于条款）
-    re.compile(
-        r'^(\d{1,2}[、])' + _TITLE_RE,
-        re.MULTILINE,
-    ),
-    # 6. 带括号编号：(1) （一） 1）
-    re.compile(
-        r'^([（(][一二三四五六七八九十\d]+[）)])[ \t]*' + _TITLE_RE,
-        re.MULTILINE,
-    ),
 ]
 
 # 向后兼容：保留 SECTION_PATTERN 指向第一个（最常用）模式
@@ -93,15 +83,41 @@ _BODY_ITEM_RE = re.compile(
     # 注：抽真空/真空袋/密封胶条 等工艺名词也可出现在章节标题中，已移除
 )
 
+_UNIT_ONLY_RE = re.compile(
+    r'^(?:minutes?|hours?|days?|weeks?|months?|gallon|gallons|ounce|ounces)$',
+    re.IGNORECASE,
+)
+
+_CATALOG_HINT_RE = re.compile(
+    r'('
+    r'\bP/N\b|'
+    r'\bRTV-\d[\w-]*\b|'
+    r'\bDAPCO\d[\w-]*\b|'
+    r'\bCPM\d[\w-]*\b|'
+    r'#\d+|'
+    r'\b\d+/\d+-(?:gallon|ounce)\b|'
+    r'\b\d+\s*(?:分钟|天|周|月|days?|weeks?|months?|minutes?|hours?)\b|'
+    r'或等效'
+    r')',
+    re.IGNORECASE,
+)
+
+_MODEL_CODE_TOKEN_RE = re.compile(r'\b(?:[A-Z]{2,}\d[\w-]*|\d{4,})\b')
+
 
 def is_likely_section_title(number: str, title: str) -> bool:
     """
     判断匹配到的 (number, title) 是否为真实章节标题，还是正文列举项或目录条目的误匹配。
     """
     title = title.strip()
+    normalized_title = re.sub(r'\s+', ' ', title)
 
     # 0. 明确的目录项 / TOC 行
     if _looks_like_toc(title):
+        return False
+
+    # 0b. 单独的包装/时间单位，不应作为章节标题（如 "minutes"）
+    if _UNIT_ONLY_RE.fullmatch(normalized_title):
         return False
 
     # 1. 排除目录条目：标题包含连续3个以上的点（TOC 页码引导点）
@@ -121,6 +137,9 @@ def is_likely_section_title(number: str, title: str) -> bool:
     #    两位如 7.10 是合法章节号；实际扭矩值 2.83/10.17 已由 Rule 6（计量单位）拦截
     parts = number.split(".")
     if len(parts) == 2 and len(parts[1]) >= 3 and parts[1].isdigit():
+        return False
+    # 4b. 规范正文不应以 0 / 0.x 作为正式章节号；这类命中通常来自前言列表、小数值或 OCR 噪声
+    if number == "0" or number.startswith("0."):
         return False
     # 5. 章节号以"0"开头的两位数（03、05、06）通常是表格行序号
     if re.match(r'^0\d$', number):
@@ -146,10 +165,50 @@ def is_likely_section_title(number: str, title: str) -> bool:
     # 9. 纯数字/分隔符行（表格列数据，如 "115/125 143/153 -"）
     if re.match(r'^[\d\s/\-–—.]+$', title):
         return False
+    # 9c. 物料/BOM/料号清单行：常含料号、包装单位、固化时间、P/N、型号编码
+    visible = re.sub(r'\s+', '', normalized_title)
+    natural_chars = len(re.findall(r'[\u4e00-\u9fffA-Za-z]', normalized_title))
+    code_tokens = _MODEL_CODE_TOKEN_RE.findall(normalized_title)
+    if (
+        _CATALOG_HINT_RE.search(normalized_title)
+        or (
+            code_tokens
+            and natural_chars < max(6, int(len(visible) * 0.45))
+            and re.search(r'[\d#/\-–—]', normalized_title)
+        )
+    ):
+        return False
+    # 9d. 断裂残句 / OCR 切碎的词块（如 "Multi-"、"盘司定位器 -"）
+    if normalized_title.endswith(("-", "–", "—")):
+        return False
+    if re.fullmatch(r'[a-z][a-z\-]{1,20}', normalized_title):
+        return False
+    # 9e. OCR / 表格残片：仅由单字母占位和数字组成（如 "X 1- 45 X"）
+    alpha_tokens = re.findall(r'[A-Za-z]+', normalized_title)
+    digit_tokens = re.findall(r'\d+', normalized_title)
+    if (
+        not re.search(r'[\u4e00-\u9fff]', normalized_title)
+        and len(alpha_tokens) >= 2
+        and all(len(token) == 1 for token in alpha_tokens)
+        and (digit_tokens or re.search(r'[#/\\\-–—]', normalized_title))
+    ):
+        return False
+    # 9a. OCR 噪声 / 符号碎片，不应进入章节目录（如 "4\\10\\"）
+    if re.search(r'[\\|]{2,}', title):
+        return False
+    if len(re.findall(r'[\u4e00-\u9fffA-Za-z]', title)) < 2:
+        return False
     # 10. 图/表标题不应被当作章节标题
     if re.match(r'^(图|表)\s*\d+', title):
         return False
     return True
+
+
+def _normalize_anchor_number(number: str) -> str:
+    """将候选章节号规整成适合正文锚点判断的形式。"""
+    normalized = (number or "").strip()
+    normalized = normalized.rstrip("、.．)）")
+    return normalized
 
 
 def _trim_front_matter_headings(headings: list[dict]) -> list[dict]:
@@ -161,13 +220,25 @@ def _trim_front_matter_headings(headings: list[dict]) -> list[dict]:
     if not headings:
         return headings
 
+    # 第一优先级：显式命中 “1 范围（Scope）”
+    for idx, heading in enumerate(headings):
+        number = _normalize_anchor_number(str(heading.get("number", "")))
+        title = str(heading.get("title", "")).strip()
+        if number == "1" and re.search(r"(范围|scope)", title, re.IGNORECASE):
+            return headings[idx:]
+
     anchor_idx = None
     for idx, heading in enumerate(headings):
-        number = str(heading.get("number", "")).strip()
+        number = _normalize_anchor_number(str(heading.get("number", "")))
         title = str(heading.get("title", "")).strip()
         if number == "1":
             anchor_idx = idx
-            if re.search(r"(范围|scope)", title, re.IGNORECASE):
+            # 其次要求后续很快出现 2 章，避免把前言中的偶发 "1 xxx" 当成正文起点。
+            lookahead = [
+                _normalize_anchor_number(str(item.get("number", "")))
+                for item in headings[idx + 1: idx + 6]
+            ]
+            if "2" in lookahead:
                 break
 
     if anchor_idx is None or anchor_idx == 0:

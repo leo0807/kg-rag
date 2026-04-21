@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 src/core/storage.py
 MinIO / S3-compatible 对象存储客户端封装

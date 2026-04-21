@@ -125,3 +125,42 @@ class TestTocFiltering:
         trimmed = _trim_front_matter_headings(headings)
 
         assert [item["number"] for item in trimmed] == ["1", "2"]
+
+    def test_rejects_zero_prefixed_decimal_noise(self):
+        assert not is_likely_section_title("0.5", "inch on the bolt bar")
+        assert not is_likely_section_title("0", r"4\10\ ")
+
+    def test_rejects_bilingual_list_items_as_sections(self):
+        assert not is_likely_section_title(
+            "0.5",
+            "inch on the bolt bar, install preloading indicating washer components",
+        )
+
+    def test_anchor_prefers_real_main_body_over_front_matter_items(self):
+        headings = [
+            {"number": "0.5", "title": "inch on the bolt bar"},
+            {"number": "1", "title": "250 型涂胶枪"},
+            {"number": "1", "title": "范围（Scope）"},
+            {"number": "2", "title": "引用文件（Normative References）"},
+            {"number": "3", "title": "定义"},
+        ]
+
+        trimmed = _trim_front_matter_headings(headings)
+
+        assert [item["title"] for item in trimmed][:2] == ["范围（Scope）", "引用文件（Normative References）"]
+
+    def test_rejects_catalog_like_tail_items_after_real_sections(self):
+        assert not is_likely_section_title("10", "229777 1/10-gallon")
+        assert not is_likely_section_title("12", "盘司 P/N 220923 或等效")
+        assert not is_likely_section_title("14", "229775 20-ounce")
+        assert not is_likely_section_title("15", "minutes")
+        assert not is_likely_section_title("16", "DAPCO2100 CPM9500-1 — 10 分钟 7天")
+        assert not is_likely_section_title("20", "盘司定位器 -")
+        assert not is_likely_section_title("32", "Multi-")
+        assert not is_likely_section_title("45", "X 30 X #62 30 X")
+        assert not is_likely_section_title("45", "X 1- 45 X")
+        assert not is_likely_section_title("30", "X 1- 20 X")
+
+    def test_keeps_real_bilingual_section_titles(self):
+        assert is_likely_section_title("9.4", "检验（Inspection）")
+        assert is_likely_section_title("1", "范围（Scope）")
