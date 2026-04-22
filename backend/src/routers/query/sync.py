@@ -45,6 +45,14 @@ async def query_sync(
                     chunk_id=s["chunk_id"], doc_id=s["doc_id"],
                     number=s.get("number") or "", title=s.get("title") or "",
                     score=round(float(s.get("score", 0)), 4),
+                    page_idx=s.get("page_idx"),
+                    bbox=s.get("bbox"),
+                    source_type=s.get("source_type", []),
+                    retrieval_trace=s.get("retrieval_trace", []),
+                    is_graph_expanded=bool(s.get("is_graph_expanded")),
+                    is_vector_hit=bool(s.get("is_vector_hit")),
+                    is_fulltext_hit=bool(s.get("is_fulltext_hit")),
+                    is_gnn_hit=bool(s.get("is_gnn_hit")),
                 )
                 for s in mh_sections
             ]
@@ -88,6 +96,14 @@ async def query_sync(
             chunk_id=s["chunk_id"], doc_id=s["doc_id"],
             number=s["number"] or "", title=s["title"] or "",
             score=round(s.get("rerank_score") or ft_score_map.get(s["chunk_id"], 0.0), 4),
+            page_idx=s.get("page_idx"),
+            bbox=s.get("bbox"),
+            source_type=s.get("source_type", []),
+            retrieval_trace=s.get("retrieval_trace", []),
+            is_graph_expanded=bool(s.get("is_graph_expanded")),
+            is_vector_hit=bool(s.get("is_vector_hit")),
+            is_fulltext_hit=bool(s.get("is_fulltext_hit")),
+            is_gnn_hit=bool(s.get("is_gnn_hit")),
         )
         for s in sections
     ]

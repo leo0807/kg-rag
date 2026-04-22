@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 
@@ -17,6 +19,14 @@ class SourceSection(BaseModel):
     number:   str
     title:    str
     score:    float
+    page_idx: int | None = None
+    bbox: list[float] | None = None
+    source_type: list[str] = []
+    retrieval_trace: list[str] = []
+    is_graph_expanded: bool = False
+    is_vector_hit: bool = False
+    is_fulltext_hit: bool = False
+    is_gnn_hit: bool = False
 
 
 class QueryResponse(BaseModel):

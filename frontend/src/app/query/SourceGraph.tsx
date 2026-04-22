@@ -76,49 +76,59 @@ export default function SourceGraph({ sources }: Props) {
     return (
         <>
             <div className="mt-2">
-                {/* 切换按钮 */}
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => setOpen(v => !v)}
-                        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-indigo-400
-                                   transition-colors select-none"
-                    >
-                        <svg className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`}
-                             viewBox="0 0 12 12" fill="currentColor">
-                            <path d="M4 2l5 4-5 4V2z"/>
-                        </svg>
-                        {open ? "收起来源图谱" : "展开来源图谱"}
-                        <span className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-500">
-                            {sources.length} 个来源
-                        </span>
-                    </button>
-                    {open && !loading && data && data.nodes.length > 0 && (
+                <div className="rounded-lg border border-gray-800/80 bg-gray-950/40">
+                    <div className="flex items-center gap-2 px-2.5 py-2">
                         <button
-                            onClick={() => setMaximized(true)}
-                            className="text-xs text-gray-600 hover:text-indigo-400 transition-colors select-none flex items-center gap-1"
-                            title="最大化图谱"
+                            onClick={() => setOpen(v => !v)}
+                            className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left text-xs text-gray-500 transition-colors select-none hover:text-indigo-400"
                         >
-                            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-                                <path d="M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8"/>
-                            </svg>
-                            最大化
+                            <div className="flex min-w-0 items-center gap-2">
+                                <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+                                     viewBox="0 0 12 12" fill="currentColor">
+                                    <path d="M4 2l5 4-5 4V2z"/>
+                                </svg>
+                                <span className="text-gray-400">{open ? "来源图谱" : "展开来源图谱"}</span>
+                                <span className="rounded bg-gray-900 px-1.5 py-0.5 text-[10px] text-gray-500">
+                                    {sources.length} 来源
+                                </span>
+                                {data && (
+                                    <span className="hidden rounded bg-gray-900 px-1.5 py-0.5 text-[10px] text-gray-600 sm:inline-flex">
+                                        {data.nodes.length} 节点 / {data.edges.length} 连线
+                                    </span>
+                                )}
+                            </div>
+                            <span className="text-[10px] text-gray-600">
+                                {open ? "收起" : "查看关联结构"}
+                            </span>
                         </button>
-                    )}
+                        {open && !loading && data && data.nodes.length > 0 && (
+                            <button
+                                onClick={() => setMaximized(true)}
+                                className="flex items-center gap-1 rounded-md border border-gray-800 px-2 py-1 text-[10px] text-gray-500 transition-colors hover:border-indigo-500 hover:text-indigo-400"
+                                title="最大化图谱"
+                            >
+                                <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                    <path d="M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8"/>
+                                </svg>
+                                最大化
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {open && (
-                    <div className="mt-2 rounded-xl border border-gray-700 bg-gray-950 overflow-hidden select-none">
+                    <div className="mt-1.5 rounded-xl border border-gray-700 bg-gray-950 overflow-hidden select-none">
                         {loading ? (
-                            <div className="h-52 flex items-center justify-center text-xs text-gray-600">
+                            <div className="h-44 flex items-center justify-center text-xs text-gray-600">
                                 加载图谱中…
                             </div>
                         ) : data && data.nodes.length === 0 ? (
-                            <div className="h-24 flex items-center justify-center text-xs text-gray-600">
+                            <div className="h-20 flex items-center justify-center text-xs text-gray-600">
                                 暂无图谱数据
                             </div>
                         ) : (
                             <>
-                                <svg ref={svgRef} className="w-full" style={{ height: 260 }} />
+                                <svg ref={svgRef} className="w-full" style={{ height: 220 }} />
                                 <Legend maxRank={sources.length} />
                             </>
                         )}

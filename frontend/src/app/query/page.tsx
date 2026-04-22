@@ -12,7 +12,7 @@ import CompareGrid from "./CompareGrid";
 import { useConversations } from "./useConversations";
 import { useStreamQuery } from "./useStreamQuery";
 import { useCompareQuery } from "./useCompareQuery";
-import { SourceSection, Strategy } from "./types";
+import { SourcePanelFilters, SourceSection, Strategy } from "./types";
 import { useFavorites } from "@/app/favorites/useFavorites";
 import { ReasoningChain } from "./ReasoningChain";
 import { CausalChainPanel } from "./CausalChainPanel";
@@ -28,6 +28,12 @@ const COUNTERFACTUAL_EXAMPLES = [
     "省略打孔前脱脂步骤，铆钉连接处是否仍满足密封标准？",
     "不用扭矩扳手装配螺栓，能否满足力矩要求？",
 ];
+
+const SOURCE_FILTERS_STORAGE_KEY = "query:source_panel_filters_by_conversation";
+
+function defaultSourcePanelFilters(): SourcePanelFilters {
+    return { sourceTypes: [], expandedOnly: false, traceFilters: [] };
+}
 
 export default function QueryPage() {
     const {
@@ -46,6 +52,15 @@ export default function QueryPage() {
     const [compareMode,   setCompareMode]   = useState(() => {
         if (typeof window !== "undefined") return localStorage.getItem("query:compare_mode") === "1";
         return false;
+    });
+    const [sourcePanelFiltersByConversation, setSourcePanelFiltersByConversation] = useState<Record<string, SourcePanelFilters>>(() => {
+        if (typeof window === "undefined") return {};
+        try {
+            const raw = sessionStorage.getItem(SOURCE_FILTERS_STORAGE_KEY);
+            return raw ? JSON.parse(raw) : {};
+        } catch {
+            return {};
+        }
     });
     const isAdmin = typeof window !== "undefined"
         ? JSON.parse(localStorage.getItem("user") ?? "{}").is_admin === true
@@ -105,6 +120,29 @@ export default function QueryPage() {
         return () => { window.removeEventListener("offline", handleOffline); window.removeEventListener("online", handleOnline); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        try {
+            sessionStorage.setItem(
+                SOURCE_FILTERS_STORAGE_KEY,
+                JSON.stringify(sourcePanelFiltersByConversation),
+            );
+        } catch {
+            void 0;
+        }
+    }, [sourcePanelFiltersByConversation]);
+
+    const activeSourcePanelFilters = activeId
+        ? (sourcePanelFiltersByConversation[activeId] ?? defaultSourcePanelFilters())
+        : defaultSourcePanelFilters();
+
+    function handleSourcePanelFiltersChange(next: SourcePanelFilters) {
+        if (!activeId) return;
+        setSourcePanelFiltersByConversation(prev => ({
+            ...prev,
+            [activeId]: next,
+        }));
+    }
 
     function toggleCompareMode() {
         setCompareMode(v => {
@@ -293,6 +331,8 @@ export default function QueryPage() {
                                                 if (prev?.role === "user") setInput(prev.content);
                                             } : undefined}
                                             favoritedChunkIds={favoritedChunkIds}
+                                            sourcePanelFilters={msg.role === "assistant" ? activeSourcePanelFilters : undefined}
+                                            onSourcePanelFiltersChange={msg.role === "assistant" ? handleSourcePanelFiltersChange : undefined}
                                             onFavoriteSection={async (s) => {
                                                 const favId = getFavoriteId({ type: "section", section_id: s.chunk_id });
                                                 if (favId) await removeFavorite(favId);

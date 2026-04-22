@@ -9,6 +9,36 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["graph"])
 
 
+def _selected_ids(nodes: list[dict], node_type: str) -> list[str]:
+    return [str(n["id"]) for n in nodes if n.get("type") == node_type and n.get("id")]
+
+
+def _append_missing_owner_docs(nodes: list[dict]) -> list[dict]:
+    """
+    全局图下，如果先选中了图片/实体节点，但对应 Document 因 limit_doc 未被带出，
+    前端会把这些节点显示成孤点。这里把缺失的宿主文档补回来，优先保证连通性。
+    """
+    existing_doc_ids = {str(n["id"]) for n in nodes if n.get("type") == "Document" and n.get("id")}
+    extras: list[dict] = []
+
+    for node in nodes:
+        doc_id = str(node.get("doc_id") or "").strip()
+        if not doc_id or doc_id in existing_doc_ids:
+            continue
+        extras.append({
+            "id": doc_id,
+            "name": doc_id,
+            "doc_id": doc_id,
+            "version": "",
+            "type": "Document",
+        })
+        existing_doc_ids.add(doc_id)
+
+    if extras:
+        nodes.extend(extras)
+    return nodes
+
+
 @router.get("/graph/schema")
 async def get_graph_schema(driver: Driver = Depends(get_driver)):
     """获取图谱 Schema，包括所有标签和关系类型"""
@@ -239,6 +269,7 @@ async def get_graph(
                    s.number   AS number,
                    children_count > 0   AS has_children,
                    'Section' AS type
+            ORDER BY s.doc_id, coalesce(s.level, 1), s.number, s.chunk_id
             {sec_limit_clause}
         """, doc_id=doc_id, limit_sec=limit_sec, show_level=show_level)
         nodes += [
@@ -283,6 +314,7 @@ async def get_graph(
                        i.doc_id AS doc_id, i.description AS description,
                        i.path AS path, i.minio_path AS minio_path,
                        i.is_drawing AS is_drawing
+                ORDER BY coalesce(i.page_num, i.page, 0), i.image_id
                 {img_limit_clause}
             """, doc_id=doc_id, limit=limit_img, hide_logos=hide_logos)
             for r in img_result:
@@ -306,6 +338,7 @@ async def get_graph(
                 MATCH (t:Tool)
                 WHERE $doc_id = '' OR t.doc_id = $doc_id
                 RETURN t.name AS id, t.name AS name, t.doc_id AS doc_id, 'Tool' AS type
+                ORDER BY t.name
                 {entity_limit_clause}
             """, doc_id=doc_id, limit=limit_entity)
             nodes += [
@@ -319,6 +352,7 @@ async def get_graph(
                 MATCH (m:Material)
                 WHERE $doc_id = '' OR m.doc_id = $doc_id
                 RETURN m.name AS id, m.name AS name, m.doc_id AS doc_id, 'Material' AS type
+                ORDER BY m.name
                 {entity_limit_clause}
             """, doc_id=doc_id, limit=limit_entity)
             nodes += [
@@ -332,6 +366,7 @@ async def get_graph(
                 MATCH (p:Process)
                 WHERE $doc_id = '' OR p.doc_id = $doc_id
                 RETURN p.name AS id, p.name AS name, p.doc_id AS doc_id, 'Process' AS type
+                ORDER BY p.name
                 {entity_limit_clause}
             """, doc_id=doc_id, limit=limit_entity)
             nodes += [
@@ -349,6 +384,7 @@ async def get_graph(
                        c.type AS con_type, c.value AS value, c.value_max AS value_max,
                        c.unit AS unit, c.description AS description,
                        c.standard AS standard, c.doc_id AS doc_id
+                ORDER BY c.doc_id, c.constraint_id
                 {entity_limit_clause}
             """, doc_id=doc_id, limit=limit_entity)
             nodes += [
@@ -392,7 +428,16 @@ async def get_graph(
                     "row_count":   r["row_count"] or 2,
                 })
 
+        nodes = _append_missing_owner_docs(nodes)
         node_ids = {n["id"] for n in nodes}
+        selected_doc_ids = _selected_ids(nodes, "Document")
+        selected_section_ids = _selected_ids(nodes, "Section")
+        selected_image_ids = _selected_ids(nodes, "Image")
+        selected_tool_ids = _selected_ids(nodes, "Tool")
+        selected_material_ids = _selected_ids(nodes, "Material")
+        selected_process_ids = _selected_ids(nodes, "Process")
+        selected_constraint_ids = _selected_ids(nodes, "Constraint")
+        selected_table_ids = _selected_ids(nodes, "Table")
 
         # ── 关系 ──────────────────────────────────────────────────────────────
         edges = []
@@ -406,99 +451,100 @@ async def get_graph(
 
         edges += _query_edges("""
             MATCH (d:Document)-[:HAS_SECTION]->(s:Section)
-            WHERE $doc_id = '' OR d.name = $doc_id
+            WHERE d.name IN $doc_ids AND s.chunk_id IN $section_ids
             RETURN d.name AS source, s.chunk_id AS target, 'HAS_SECTION' AS type
-            LIMIT 5000
-        """, doc_id=doc_id)
+        """, doc_ids=selected_doc_ids, section_ids=selected_section_ids)
         edges += _query_edges("""
             MATCH (d:Document)-[:REFERENCES]->(r:Document)
-            WHERE $doc_id = '' OR d.name = $doc_id
+            WHERE d.name IN $doc_ids AND r.name IN $doc_ids
             RETURN d.name AS source, r.name AS target, 'REFERENCES' AS type
-            LIMIT 500
-        """, doc_id=doc_id)
+        """, doc_ids=selected_doc_ids)
         edges += _query_edges("""
             MATCH (d:Document)-[:HAS_SECTION]->(s:Section)-[:HAS_SUBSECTION]->(c:Section)
-            WHERE $doc_id = '' OR d.name = $doc_id
+            WHERE d.name IN $doc_ids
+              AND s.chunk_id IN $section_ids
+              AND c.chunk_id IN $section_ids
             RETURN s.chunk_id AS source, c.chunk_id AS target, 'HAS_SUBSECTION' AS type
-            LIMIT 5000
-        """, doc_id=doc_id)
+        """, doc_ids=selected_doc_ids, section_ids=selected_section_ids)
         edges += _query_edges("""
             MATCH (d:Document)-[:HAS_SECTION]->(s:Section)-[:HAS_IMAGE]->(i:Image)
-            WHERE $doc_id = '' OR d.name = $doc_id
+            WHERE d.name IN $doc_ids
+              AND s.chunk_id IN $section_ids
+              AND i.image_id IN $image_ids
             RETURN s.chunk_id AS source, i.image_id AS target, 'HAS_IMAGE' AS type
-            LIMIT 1000
-        """, doc_id=doc_id)
+        """, doc_ids=selected_doc_ids, section_ids=selected_section_ids, image_ids=selected_image_ids)
         edges += _query_edges("""
             MATCH (d:Document)-[:HAS_IMAGE]->(i:Image)
-            WHERE $doc_id = '' OR d.name = $doc_id
+            WHERE d.name IN $doc_ids AND i.image_id IN $image_ids
             RETURN d.name AS source, i.image_id AS target, 'HAS_IMAGE' AS type
-            LIMIT 500
-        """, doc_id=doc_id)
+        """, doc_ids=selected_doc_ids, image_ids=selected_image_ids)
         if limit_tbl > 0:
             edges += _query_edges("""
                 MATCH (d:Document)-[:HAS_SECTION]->(s:Section)-[:HAS_TABLE]->(t:Table)
-                WHERE $doc_id = '' OR d.name = $doc_id
+                WHERE d.name IN $doc_ids
+                  AND s.chunk_id IN $section_ids
+                  AND t.table_id IN $table_ids
                 RETURN s.chunk_id AS source, t.table_id AS target, 'HAS_TABLE' AS type
-                LIMIT 2000
-            """, doc_id=doc_id)
+            """, doc_ids=selected_doc_ids, section_ids=selected_section_ids, table_ids=selected_table_ids)
         edges += _query_edges("""
             MATCH (s:Section)-[:REQUIRES_TOOL]->(t:Tool)
+            WHERE s.chunk_id IN $section_ids AND t.name IN $tool_ids
             RETURN s.chunk_id AS source, t.name AS target, 'REQUIRES_TOOL' AS type
-            LIMIT 500
-        """)
+        """, section_ids=selected_section_ids, tool_ids=selected_tool_ids)
         edges += _query_edges("""
             MATCH (s:Section)-[:USES_MATERIAL]->(m:Material)
+            WHERE s.chunk_id IN $section_ids AND m.name IN $material_ids
             RETURN s.chunk_id AS source, m.name AS target, 'USES_MATERIAL' AS type
-            LIMIT 500
-        """)
+        """, section_ids=selected_section_ids, material_ids=selected_material_ids)
         edges += _query_edges("""
             MATCH (s:Section)-[:INVOLVES_PROCESS]->(p:Process)
+            WHERE s.chunk_id IN $section_ids AND p.name IN $process_ids
             RETURN s.chunk_id AS source, p.name AS target, 'INVOLVES_PROCESS' AS type
-            LIMIT 500
-        """)
+        """, section_ids=selected_section_ids, process_ids=selected_process_ids)
         edges += _query_edges("""
             MATCH (s:Section)-[:HAS_CONSTRAINT]->(c:Constraint)
+            WHERE s.chunk_id IN $section_ids AND c.constraint_id IN $constraint_ids
             RETURN s.chunk_id AS source, c.constraint_id AS target, 'HAS_CONSTRAINT' AS type
-            LIMIT 1000
-        """)
+        """, section_ids=selected_section_ids, constraint_ids=selected_constraint_ids)
         edges += _query_edges("""
             MATCH (p:Process)-[:REQUIRES_TOOL]->(t:Tool)
+            WHERE p.name IN $process_ids AND t.name IN $tool_ids
             RETURN p.name AS source, t.name AS target, 'REQUIRES_TOOL' AS type
-            LIMIT 300
-        """)
+        """, process_ids=selected_process_ids, tool_ids=selected_tool_ids)
         edges += _query_edges("""
             MATCH (p:Process)-[:USES_MATERIAL]->(m:Material)
+            WHERE p.name IN $process_ids AND m.name IN $material_ids
             RETURN p.name AS source, m.name AS target, 'USES_MATERIAL' AS type
-            LIMIT 300
-        """)
+        """, process_ids=selected_process_ids, material_ids=selected_material_ids)
         edges += _query_edges("""
             MATCH (a:Material)-[:ALTERNATIVE_TO]->(b:Material)
+            WHERE a.name IN $material_ids AND b.name IN $material_ids
             RETURN a.name AS source, b.name AS target, 'ALTERNATIVE_TO' AS type
-            LIMIT 200
-        """)
+        """, material_ids=selected_material_ids)
         edges += _query_edges("""
             MATCH (a)-[:COMPATIBLE_WITH]->(b)
-            RETURN elementId(a) AS source_eid, a.name AS source,
-                   elementId(b) AS target_eid, b.name AS target, 'COMPATIBLE_WITH' AS type
-            LIMIT 200
-        """)
+            WHERE ((a:Material AND a.name IN $material_ids) OR (a:Tool AND a.name IN $tool_ids))
+              AND ((b:Material AND b.name IN $material_ids) OR (b:Tool AND b.name IN $tool_ids))
+            RETURN a.name AS source, b.name AS target, 'COMPATIBLE_WITH' AS type
+        """, material_ids=selected_material_ids, tool_ids=selected_tool_ids)
         edges += _query_edges("""
             MATCH (i:Image)-[:MENTIONS_TOOL]->(t:Tool)
+            WHERE i.image_id IN $image_ids AND t.name IN $tool_ids
             RETURN i.image_id AS source, t.name AS target, 'MENTIONS_TOOL' AS type
-            LIMIT 200
-        """)
+        """, image_ids=selected_image_ids, tool_ids=selected_tool_ids)
         edges += _query_edges("""
             MATCH (new_doc:Document)-[:SUPERSEDES]->(old_doc:Document)
+            WHERE new_doc.name IN $doc_ids AND old_doc.name IN $doc_ids
             RETURN new_doc.name AS source, old_doc.name AS target, 'SUPERSEDES' AS type
-            LIMIT 100
-        """)
+        """, doc_ids=selected_doc_ids)
         edges += _query_edges("""
             MATCH (a:Section)-[r:SIMILAR_TO]-(b:Section)
-            WHERE a.chunk_id < b.chunk_id
+            WHERE a.chunk_id IN $section_ids
+              AND b.chunk_id IN $section_ids
+              AND a.chunk_id < b.chunk_id
             RETURN a.chunk_id AS source, b.chunk_id AS target,
                    'SIMILAR_TO' AS type
-            LIMIT 200
-        """)
+        """, section_ids=selected_section_ids)
 
     stats = {
         "total":    len(nodes),
