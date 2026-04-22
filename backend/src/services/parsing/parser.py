@@ -122,6 +122,7 @@ _CATALOG_HINT_RE = re.compile(
 _MODEL_CODE_TOKEN_RE = re.compile(r'\b(?:[A-Z]{2,}\d[\w-]*|\d{4,})\b')
 _TITLE_CONTINUATION_RE = re.compile(r'(?:\(|（)[^()（）]{0,200}$')
 _TRAILING_CONNECTOR_RE = re.compile(r'(?:and|or|with|for|to|of|the|a|an|及|和|与|或|并|、|/|-|—)$', re.IGNORECASE)
+_REFERENCE_TITLE_RE = re.compile(r'^(?:节|章|条|before\b|after\b|refer\b|as per\b)', re.IGNORECASE)
 
 
 def _match_section_heading(text: str) -> tuple[str, str] | None:
@@ -274,12 +275,29 @@ def is_likely_section_title(number: str, title: str) -> bool:
     visible = re.sub(r'\s+', '', normalized_title)
     natural_chars = len(re.findall(r'[\u4e00-\u9fffA-Za-z]', normalized_title))
     code_tokens = _MODEL_CODE_TOKEN_RE.findall(normalized_title)
+    digit_groups = re.findall(r'\d+(?:\.\d+)?', normalized_title)
     if (
         _CATALOG_HINT_RE.search(normalized_title)
         or (
             code_tokens
             and natural_chars < max(6, int(len(visible) * 0.45))
             and re.search(r'[\d#/\-–—]', normalized_title)
+        )
+    ):
+        return False
+    # 9c-bis. 数值/表格残片（如 "(0.251) 以上 127 (5)"、"N/A 24 N/A"）
+    if (
+        re.search(r'\bN/?A\b', normalized_title, re.IGNORECASE)
+        or normalized_title.startswith(("(", "（"))
+        or (
+            natural_chars <= 3
+            and len(digit_groups) >= 2
+            and re.search(r'[()/#\-–—]', normalized_title)
+        )
+        or (
+            natural_chars <= 4
+            and len(digit_groups) >= 1
+            and re.search(r'[()（）]', normalized_title)
         )
     ):
         return False
@@ -316,6 +334,106 @@ def _normalize_anchor_number(number: str) -> str:
     return normalized
 
 
+def _section_number_key(number: str) -> tuple[int, ...]:
+    normalized = _normalize_anchor_number(number)
+    if not normalized:
+        return tuple()
+    try:
+        return tuple(int(part) for part in normalized.split("."))
+    except ValueError:
+        return tuple()
+
+
+def _collect_toc_numbers_from_all_lines(all_lines: list[dict]) -> set[str]:
+    first_scope_page: int | None = None
+    for line in all_lines:
+        if line.get("type") != "heading":
+            continue
+        number = _normalize_anchor_number(str(line.get("number", "")))
+        title = str(line.get("title", "")).strip()
+        if number == "1" and re.search(r"(范围|scope)", title, re.IGNORECASE):
+            first_scope_page = int(line.get("page_idx", 0))
+            break
+
+    max_toc_page = first_scope_page if first_scope_page is not None else 10
+    toc_numbers: set[str] = set()
+    for line in all_lines:
+        if line.get("type") != "toc_heading":
+            continue
+        if int(line.get("page_idx", 0)) > max_toc_page:
+            continue
+        normalized = _normalize_anchor_number(str(line.get("number", "")))
+        if normalized:
+            toc_numbers.add(normalized)
+    return toc_numbers
+
+
+def _filter_headings_with_toc_anchors(
+    headings: list[dict],
+    toc_numbers: set[str],
+) -> list[dict]:
+    if not headings or not toc_numbers:
+        return headings
+
+    filtered: list[dict] = []
+    toc_top_levels = {
+        number for number in toc_numbers
+        if number.isdigit()
+    }
+    for heading in headings:
+        number = _normalize_anchor_number(str(heading.get("number", "")))
+        title = str(heading.get("title", "")).strip()
+        # 对于两位及以上的纯整数章节号，要求在目录锚点中出现；
+        # 否则多半是图示零件编号、表格行号或页内标注。
+        if (
+            number.isdigit()
+            and len(number) >= 2
+            and number not in toc_top_levels
+            and not _looks_like_toc(title)
+        ):
+            continue
+        filtered.append(heading)
+    return filtered
+
+
+def _prune_out_of_order_reference_noise(
+    headings: list[dict],
+    toc_numbers: set[str],
+) -> list[dict]:
+    if len(headings) < 3:
+        return headings
+
+    pruned: list[dict] = []
+    for idx, heading in enumerate(headings):
+        if idx == 0 or idx == len(headings) - 1:
+            pruned.append(heading)
+            continue
+
+        number = _normalize_anchor_number(str(heading.get("number", "")))
+        title = re.sub(r'\s+', ' ', str(heading.get("title", "")).strip())
+        current_key = _section_number_key(number)
+        prev_key = _section_number_key(str(headings[idx - 1].get("number", "")))
+        next_key = _section_number_key(str(headings[idx + 1].get("number", "")))
+
+        if (
+            current_key
+            and prev_key
+            and next_key
+            and current_key < prev_key
+            and current_key < next_key
+            and number not in toc_numbers
+            and (
+                _REFERENCE_TITLE_RE.search(title)
+                or re.search(r'(?:参见|按.*节|见.*节|refer to|as per section)', title, re.IGNORECASE)
+            )
+        ):
+            continue
+
+        pruned.append(heading)
+
+    return pruned
+
+
 def _trim_front_matter_headings(headings: list[dict]) -> list[dict]:
     """
     丢弃正文首个一级章节之前的伪标题。
@@ -350,6 +468,13 @@ def _trim_front_matter_headings(headings: list[dict]) -> list[dict]:
         return headings
 
     return headings[anchor_idx:]
+
+
+def _postprocess_headings(headings: list[dict], toc_numbers: set[str]) -> list[dict]:
+    headings = _filter_headings_with_toc_anchors(headings, toc_numbers)
+    headings = _trim_front_matter_headings(headings)
+    headings = _prune_out_of_order_reference_noise(headings, toc_numbers)
+    return headings
 
 
 def clean_content(text: str) -> str:
@@ -607,6 +732,18 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
                             ],
                             "global_pos": len(all_lines)
                         })
+                    elif heading and page_is_toc:
+                        all_lines.append({
+                            "type": "toc_heading",
+                            "number": heading[0],
+                            "title": heading[1],
+                            "page_idx": page_idx,
+                        })
+                        all_lines.append({
+                            "type": "text",
+                            "content": text,
+                            "page_idx": page_idx
+                        })
                     else:
                         all_lines.append({
                             "type": "text",
@@ -630,7 +767,8 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
                     _seen_nums.add(h["number"])
                     _deduped.append(h)
             headings = _deduped
-            headings = _trim_front_matter_headings(headings)
+            toc_numbers = _collect_toc_numbers_from_all_lines(all_lines)
+            headings = _postprocess_headings(headings, toc_numbers)
 
             for i, h in enumerate(headings):
                 # 收集当前标题到下一个标题之间的所有文本
@@ -690,6 +828,7 @@ def _extract_sections_legacy(pdf_path: Path, doc_id: str) -> list[dict]:
     # 多模式匹配：收集所有匹配并去重（按 start 排序）
     all_matches: list[tuple[int, re.Match]] = []
     seen_starts: set[int] = set()
+    toc_numbers: set[str] = set()
     for pat in SECTION_PATTERNS:
         for m in pat.finditer(full_text):
             if m.start() not in seen_starts:
@@ -714,10 +853,12 @@ def _extract_sections_legacy(pdf_path: Path, doc_id: str) -> list[dict]:
             seen_numbers.add(n)
             deduped_matches.append(m)
     matches = deduped_matches
-    matches = _trim_front_matter_headings([
+    match_items = [
         {"number": m.group(1), "title": m.group(2).strip(), "_match": m}
         for m in matches
-    ])
+    ]
+    match_items = _postprocess_headings(match_items, toc_numbers)
+    matches = match_items
     matches = [item["_match"] for item in matches]
 
     sections = []

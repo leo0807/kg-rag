@@ -3,10 +3,12 @@ from src.services.parsing.parser import (
     extract_meta,
     extract_sections,
     clean_content,
+    _filter_headings_with_toc_anchors,
     _is_likely_toc_page,
     _looks_like_toc,
     _match_section_heading,
     _normalize_heading_candidate,
+    _prune_out_of_order_reference_noise,
     _merge_wrapped_heading,
     _should_extend_heading_title,
     _trim_front_matter_headings,
@@ -188,6 +190,35 @@ class TestTocFiltering:
     def test_keeps_real_bilingual_section_titles(self):
         assert is_likely_section_title("9.4", "检验（Inspection）")
         assert is_likely_section_title("1", "范围（Scope）")
+
+    def test_rejects_numeric_fragment_table_rows(self):
+        assert not is_likely_section_title("6.38", "(0.251) 以上 127 (5)")
+        assert not is_likely_section_title("6.35", "及以上(0.250)")
+        assert not is_likely_section_title("12", "LM113 N/A N/A 24 N/A CMS-SL-904 II 型 M 级")
+
+    def test_filters_large_integer_noise_by_toc_anchor(self):
+        headings = [
+            {"number": "5.2.5", "title": "SEMCO 850 型手持式涂胶枪"},
+            {"number": "12", "title": "盎司定位器 - 塑料"},
+            {"number": "20", "title": "盎司定位器 - P = 塑料定位器"},
+            {"number": "5.2.6", "title": "密封剂平整工具"},
+            {"number": "9.4", "title": "检验（Inspection）"},
+        ]
+
+        filtered = _filter_headings_with_toc_anchors(headings, {"1", "2", "3", "4", "5", "6", "7", "8", "9", "9.4"})
+
+        assert [item["number"] for item in filtered] == ["5.2.5", "5.2.6", "9.4"]
+
+    def test_prunes_reference_noise_when_sequence_regresses(self):
+        headings = [
+            {"number": "7.5.1.2", "title": "除非其他文件另有规定，装配件连接处同时有填角密封和喷漆要求的，应在填角密封完成以后再进行喷漆或施加涂层。"},
+            {"number": "6.3.7", "title": "before silicone sealant is applied."},
+            {"number": "7.5.1.3", "title": "在规划装配工艺时，尽可能地将填角密封的工序提前，这样会有更好的开敞性。"},
+        ]
+
+        filtered = _prune_out_of_order_reference_noise(headings, {"7.5", "7.5.1"})
+
+        assert [item["number"] for item in filtered] == ["7.5.1.2", "7.5.1.3"]
 
 
 class TestWrappedHeadingMerge:
