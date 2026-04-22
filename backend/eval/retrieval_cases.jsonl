@@ -1,0 +1,10 @@
+{"question":"CPS0200 第一章范围讲的是什么？","gold_chunk_ids":["CPS0200_1"],"gold_doc_ids":["CPS0200"],"domain":"通用","strategy":"parallel"}
+{"question":"CPS0201 第一章范围的适用对象是什么？","gold_chunk_ids":["CPS0201_1"],"gold_doc_ids":["CPS0201"],"domain":"通用","strategy":"parallel"}
+{"question":"CPS0202 第一章范围主要约束哪些工作？","gold_chunk_ids":["CPS0202_1"],"gold_doc_ids":["CPS0202"],"domain":"通用","strategy":"parallel"}
+{"question":"查找与密封胶施工要求相关的规范文档","gold_doc_ids":["CPS0200"],"domain":"密封","strategy":"parallel"}
+{"question":"哪份规范涉及涂胶枪或胶枪类工具的使用要求？","gold_doc_ids":["CPS0201"],"domain":"工装","strategy":"parallel"}
+{"question":"查询与导管装配或安装步骤相关的规范","gold_doc_ids":["CPS0202"],"domain":"液压","strategy":"parallel"}
+{"question":"哪些规范文档包含工程图纸或大量图片分析内容？","gold_doc_ids":["CPS1000"],"domain":"图纸","strategy":"parallel"}
+{"question":"如果我要看某规范的引用文件章节，优先检索 CPS0200","gold_doc_ids":["CPS0200"],"domain":"通用","strategy":"sequential"}
+{"question":"检索 CPS0201 中关于要求或工艺要求的章节","gold_doc_ids":["CPS0201"],"domain":"工艺","strategy":"graph_augmented"}
+{"question":"想找 CPS0202 中和范围、引用文件、要求相关的核心章节","gold_doc_ids":["CPS0202"],"domain":"通用","strategy":"gnn"}
