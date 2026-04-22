@@ -5,6 +5,9 @@ src/routers/documents_entities.py
 import asyncio
 import json
 import logging
+import tempfile
+from pathlib import Path
+from typing import Callable, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from neo4j import Driver
@@ -18,7 +21,8 @@ _DOCUMENT_IMAGES_MATCH = """
     OPTIONAL MATCH (d)-[:HAS_SECTION]->(:Section)-[:HAS_IMAGE]->(section_img:Image)
     WITH d, collect(DISTINCT section_img) AS section_imgs
     OPTIONAL MATCH (d)-[:HAS_IMAGE]->(doc_img:Image)
-    WITH section_imgs + collect(DISTINCT doc_img) AS all_imgs
+    WITH section_imgs, collect(DISTINCT doc_img) AS doc_imgs
+    WITH section_imgs + doc_imgs AS all_imgs
     UNWIND all_imgs AS img
     WITH DISTINCT img
     WHERE img IS NOT NULL
@@ -35,6 +39,35 @@ def _decode_json_list(raw):
     if raw is None:
         return []
     return raw if isinstance(raw, list) else []
+
+
+def _resolve_image_binary_path(
+    image_id: str,
+    local_path: Optional[str],
+    minio_path: Optional[str],
+    download_image_bytes: Optional[Callable[[str], bytes]] = None,
+) -> tuple[Path, Optional[Path]]:
+    """返回可供图纸分析读取的本地图片路径，以及需要清理的临时文件。"""
+    if local_path:
+        candidate = Path(local_path)
+        if candidate.exists():
+            return candidate, None
+
+    if not minio_path:
+        raise FileNotFoundError(f"图片 {image_id} 缺少可用文件路径")
+
+    if download_image_bytes is None:
+        from ...core.storage import BUCKET_EXTRACTED_IMAGES, download_bytes
+
+        def _download_from_storage(key: str) -> bytes:
+            return download_bytes(BUCKET_EXTRACTED_IMAGES, key)
+
+        download_image_bytes = _download_from_storage
+
+    suffix = Path(minio_path).suffix or ".jpg"
+    temp_path = Path(tempfile.gettempdir()) / f"{image_id}{suffix}"
+    temp_path.write_bytes(download_image_bytes(minio_path))
+    return temp_path, temp_path
 
 
 @router.get("/images/{image_id}")
@@ -285,17 +318,27 @@ async def analyze_drawing_endpoint(
 
     with driver.session() as session:
         rec = session.run(
-            "MATCH (i:Image {image_id: $image_id}) RETURN i.path AS path, i.caption AS caption LIMIT 1",
+            """
+            MATCH (i:Image {image_id: $image_id})
+            RETURN i.path AS path, i.minio_path AS minio_path, i.caption AS caption
+            LIMIT 1
+            """,
             image_id=image_id,
         ).single()
     if not rec:
         raise HTTPException(404, f"图片不存在: {image_id}")
 
     async def _run():
+        cleanup_path: Path | None = None
         try:
             from ...services.drawing_analyzer import analyze_drawing
             from ...services.entity_writer    import write_drawing_constraints
-            result = analyze_drawing(rec["path"], rec["caption"] or "", doc_id)
+            image_path, cleanup_path = _resolve_image_binary_path(
+                image_id=image_id,
+                local_path=rec["path"],
+                minio_path=rec["minio_path"],
+            )
+            result = analyze_drawing(str(image_path), rec["caption"] or "", doc_id)
             with driver.session() as session:
                 session.run("""
                     MATCH (i:Image {image_id: $image_id})
@@ -317,6 +360,9 @@ async def analyze_drawing_endpoint(
             logger.info("图纸重新分析完成 image_id=%s", image_id)
         except Exception as e:
             logger.warning("图纸重新分析失败 image_id=%s: %s", image_id, e)
+        finally:
+            if cleanup_path:
+                cleanup_path.unlink(missing_ok=True)
 
     asyncio.create_task(_run())
     return {"image_id": image_id, "status": "analyzing", "message": "图纸分析已在后台启动"}
