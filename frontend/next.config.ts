@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  turbopack: {
+    root: __dirname,
+  },
   async rewrites() {
     return [
       {
@@ -18,7 +21,7 @@ const nextConfig: NextConfig = {
   experimental: {
     proxyTimeout: 600000,
     // 允许更大的上传体积，避免 /api/ingest 超过 10MB 被截断
-    middlewareClientMaxBodySize: "200mb",
+    proxyClientMaxBodySize: "200mb",
   },
 };
 

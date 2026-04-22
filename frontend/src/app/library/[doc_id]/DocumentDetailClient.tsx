@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import type { MouseEvent } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFavorites } from "@/app/favorites/useFavorites";
 import { fetchApi } from "@/lib/api";
 import { DrawingsTab } from "./DrawingsTab";
@@ -53,6 +53,7 @@ interface Section {
   title: string;
   chunk_id: string;
   page_idx?: number | null;
+  bbox?: [number, number, number, number] | number[] | null;
 }
 
 interface DocumentDetail {
@@ -69,6 +70,19 @@ interface SectionContent {
   title: string;
   content: string;
 }
+
+type IdleDeadlineLike = {
+  didTimeout: boolean;
+  timeRemaining: () => number;
+};
+
+type IdleWindow = Window & {
+  requestIdleCallback?: (
+    callback: (deadline: IdleDeadlineLike) => void,
+    options?: { timeout: number },
+  ) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
 
 function sortSections(sections: Section[]): Section[] {
   return [...sections].sort((a, b) => {
@@ -117,23 +131,42 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
   const [anchorPage, setAnchorPage] = useState<number | undefined>(
     initialPage ? parseInt(initialPage, 10) : undefined,
   );
-  const [pdfLoading, setPdfLoading] = useState(false);
   const [watermarkUrl, setWatermarkUrl] = useState("");
   const [activeTab, setActiveTab] = useState<
     "sections" | "drawings" | "reprocess"
   >("sections");
+  const [visibleSectionIds, setVisibleSectionIds] = useState<string[]>([]);
+  const sectionRequestsRef = useRef(new Map<string, Promise<void>>());
+  const sectionContentRef = useRef<Record<string, SectionContent>>({});
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const sectionRowRefs = useRef(new Map<string, HTMLDivElement>());
+  const visibleSectionIdsRef = useRef(new Set<string>());
+  const idlePrefetchHandleRef = useRef<number | null>(null);
+  const prefetchingChunkRef = useRef<string | null>(null);
   const { getFavoriteId, addFavorite, removeFavorite } = useFavorites();
   const sortedSections = useMemo(
     () => sortSections(doc?.sections ?? []),
     [doc?.sections],
   );
-  const activeSectionLabel = useMemo(() => {
+  const activeSection = useMemo(() => {
     if (!activeChunk) return undefined;
-    const current = sortedSections.find(
-      (section) => section.chunk_id === activeChunk,
-    );
-    return current ? `§${current.number} ${current.title}` : undefined;
+    return sortedSections.find((section) => section.chunk_id === activeChunk);
   }, [activeChunk, sortedSections]);
+  const activeSectionLabel = useMemo(
+    () =>
+      activeSection
+        ? `§${activeSection.number} ${activeSection.title}`
+        : undefined,
+    [activeSection],
+  );
+  const clearActiveSectionSelection = useCallback(() => {
+    setActiveChunk(null);
+    setAnchorPage(undefined);
+  }, []);
+
+  useEffect(() => {
+    sectionContentRef.current = sectionContent;
+  }, [sectionContent]);
 
   // 监控 URL 参数变化
   useEffect(() => {
@@ -161,7 +194,15 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
     if (!doc?.sections?.length) return;
     if (anchorPage === undefined || Number.isNaN(anchorPage)) return;
 
-    const byPage = [...doc.sections]
+    if (
+      activeSection &&
+      typeof activeSection.page_idx === "number" &&
+      activeSection.page_idx === anchorPage
+    ) {
+      return;
+    }
+
+    const byPage = [...sortedSections]
       .filter(
         (section): section is Section & { page_idx: number } =>
           typeof section.page_idx === "number",
@@ -170,18 +211,23 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
 
     if (byPage.length === 0) return;
 
-    const current = byPage.reduce<Section | null>((best, section) => {
-      if (section.page_idx > anchorPage) return best;
-      if (!best) return section;
-      return section.page_idx >= (best.page_idx ?? -1) ? section : best;
-    }, null);
+    const samePageSections = byPage.filter(
+      (section) => section.page_idx === anchorPage,
+    );
+    const current =
+      samePageSections[0] ??
+      byPage.reduce<Section | null>((best, section) => {
+        if (section.page_idx > anchorPage) return best;
+        if (!best) return section;
+        return section.page_idx >= (best.page_idx ?? -1) ? section : best;
+      }, null);
 
     if (current) {
       setActiveChunk((prev) =>
         prev === current.chunk_id ? prev : current.chunk_id,
       );
     }
-  }, [anchorPage, doc?.sections]);
+  }, [activeSection, anchorPage, doc?.sections, sortedSections]);
 
   useEffect(() => {
     if (!docId) return;
@@ -255,42 +301,68 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
     }
   }
 
-  async function toggleSection(section: Section) {
-    setActiveChunk(section.chunk_id);
-    if (pdfUrl) {
-      setShowPdf(true);
-      if (typeof section.page_idx === "number") {
-        setAnchorPage(section.page_idx);
+  const activateSection = useCallback(
+    (section: Section) => {
+      setActiveChunk(section.chunk_id);
+      if (pdfUrl) {
+        setShowPdf(true);
+        if (typeof section.page_idx === "number") {
+          setAnchorPage(section.page_idx);
+        } else {
+          setAnchorPage(undefined);
+        }
       }
-    }
+    },
+    [pdfUrl],
+  );
 
+  const ensureSectionContent = useCallback(
+    async (section: Section, options?: { background?: boolean }) => {
+      if (sectionContentRef.current[section.chunk_id]) return;
+
+      const existing = sectionRequestsRef.current.get(section.chunk_id);
+      if (existing) {
+        await existing;
+        return;
+      }
+
+      if (!options?.background) {
+        setLoadingChunk(section.chunk_id);
+      }
+      const request = fetchApi<SectionContent>(
+        `/api/sections/${section.chunk_id}`,
+      )
+        .then((data) => {
+          setSectionContent((prev) => ({ ...prev, [section.chunk_id]: data }));
+        })
+        .finally(() => {
+          sectionRequestsRef.current.delete(section.chunk_id);
+          if (!options?.background) {
+            setLoadingChunk((prev) =>
+              prev === section.chunk_id ? null : prev,
+            );
+          }
+        });
+
+      sectionRequestsRef.current.set(section.chunk_id, request);
+      await request;
+    },
+    [],
+  );
+
+  async function toggleSectionExpand(section: Section) {
+    activateSection(section);
     if (expandedChunk === section.chunk_id) {
       setExpandedChunk(null);
       return;
     }
-    if (sectionContent[section.chunk_id]) {
-      setExpandedChunk(section.chunk_id);
-      return;
-    }
-    setLoadingChunk(section.chunk_id);
-    try {
-      const data = await fetchApi<SectionContent>(
-        `/api/sections/${section.chunk_id}`,
-      );
-      setSectionContent((prev) => ({ ...prev, [section.chunk_id]: data }));
-      setExpandedChunk(section.chunk_id);
-    } finally {
-      setLoadingChunk(null);
-    }
+
+    setExpandedChunk(section.chunk_id);
+    await ensureSectionContent(section);
   }
 
-  if (!doc) {
-    return (
-      <div className="flex items-center justify-center h-full text-gray-500 text-sm gap-2">
-        <Loader2 size={16} className="animate-spin" />
-        加载中...
-      </div>
-    );
+  function handleSectionNavigate(section: Section) {
+    activateSection(section);
   }
 
   const visibleSections = sectionSearch
@@ -301,8 +373,159 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
       )
     : sortedSections;
 
+  useEffect(() => {
+    if (!doc) return;
+    if (activeTab !== "sections") {
+      visibleSectionIdsRef.current.clear();
+      setVisibleSectionIds([]);
+      return;
+    }
+
+    const root = scrollContainerRef.current;
+    if (!root) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        const next = new Set(visibleSectionIdsRef.current);
+
+        for (const entry of entries) {
+          const chunkId = (entry.target as HTMLElement).dataset.chunkId;
+          if (!chunkId) continue;
+          if (entry.isIntersecting) {
+            if (!next.has(chunkId)) {
+              next.add(chunkId);
+              changed = true;
+            }
+          } else if (next.delete(chunkId)) {
+            changed = true;
+          }
+        }
+
+        if (!changed) return;
+        visibleSectionIdsRef.current = next;
+        const orderedVisible = visibleSections
+          .filter((section) => next.has(section.chunk_id))
+          .map((section) => section.chunk_id);
+
+        setVisibleSectionIds((prev) => {
+          if (
+            prev.length === orderedVisible.length &&
+            prev.every((value, index) => value === orderedVisible[index])
+          ) {
+            return prev;
+          }
+          return orderedVisible;
+        });
+      },
+      {
+        root,
+        rootMargin: "140px 0px",
+        threshold: 0.01,
+      },
+    );
+
+    for (const section of visibleSections) {
+      const node = sectionRowRefs.current.get(section.chunk_id);
+      if (node) observer.observe(node);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [activeTab, visibleSections, doc]);
+
+  useEffect(() => {
+    if (!doc) return;
+    if (activeTab !== "sections" || visibleSectionIds.length === 0) return;
+    if (prefetchingChunkRef.current) return;
+
+    const prefetchQueue = visibleSections.filter(
+      (section) =>
+        visibleSectionIds.includes(section.chunk_id) &&
+        !sectionContentRef.current[section.chunk_id] &&
+        !sectionRequestsRef.current.has(section.chunk_id) &&
+        section.chunk_id !== expandedChunk,
+    );
+
+    const nextSection = prefetchQueue[0];
+    if (!nextSection) return;
+
+    let cancelled = false;
+    const idleWindow = window as IdleWindow;
+
+    const runPrefetch = async (deadline: IdleDeadlineLike) => {
+      if (cancelled) return;
+      if (!deadline.didTimeout && deadline.timeRemaining() < 8) {
+        schedulePrefetch();
+        return;
+      }
+
+      prefetchingChunkRef.current = nextSection.chunk_id;
+      try {
+        await ensureSectionContent(nextSection, { background: true });
+      } finally {
+        prefetchingChunkRef.current = null;
+        idlePrefetchHandleRef.current = null;
+      }
+    };
+
+    const schedulePrefetch = () => {
+      if (cancelled || idlePrefetchHandleRef.current !== null) return;
+
+      if (idleWindow.requestIdleCallback) {
+        idlePrefetchHandleRef.current = idleWindow.requestIdleCallback(
+          (deadline) => {
+            idlePrefetchHandleRef.current = null;
+            void runPrefetch(deadline);
+          },
+          { timeout: 1200 },
+        );
+      } else {
+        idlePrefetchHandleRef.current = window.setTimeout(() => {
+          idlePrefetchHandleRef.current = null;
+          void runPrefetch({
+            didTimeout: true,
+            timeRemaining: () => 0,
+          });
+        }, 180);
+      }
+    };
+
+    schedulePrefetch();
+
+    return () => {
+      cancelled = true;
+      if (idlePrefetchHandleRef.current !== null) {
+        if (idleWindow.cancelIdleCallback) {
+          idleWindow.cancelIdleCallback(idlePrefetchHandleRef.current);
+        } else {
+          window.clearTimeout(idlePrefetchHandleRef.current);
+        }
+        idlePrefetchHandleRef.current = null;
+      }
+    };
+  }, [
+    activeTab,
+    ensureSectionContent,
+    expandedChunk,
+    visibleSectionIds,
+    visibleSections,
+    doc,
+  ]);
+
+  if (!doc) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-500 text-sm gap-2">
+        <Loader2 size={16} className="animate-spin" />
+        加载中...
+      </div>
+    );
+  }
+
   const docPanel = (
     <div
+      ref={scrollContainerRef}
       className={`bg-gray-950 overflow-y-auto ${showPdf ? "flex-1 min-w-0" : "p-8 max-w-3xl min-h-screen"}`}
     >
       <div className={showPdf ? "px-6 pt-5 pb-4" : "mb-6"}>
@@ -442,7 +665,17 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
                 const isActive = activeChunk === section.chunk_id;
                 const content = sectionContent[section.chunk_id];
                 return (
-                  <div key={section.chunk_id}>
+                  <div
+                    key={section.chunk_id}
+                    ref={(node) => {
+                      if (node) {
+                        sectionRowRefs.current.set(section.chunk_id, node);
+                      } else {
+                        sectionRowRefs.current.delete(section.chunk_id);
+                      }
+                    }}
+                    data-chunk-id={section.chunk_id}
+                  >
                     <div
                       className={`flex items-center group rounded-lg border transition-colors ${
                         isActive
@@ -452,7 +685,7 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
                     >
                       <button
                         type="button"
-                        onClick={() => void toggleSection(section)}
+                        onClick={() => handleSectionNavigate(section)}
                         className="flex-1 flex items-baseline gap-3 px-3 py-2.5 text-left min-w-0"
                         aria-current={isActive ? "true" : undefined}
                       >
@@ -467,16 +700,30 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
                           {highlight(section.title, sectionSearch)}
                         </span>
                         <span
-                          className={`shrink-0 transition-opacity ${isActive ? "text-indigo-300 opacity-100" : "text-gray-600 opacity-0 group-hover:opacity-100"}`}
+                          className={`shrink-0 ${isActive ? "text-indigo-300" : "text-gray-600 opacity-0 group-hover:opacity-100"}`}
                         >
-                          {isLoading ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : isExpanded ? (
-                            <ChevronUp size={12} />
-                          ) : (
-                            <ChevronDown size={12} />
-                          )}
+                          {typeof section.page_idx === "number"
+                            ? `P${section.page_idx + 1}`
+                            : ""}
                         </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void toggleSectionExpand(section)}
+                        title={isExpanded ? "收起章节内容" : "展开章节内容"}
+                        className={`px-2 py-2.5 shrink-0 transition-colors ${
+                          isActive
+                            ? "text-indigo-300 hover:text-white"
+                            : "text-gray-600 hover:text-gray-300"
+                        }`}
+                      >
+                        {isLoading ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : isExpanded ? (
+                          <ChevronUp size={12} />
+                        ) : (
+                          <ChevronDown size={12} />
+                        )}
                       </button>
                       <button
                         type="button"
@@ -504,9 +751,16 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
                         />
                       </button>
                     </div>
-                    {isExpanded && content && (
+                    {isExpanded && (
                       <div className="mx-3 mb-2 px-4 py-3 bg-gray-900 rounded-lg border border-gray-800 text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">
-                        {content.content}
+                        {content ? (
+                          content.content
+                        ) : (
+                          <div className="flex items-center gap-2 text-gray-500">
+                            <Loader2 size={14} className="animate-spin" />
+                            正在加载章节内容...
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -534,14 +788,19 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
         <PdfPanel
           docId={doc.doc_id}
           pdfUrl={pdfUrl}
-          pdfLoading={pdfLoading}
           watermarkUrl={watermarkUrl}
           canDownload={isAdmin && Boolean(downloadUrl)}
           anchorPage={anchorPage}
+          anchorBBox={
+            activeSection && typeof activeSection.page_idx === "number"
+              ? (activeSection.bbox ?? undefined)
+              : undefined
+          }
+          activeSectionNumber={activeSection?.number}
+          activeSectionTitle={activeSection?.title}
           activeSectionLabel={activeSectionLabel}
+          onManualPageChange={clearActiveSectionSelection}
           onDownload={handleDownload}
-          onLoadStart={() => setPdfLoading(true)}
-          onLoad={() => setPdfLoading(false)}
           onClose={() => setShowPdf(false)}
         />
       </div>
