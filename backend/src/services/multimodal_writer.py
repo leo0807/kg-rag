@@ -10,9 +10,9 @@ src/services/multimodal_writer.py
 """
 import logging
 import json
-from pathlib import Path
 from neo4j import Driver
 from .es_store import get_es
+from .image_vector_service import build_image_milvus_text
 
 logger = logging.getLogger(__name__)
 
@@ -145,14 +145,20 @@ def _embed_images_to_milvus(images: list[dict], doc_id: str) -> None:
         milvus_data = []
         for img in images:
             analysis = img.get("analysis", {})
+            drawing  = img.get("drawing", {})
             desc     = analysis.get("description", img.get("caption", ""))
-            if not desc:
+            vector_text = build_image_milvus_text(
+                summary=desc,
+                part_numbers=drawing.get("part_numbers"),
+                assembly_relations=drawing.get("assembly_relations"),
+            )
+            if not vector_text:
                 continue
-            texts.append(desc)
+            texts.append(vector_text)
             milvus_data.append({
                 "chunk_id":  img["image_id"],
                 "doc_id":    doc_id,
-                "text":      desc,
+                "text":      vector_text,
                 "embedding": None,  # 待填充
             })
 

@@ -234,14 +234,17 @@ def _run_drawings(driver, doc_id, images, task, step):
             if caption.strip() and result.get("analysis_level") != "skipped":
                 try:
                     from ..embedder      import embed_texts
+                    from ..image_vector_service import build_image_milvus_text
                     from ..milvus_store  import upsert_sections
 
-                    # 组合可检索文本：描述 + 件号 + 装配关系
-                    milvus_text = caption
-                    if result.get("part_numbers"):
-                        milvus_text += "\n件号: " + ", ".join(result["part_numbers"])
-                    if result.get("assembly_relations"):
-                        milvus_text += "\n装配关系: " + "; ".join(result["assembly_relations"])
+                    milvus_text = build_image_milvus_text(
+                        summary=caption,
+                        part_numbers=result.get("part_numbers"),
+                        assembly_relations=result.get("assembly_relations"),
+                    )
+
+                    if not milvus_text:
+                        continue
 
                     embeddings = embed_texts([milvus_text])
                     if embeddings and embeddings[0]:

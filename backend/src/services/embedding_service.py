@@ -86,13 +86,13 @@ class _OpenAICompatEmbeddingProvider:
         return self._dim
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        import httpx
+        import requests
         # DashScope 每次最多 25 条，分批发送
         batch_size = 25
         results: list[list[float]] = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
-            resp  = httpx.post(
+            resp  = requests.post(
                 f"{self._url}/embeddings",
                 headers={"Authorization": f"Bearer {self._key}",
                          "Content-Type":  "application/json"},
@@ -123,6 +123,7 @@ class EmbeddingService:
 
     def __init__(self):
         from ..core.config import settings
+        self._settings = settings
         self._provider = self._build_provider(settings)
 
     @staticmethod
@@ -157,6 +158,30 @@ class EmbeddingService:
             model   = model,
         )
 
+    @staticmethod
+    def _build_api_fallback_provider(s):
+        if s.DASHSCOPE_API_KEY:
+            model = s.EMBEDDING_QWEN_MODEL or "text-embedding-v3"
+            dim   = s.EMBEDDING_QWEN_DIM or 1024
+            logger.warning("本地 Embedding 不可用，自动回落到通义文本向量 model=%s", model)
+            return _OpenAICompatEmbeddingProvider(
+                api_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                api_key=s.DASHSCOPE_API_KEY,
+                model=model,
+                dim=dim,
+            )
+
+        if s.EMBEDDING_API_URL and s.EMBEDDING_API_KEY:
+            model = s.EMBEDDING_MODEL or "text-embedding-ada-002"
+            logger.warning("本地 Embedding 不可用，自动回落到兼容 Embedding API model=%s", model)
+            return _OpenAICompatEmbeddingProvider(
+                api_url=s.EMBEDDING_API_URL,
+                api_key=s.EMBEDDING_API_KEY,
+                model=model,
+            )
+
+        return None
+
     # ── 公共接口 ────────────────────────────────────────────────────────────
 
     @property
@@ -178,6 +203,12 @@ class EmbeddingService:
         try:
             return self._provider.embed_batch(texts)
         except Exception as e:
+            if isinstance(self._provider, _LocalBGEProvider):
+                fallback_provider = self._build_api_fallback_provider(self._settings)
+                if fallback_provider is not None:
+                    logger.warning("EmbeddingService 本地模式失败，切换到 API 回退: %s", e)
+                    self._provider = fallback_provider
+                    return self._provider.embed_batch(texts)
             logger.error("EmbeddingService.embed_batch 失败 (texts=%d): %s", len(texts), e)
             raise
 
