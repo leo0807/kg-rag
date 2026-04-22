@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from src.services import retrieval_harness_service as svc
+from src.services.evaluation import retrieval_harness_service as svc
 
 
 @pytest.fixture(autouse=True)

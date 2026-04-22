@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.services import retrieval_harness_service as svc
+from src.services.evaluation import retrieval_harness_service as svc
 
 
 def test_builtin_retrieval_cases_jsonl_is_parseable():

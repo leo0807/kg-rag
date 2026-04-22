@@ -43,7 +43,7 @@ def reprocess_batch_task(self, doc_ids: list[str], pipelines: list[str]):
 
     取消：向 Redis 写入 key=reprocess_cancel_{task_id} 即可。
     """
-    from src.services.reprocess_service import reprocess_document
+    from src.services.ingestion.reprocess_service import reprocess_document
 
     driver = _make_driver()
     redis_client = _make_redis()

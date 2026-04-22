@@ -1,4 +1,4 @@
-from src.services.objective_doc_eval_service import (
+from src.services.evaluation.objective_doc_eval_service import (
     _apply_choice_support_override,
     _build_objective_retrieval_query,
     _answer_objective_question,
@@ -110,7 +110,7 @@ def test_answer_objective_question_uses_stem_only_on_primary_retrieval():
         })
         return [], {}
 
-    with patch("src.services.objective_doc_eval_service.DO_RETRIEVAL", side_effect=fake_retrieval):
+    with patch("src.services.evaluation.objective_doc_eval_service.DO_RETRIEVAL", side_effect=fake_retrieval):
         result = _answer_objective_question(
             question=question,
             options=options,
@@ -207,10 +207,10 @@ def test_answer_objective_question_uses_graph_augmented_as_soft_supplement():
     fake_llm = MagicMock()
     fake_llm.chat.return_value = '{"final_answer":"","reason":"根据规范描述可知其对应防漏水、防腐蚀、防漏油、防漏气。"}'
 
-    with patch("src.services.objective_doc_eval_service.DO_RETRIEVAL", side_effect=fake_retrieval), \
-         patch("src.services.objective_doc_eval_service.get_llm_service", return_value=fake_llm), \
-         patch("src.services.objective_doc_eval_service._expand_objective_graph_neighbors", return_value=[]), \
-         patch("src.services.objective_doc_eval_service._expand_objective_local_neighbors", return_value=[]):
+    with patch("src.services.evaluation.objective_doc_eval_service.DO_RETRIEVAL", side_effect=fake_retrieval), \
+         patch("src.services.evaluation.objective_doc_eval_service.get_llm_service", return_value=fake_llm), \
+         patch("src.services.evaluation.objective_doc_eval_service._expand_objective_graph_neighbors", return_value=[]), \
+         patch("src.services.evaluation.objective_doc_eval_service._expand_objective_local_neighbors", return_value=[]):
         result = _answer_objective_question(
             question="通用密封的目的是______、______、______、______。",
             options=options,

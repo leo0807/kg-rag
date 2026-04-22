@@ -1,5 +1,5 @@
 import pytest
-from src.services.parser import (
+from src.services.parsing.parser import (
     extract_meta,
     extract_sections,
     clean_content,

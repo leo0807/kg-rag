@@ -12,18 +12,18 @@ import asyncio
 
 from .core.config import settings
 from .core.database import get_driver
-from .services.parser import parse
+from .services.parsing.parser import parse
 from .services.neo4j_writer import write_document
 from .startup import lifespan
-from .routers.document_files     import router as document_files_router
-from .routers.document_analysis  import router as document_analysis_router
-from .routers.document_backfill  import router as document_backfill_router
-from .routers.search             import router as search_router
-from .routers.documents          import router as documents_router
-from .routers.documents_entities import router as documents_entities_router
-from .routers.graph              import router as graph_router
-from .routers.graph_stats        import router as graph_stats_router
-from .routers.graph_tour         import router as graph_tour_router
+from .routers.docs.files         import router as document_files_router
+from .routers.docs.analysis      import router as document_analysis_router
+from .routers.docs.backfill      import router as document_backfill_router
+from .routers.search_api.search  import router as search_router
+from .routers.docs.documents     import router as documents_router
+from .routers.docs.entities      import router as documents_entities_router
+from .routers.graph_api.graph    import router as graph_router
+from .routers.graph_api.stats    import router as graph_stats_router
+from .routers.graph_api.tour     import router as graph_tour_router
 from .routers.query              import router as query_router
 from .routers.sessions           import router as sessions_router
 from .routers.auth               import router as auth_router
@@ -31,22 +31,22 @@ from .routers.settings           import router as settings_router
 from .routers.users              import router as users_router
 from .routers.feedback           import router as feedback_router
 from .routers.conversations      import router as conversations_router
-from .routers.admin_entities     import router as admin_entities_router
-from .routers.admin_activity     import router as admin_activity_router
-from .routers.admin_analytics    import router as admin_analytics_router
-from .routers.admin_dashboard    import router as admin_dashboard_router
-from .routers.admin_batch_ingest import router as admin_batch_ingest_router
-from .routers.admin_eval         import router as admin_eval_router
+from .routers.admin_api.entities import router as admin_entities_router
+from .routers.admin_api.activity import router as admin_activity_router
+from .routers.admin_api.analytics import router as admin_analytics_router
+from .routers.admin_api.dashboard import router as admin_dashboard_router
+from .routers.admin_api.batch_ingest import router as admin_batch_ingest_router
+from .routers.admin_api.eval     import router as admin_eval_router
 from .routers.mobile             import router as mobile_router
-from .routers.gnn                import router as gnn_router
-from .routers.visual_qc          import router as visual_qc_router
-from .routers.reprocess          import router as reprocess_router
-from .routers.admin_cache        import router as admin_cache_router
+from .routers.graph_api.gnn      import router as gnn_router
+from .routers.graph_api.visual_qc import router as visual_qc_router
+from .routers.docs.reprocess     import router as reprocess_router
+from .routers.admin_api.cache    import router as admin_cache_router
 from .routers.annotations        import router as annotations_router
 from .routers.ai_status          import router as ai_status_router
-from .routers.graph_references   import router as graph_references_router
+from .routers.graph_api.references import router as graph_references_router
 from .routers.favorites          import router as favorites_router
-from .routers.search_autocomplete import router as search_autocomplete_router
+from .routers.search_api.autocomplete import router as search_autocomplete_router
 from .auth.deps import get_admin_user as _get_admin_user
 
 from .services.health import health_monitor
@@ -241,7 +241,7 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
         if tmp_path.suffix.lower() in (".docx", ".doc"):
             _task_update(task_id, step="converting")
             try:
-                from .routers.documents import _find_soffice, PREVIEW_DIR as _PREVIEW_DIR
+                from .routers.docs.documents import _find_soffice, PREVIEW_DIR as _PREVIEW_DIR
                 _soffice = _find_soffice()
                 if _soffice:
                     import subprocess as _sp

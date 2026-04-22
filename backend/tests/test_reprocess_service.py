@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from src.services.reprocess_service import _prepare_reprocess_pdf
+from src.services.ingestion.reprocess_service import _prepare_reprocess_pdf
 
 
 def test_prepare_reprocess_pdf_converts_docx(monkeypatch, tmp_path):
@@ -11,7 +11,7 @@ def test_prepare_reprocess_pdf_converts_docx(monkeypatch, tmp_path):
     converted.write_text("pdf", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.services.parser._convert_office_to_pdf",
+        "src.services.parsing.parser._convert_office_to_pdf",
         lambda path: converted,
     )
 

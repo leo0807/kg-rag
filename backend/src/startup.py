@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI):
 
     # LibreOffice 可用性检查（仅警告，不阻断启动）
     try:
-        from .services.parser import _find_soffice
+        from .services.parsing.parser import _find_soffice
         soffice = _find_soffice()
         if soffice:
             logger.info("LibreOffice 已就绪: %s", soffice)

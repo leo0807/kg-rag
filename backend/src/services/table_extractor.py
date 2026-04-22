@@ -183,7 +183,7 @@ def _rows_to_constraints(
 # ── 主入口 ────────────────────────────────────────────────────────────────────
 
 def is_available() -> bool:
-    from .ocr_engine import is_struct_available
+    from .parsing.ocr_engine import is_struct_available
     # camelot 可独立提取矢量表格；结构化 OCR 仅作为补充能力。
     return _CAMELOT_AVAILABLE or is_struct_available()
 
@@ -200,7 +200,7 @@ def extract_tables_structured(
         "constraints": [...]
     }]
     """
-    from .ocr_engine import render_page_to_image, ocr_page_struct
+    from .parsing.ocr_engine import render_page_to_image, ocr_page_struct
     try:
         import pdfplumber
     except ImportError:
@@ -358,7 +358,7 @@ def _extract_page_with_vision(
     对单个页面用 VisionService（task=table）提取表格。
     需要先将页面渲染为图片。
     """
-    from .ocr_engine import render_page_to_image
+    from .parsing.ocr_engine import render_page_to_image
     import tempfile, os
     from PIL import Image as _PILImage
 

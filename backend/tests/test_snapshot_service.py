@@ -2,7 +2,7 @@ import json
 
 
 def test_list_snapshots_migrates_legacy_files(tmp_path, monkeypatch):
-    from src.services import snapshot_service as svc
+    from src.services.ingestion import snapshot_service as svc
 
     new_root = tmp_path / "uploads" / "snapshots"
     legacy_root = tmp_path / "snapshots"
@@ -19,10 +19,10 @@ def test_list_snapshots_migrates_legacy_files(tmp_path, monkeypatch):
 
     monkeypatch.setattr(svc, "SNAPSHOT_DIR", new_root)
     monkeypatch.setattr(svc, "LEGACY_SNAPSHOT_DIR", legacy_root)
+    monkeypatch.setattr(svc, "_list_snapshot_ids_from_minio", lambda doc_id: set())
 
     snapshots = svc.list_snapshots("CPS1000")
 
     assert snapshots[0]["snapshot_id"] == "snap_123"
     assert (new_root / "CPS1000" / "snap_123.json").exists()
     assert not (legacy_doc_dir / "snap_123.json").exists()
-

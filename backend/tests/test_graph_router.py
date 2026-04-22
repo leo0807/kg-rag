@@ -1,4 +1,4 @@
-from src.routers.graph import _append_missing_owner_docs
+from src.routers.graph_api.graph import _append_missing_owner_docs
 
 
 def test_append_missing_owner_docs_adds_missing_document_nodes():
