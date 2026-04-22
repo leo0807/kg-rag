@@ -9,10 +9,12 @@ import logging
 from pathlib import Path
 
 from .parser import (
-    SECTION_PATTERN,
+    SECTION_PATTERNS,
     clean_content,
     extract_refs,
     extract_meta,
+    is_likely_section_title,
+    _trim_front_matter_headings,
 )
 from .ocr_engine import render_page_to_image, ocr_page, is_available
 
@@ -41,8 +43,36 @@ def extract_sections_with_ocr(pdf_path: Path, doc_id: str) -> list[dict]:
             full_text += text + "\n"
 
     # 章节切分（与 parser.py 保持一致）
-    matches = list(SECTION_PATTERN.finditer(full_text))
-    matches = [m for m in matches if len(m.group(2)) >= 2 and m.group(2) != "_"]
+    all_matches: list[tuple[int, re.Match]] = []
+    seen_starts: set[int] = set()
+    for pat in SECTION_PATTERNS:
+        for m in pat.finditer(full_text):
+            if m.start() not in seen_starts:
+                seen_starts.add(m.start())
+                all_matches.append((m.start(), m))
+    all_matches.sort(key=lambda item: item[0])
+
+    matches = [
+        m for _, m in all_matches
+        if len(m.group(2).strip()) >= 2
+        and m.group(2).strip() != "_"
+        and is_likely_section_title(m.group(1), m.group(2).strip())
+    ]
+
+    seen_numbers: set[str] = set()
+    deduped_matches: list[re.Match] = []
+    for m in matches:
+        number = m.group(1)
+        if number in seen_numbers:
+            continue
+        seen_numbers.add(number)
+        deduped_matches.append(m)
+    matches = deduped_matches
+    matches = _trim_front_matter_headings([
+        {"number": m.group(1), "title": m.group(2).strip(), "_match": m}
+        for m in matches
+    ])
+    matches = [item["_match"] for item in matches]
 
     sections = []
     for i, match in enumerate(matches):

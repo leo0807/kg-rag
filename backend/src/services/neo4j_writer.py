@@ -238,8 +238,16 @@ def rewrite_sections(driver, doc) -> int:
 
         # 3. 写入新 Section 节点
         sections_data = [
-            {"chunk_id": s.chunk_id, "number": s.number, "title": s.title,
-             "content": s.content, "level": s.level, "seq_index": s.seq_index}
+            {
+                "chunk_id": s.chunk_id,
+                "number": s.number,
+                "title": s.title,
+                "content": s.content,
+                "level": s.level,
+                "seq_index": s.seq_index,
+                "page_idx": s.page_idx,
+                "bbox": s.bbox,
+            }
             for s in doc.sections
         ]
         session.run("""
@@ -251,7 +259,9 @@ def rewrite_sections(driver, doc) -> int:
                 sec.title     = s.title,
                 sec.content   = s.content,
                 sec.level     = s.level,
-                sec.seq_index = s.seq_index
+                sec.seq_index = s.seq_index,
+                sec.page_idx  = s.page_idx,
+                sec.bbox      = s.bbox
             MERGE (d)-[:HAS_SECTION]->(sec)
         """, doc_id=doc_id, sections=sections_data)
 

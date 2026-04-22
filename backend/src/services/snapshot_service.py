@@ -2,7 +2,8 @@
 快照服务 — 重新处理前保存图谱状态，支持回滚
 
 存储路径:
-  本地（主）: snapshots/{doc_id}/snap_{timestamp}.json
+  本地（主）: uploads/snapshots/{doc_id}/snap_{timestamp}.json
+  兼容旧路径: snapshots/{doc_id}/snap_{timestamp}.json
   MinIO（备）: snapshots/{doc_id}/snap_{timestamp}.json
 
 每文档保留最近 MAX_SNAPSHOTS 份快照
@@ -10,12 +11,14 @@
 import json
 import logging
 import time
+import contextlib
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SNAPSHOT_DIR = Path("snapshots")
-SNAPSHOT_DIR.mkdir(exist_ok=True)
+SNAPSHOT_DIR = Path("uploads") / "snapshots"
+LEGACY_SNAPSHOT_DIR = Path("snapshots")
+SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 MAX_SNAPSHOTS = 3
 
 
@@ -32,10 +35,86 @@ def _backup_to_minio(doc_id: str, snapshot_id: str, data: bytes) -> None:
         logger.warning("快照 MinIO 备份失败（本地仍有效）doc_id=%s id=%s: %s", doc_id, snapshot_id, e)
 
 
+def _snapshot_key(doc_id: str, snapshot_id: str) -> str:
+    return f"{doc_id}/{snapshot_id}.json"
+
+
+def _migrate_legacy_snapshots(doc_id: str = "") -> None:
+    """将旧的 snapshots/ 迁移到 uploads/snapshots/，迁移失败时仅记录日志。"""
+    source_root = LEGACY_SNAPSHOT_DIR / doc_id if doc_id else LEGACY_SNAPSHOT_DIR
+    if not source_root.exists():
+        return
+
+    for src in source_root.rglob("snap_*.json"):
+        try:
+            rel = src.relative_to(LEGACY_SNAPSHOT_DIR)
+            dest = SNAPSHOT_DIR / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                src.unlink(missing_ok=True)
+                continue
+            src.replace(dest)
+        except Exception as exc:
+            logger.warning("迁移旧快照失败 %s: %s", src, exc)
+
+    for maybe_dir in sorted(source_root.rglob("*"), reverse=True):
+        if maybe_dir.is_dir():
+            with contextlib.suppress(OSError):
+                maybe_dir.rmdir()
+    if not doc_id:
+        with contextlib.suppress(OSError):
+            LEGACY_SNAPSHOT_DIR.rmdir()
+
+
+def _local_snapshot_path(doc_id: str, snapshot_id: str) -> Path:
+    return SNAPSHOT_DIR / doc_id / f"{snapshot_id}.json"
+
+
+def _legacy_snapshot_path(doc_id: str, snapshot_id: str) -> Path:
+    return LEGACY_SNAPSHOT_DIR / doc_id / f"{snapshot_id}.json"
+
+
+def _read_snapshot_bytes(doc_id: str, snapshot_id: str) -> bytes:
+    local_path = _local_snapshot_path(doc_id, snapshot_id)
+    if local_path.exists():
+        return local_path.read_bytes()
+
+    legacy_path = _legacy_snapshot_path(doc_id, snapshot_id)
+    if legacy_path.exists():
+        data = legacy_path.read_bytes()
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(data)
+        legacy_path.unlink(missing_ok=True)
+        return data
+
+    try:
+        from ..core.storage import download_bytes, BUCKET_SNAPSHOTS
+        data = download_bytes(BUCKET_SNAPSHOTS, _snapshot_key(doc_id, snapshot_id))
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(data)
+        return data
+    except Exception as exc:
+        raise FileNotFoundError(f"快照不存在: {snapshot_id}") from exc
+
+
+def _list_snapshot_ids_from_minio(doc_id: str) -> set[str]:
+    try:
+        from ..core.storage import list_files, BUCKET_SNAPSHOTS
+        ids: set[str] = set()
+        for key in list_files(BUCKET_SNAPSHOTS, prefix=f"{doc_id}/"):
+            name = Path(key).name
+            if name.startswith("snap_") and name.endswith(".json"):
+                ids.add(name[:-5])
+        return ids
+    except Exception:
+        return set()
+
+
 # ── 公开 API ──────────────────────────────────────────────────────────────────
 
 def take_snapshot(driver, doc_id: str) -> str:
     """拍摄当前文档图谱状态，返回 snapshot_id"""
+    _migrate_legacy_snapshots(doc_id)
     snap_dir = SNAPSHOT_DIR / doc_id
     snap_dir.mkdir(parents=True, exist_ok=True)
     ts = int(time.time())
@@ -64,11 +143,18 @@ def take_snapshot(driver, doc_id: str) -> str:
 
 def list_snapshots(doc_id: str) -> list[dict]:
     """返回可用快照列表（降序）"""
+    _migrate_legacy_snapshots(doc_id)
     snap_dir = SNAPSHOT_DIR / doc_id
-    if not snap_dir.exists():
-        return []
     result = []
-    for f in sorted(snap_dir.glob("snap_*.json"), reverse=True):
+    local_files = {f.stem: f for f in snap_dir.glob("snap_*.json")} if snap_dir.exists() else {}
+    for snapshot_id in _list_snapshot_ids_from_minio(doc_id):
+        if snapshot_id not in local_files:
+            try:
+                _read_snapshot_bytes(doc_id, snapshot_id)
+            except FileNotFoundError:
+                continue
+    local_files = {f.stem: f for f in snap_dir.glob("snap_*.json")} if snap_dir.exists() else {}
+    for f in sorted(local_files.values(), reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             result.append({
@@ -85,10 +171,8 @@ def list_snapshots(doc_id: str) -> list[dict]:
 
 def rollback(driver, doc_id: str, snapshot_id: str) -> dict:
     """从指定快照回滚文档图谱状态"""
-    path = SNAPSHOT_DIR / doc_id / f"{snapshot_id}.json"
-    if not path.exists():
-        raise FileNotFoundError(f"快照不存在: {snapshot_id}")
-    data = json.loads(path.read_text(encoding="utf-8"))
+    _migrate_legacy_snapshots(doc_id)
+    data = json.loads(_read_snapshot_bytes(doc_id, snapshot_id).decode("utf-8"))
     counts = _restore(driver, doc_id, data)
     logger.info("回滚完成 doc_id=%s id=%s counts=%s", doc_id, snapshot_id, counts)
     return {"snapshot_id": snapshot_id, "restored": counts}

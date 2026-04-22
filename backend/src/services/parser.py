@@ -59,6 +59,23 @@ def _looks_like_toc(title: str) -> bool:
         return True
     return False
 
+
+def _is_likely_toc_page(lines: list[str]) -> bool:
+    """根据整页行文本判断该页是否更像目录页。"""
+    normalized = [re.sub(r'\s+', ' ', line).strip() for line in lines if line.strip()]
+    if not normalized:
+        return False
+    if any(_TOC_HINT_RE.search(line) for line in normalized):
+        return True
+
+    toc_like_lines = sum(1 for line in normalized if _looks_like_toc(line))
+    heading_with_page_trail = sum(
+        1
+        for line in normalized
+        if _match_section_heading(line) and _PAGE_TRAIL_RE.search(line)
+    )
+    return toc_like_lines >= 4 or heading_with_page_trail >= 3
+
 def fix_token_spacing(text: str) -> str:
     """
     修复 pdfplumber extract_words 拼接后缺少空格的问题：
@@ -103,6 +120,94 @@ _CATALOG_HINT_RE = re.compile(
 )
 
 _MODEL_CODE_TOKEN_RE = re.compile(r'\b(?:[A-Z]{2,}\d[\w-]*|\d{4,})\b')
+_TITLE_CONTINUATION_RE = re.compile(r'(?:\(|（)[^()（）]{0,200}$')
+_TRAILING_CONNECTOR_RE = re.compile(r'(?:and|or|with|for|to|of|the|a|an|及|和|与|或|并|、|/|-|—)$', re.IGNORECASE)
+
+
+def _match_section_heading(text: str) -> tuple[str, str] | None:
+    """从单行文本中提取章节号和标题。"""
+    candidate = (text or "").strip()
+    if not candidate:
+        return None
+
+    for pat in SECTION_PATTERNS:
+        match = pat.match(candidate)
+        if match:
+            return match.group(1), match.group(2).strip()
+
+    text_fixed = re.sub(r'(\d)\s*\.\s*(\d)', r'\1.\2', candidate)
+    if text_fixed != candidate:
+        for pat in SECTION_PATTERNS:
+            match = pat.match(text_fixed)
+            if match:
+                return match.group(1), match.group(2).strip()
+    return None
+
+
+def _normalize_heading_candidate(text: str, on_toc_page: bool) -> str:
+    """
+    在非目录页上，修正被页码拼到标题末尾的章节行，例如：
+    `1 范围 1` -> `1 范围`
+    """
+    candidate = (text or "").strip()
+    if not candidate or on_toc_page:
+        return candidate
+
+    match = _match_section_heading(candidate)
+    if not match:
+        return candidate
+
+    number, title = match
+    trimmed_title = _PAGE_TRAIL_RE.sub("", title).strip()
+    if not trimmed_title or trimmed_title == title:
+        return candidate
+    if not is_likely_section_title(number, trimmed_title):
+        return candidate
+    return f"{number} {trimmed_title}"
+
+
+def _should_extend_heading_title(title: str) -> bool:
+    """判断标题是否像是被 PDF/OCR 折到了下一行。"""
+    normalized = re.sub(r'\s+', ' ', (title or "")).strip()
+    if not normalized:
+        return False
+    if normalized.count("(") > normalized.count(")"):
+        return True
+    if normalized.count("（") > normalized.count("）"):
+        return True
+    if _TITLE_CONTINUATION_RE.search(normalized):
+        return True
+    if _TRAILING_CONNECTOR_RE.search(normalized):
+        return True
+    return False
+
+
+def _merge_wrapped_heading(
+    current_text: str,
+    next_text: str,
+) -> tuple[str, str] | None:
+    """
+    尝试把被换行拆开的章节标题拼回一行。
+    仅在当前标题明显未结束时触发，避免误吞正文第一行。
+    """
+    current_match = _match_section_heading(current_text)
+    if not current_match:
+        return None
+
+    number, title = current_match
+    if not _should_extend_heading_title(title):
+        return None
+
+    next_normalized = re.sub(r'\s+', ' ', (next_text or "")).strip()
+    if not next_normalized:
+        return None
+    if _match_section_heading(next_normalized):
+        return None
+
+    merged_match = _match_section_heading(f"{current_text} {next_normalized}")
+    if not merged_match:
+        return None
+    return merged_match
 
 
 def is_likely_section_title(number: str, title: str) -> bool:
@@ -160,7 +265,7 @@ def is_likely_section_title(number: str, title: str) -> bool:
         return False
     # 9b. 极短标题（去除标点后 < 4 个字符），通常是正文片段
     stripped = re.sub(r'[；;，,。.!！?？\s]', '', title)
-    if len(stripped) < 4:
+    if len(stripped) < 4 and not re.fullmatch(r'[\u4e00-\u9fff]{2,3}', stripped):
         return False
     # 9. 纯数字/分隔符行（表格列数据，如 "115/125 143/153 -"）
     if re.match(r'^[\d\s/\-–—.]+$', title):
@@ -453,37 +558,53 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
                         lines_in_page.append(curr_line)
                         curr_line = [w]
                 lines_in_page.append(curr_line)
-                
-                for line_words in lines_in_page:
+
+                def _line_to_text(words_in_line: list[dict]) -> str:
                     # 按 x0 重新排序，确保行内单词是视觉左→右顺序
                     # （PDF 某些字体的 top 基线偏差可能导致编号与标题顺序颠倒）
-                    line_words = sorted(line_words, key=lambda w: w["x0"])
-                    raw_text = " ".join(w["text"] for w in line_words).strip()
-                    text = fix_token_spacing(raw_text)
-                    # 多模式匹配：依次尝试所有 SECTION_PATTERNS
-                    match = None
-                    for _pat in SECTION_PATTERNS:
-                        match = _pat.match(text)
-                        if match:
-                            break
-                    if not match:
-                        # 兼容数字/小数点之间被空格断开的情况：
-                        # "1 . 1 标题" → "1.1标题"（只对数字章节号做）
-                        text_fixed = re.sub(r'(\d)\s*\.\s*(\d)', r'\1.\2', text)
-                        for _pat in SECTION_PATTERNS:
-                            match = _pat.match(text_fixed)
-                            if match:
-                                break
+                    ordered_words = sorted(words_in_line, key=lambda w: w["x0"])
+                    raw_text = " ".join(w["text"] for w in ordered_words).strip()
+                    return fix_token_spacing(raw_text)
 
-                    if match and is_likely_section_title(match.group(1), match.group(2)):
+                page_line_texts = [_line_to_text(line) for line in lines_in_page]
+                page_is_toc = _is_likely_toc_page(page_line_texts)
+
+                line_idx = 0
+                while line_idx < len(lines_in_page):
+                    line_words = lines_in_page[line_idx]
+                    text = _normalize_heading_candidate(
+                        page_line_texts[line_idx],
+                        page_is_toc,
+                    )
+                    heading = _match_section_heading(text)
+                    consumed_lines = 1
+                    bbox_words = line_words
+
+                    if heading and line_idx + 1 < len(lines_in_page):
+                        next_words = lines_in_page[line_idx + 1]
+                        next_text = _normalize_heading_candidate(
+                            page_line_texts[line_idx + 1],
+                            page_is_toc,
+                        )
+                        merged_heading = _merge_wrapped_heading(text, next_text)
+                        if merged_heading:
+                            heading = merged_heading
+                            consumed_lines = 2
+                            bbox_words = sorted(line_words + next_words, key=lambda w: (w["top"], w["x0"]))
+
+                    if heading and is_likely_section_title(heading[0], heading[1]):
                         # 这是一个章节标题行
                         all_lines.append({
                             "type": "heading",
-                            "number": match.group(1),
-                            "title": match.group(2),
+                            "number": heading[0],
+                            "title": heading[1],
                             "page_idx": page_idx,
-                            "bbox": [line_words[0]["x0"], line_words[0]["top"],
-                                     line_words[-1]["x1"], line_words[-1]["bottom"]],
+                            "bbox": [
+                                min(w["x0"] for w in bbox_words),
+                                min(w["top"] for w in bbox_words),
+                                max(w["x1"] for w in bbox_words),
+                                max(w["bottom"] for w in bbox_words),
+                            ],
                             "global_pos": len(all_lines)
                         })
                     else:
@@ -492,6 +613,7 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
                             "content": text,
                             "page_idx": page_idx
                         })
+                    line_idx += consumed_lines
 
             # 2. 根据标题边界切分正文
             headings = [line for line in all_lines if line["type"] == "heading"]
@@ -553,7 +675,17 @@ def _extract_sections_legacy(pdf_path: Path, doc_id: str) -> list[dict]:
         full_text = ""
         for page in pdf.pages:
             page_text = page.extract_text() or ""
-            full_text += fix_token_spacing(page_text) + "\n"
+            page_lines = [
+                fix_token_spacing(line.strip())
+                for line in page_text.split('\n')
+                if line.strip()
+            ]
+            page_is_toc = _is_likely_toc_page(page_lines)
+            normalized_lines = [
+                _normalize_heading_candidate(line, page_is_toc)
+                for line in page_lines
+            ]
+            full_text += "\n".join(normalized_lines) + "\n"
 
     # 多模式匹配：收集所有匹配并去重（按 start 排序）
     all_matches: list[tuple[int, re.Match]] = []

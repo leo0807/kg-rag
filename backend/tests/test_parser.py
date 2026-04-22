@@ -3,7 +3,12 @@ from src.services.parser import (
     extract_meta,
     extract_sections,
     clean_content,
+    _is_likely_toc_page,
     _looks_like_toc,
+    _match_section_heading,
+    _normalize_heading_candidate,
+    _merge_wrapped_heading,
+    _should_extend_heading_title,
     _trim_front_matter_headings,
     is_likely_section_title,
 )
@@ -114,6 +119,25 @@ class TestTocFiltering:
         assert not _looks_like_toc("1.2 密封要求")
         assert is_likely_section_title("1.2", "1.2 密封要求")
 
+    def test_detects_toc_page_from_multiple_index_lines(self):
+        assert _is_likely_toc_page([
+            "1 范围 1",
+            "2 引用文件 2",
+            "3 要求 3",
+        ])
+
+    def test_normalizes_heading_with_page_number_on_body_page(self):
+        normalized = _normalize_heading_candidate("1 范围 1", on_toc_page=False)
+
+        assert normalized == "1 范围"
+        assert _match_section_heading(normalized) == ("1", "范围")
+
+    def test_keeps_toc_entry_unchanged_on_toc_page(self):
+        normalized = _normalize_heading_candidate("1 范围 1", on_toc_page=True)
+
+        assert normalized == "1 范围 1"
+        assert not is_likely_section_title("1", "范围 1")
+
     def test_trims_fake_front_matter_before_scope(self):
         headings = [
             {"number": "0.1", "title": "修订记录"},
@@ -164,3 +188,35 @@ class TestTocFiltering:
     def test_keeps_real_bilingual_section_titles(self):
         assert is_likely_section_title("9.4", "检验（Inspection）")
         assert is_likely_section_title("1", "范围（Scope）")
+
+
+class TestWrappedHeadingMerge:
+    def test_detects_unclosed_parenthesis_as_continuation(self):
+        assert _should_extend_heading_title(
+            "需要湿安装的衬套和轴承的密封(Sealing for Wet Assembly Bush and"
+        )
+
+    def test_merges_wrapped_bilingual_heading(self):
+        merged = _merge_wrapped_heading(
+            "7.5.16.3 需要湿安装的衬套和轴承的密封(Sealing for Wet Assembly Bush and",
+            "Bearing)",
+        )
+
+        assert merged == (
+            "7.5.16.3",
+            "需要湿安装的衬套和轴承的密封(Sealing for Wet Assembly Bush and Bearing)",
+        )
+
+    def test_does_not_merge_complete_heading_with_body_text(self):
+        merged = _merge_wrapped_heading(
+            "7.5.16.3 需要湿安装的衬套和轴承的密封(Sealing for Wet Assembly Bush and Bearing)",
+            "衬套安装前应检查孔壁状态。",
+        )
+
+        assert merged is None
+        assert _match_section_heading(
+            "7.5.16.3 需要湿安装的衬套和轴承的密封(Sealing for Wet Assembly Bush and Bearing)"
+        ) == (
+            "7.5.16.3",
+            "需要湿安装的衬套和轴承的密封(Sealing for Wet Assembly Bush and Bearing)",
+        )

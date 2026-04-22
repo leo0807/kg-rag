@@ -22,7 +22,6 @@ milvus_data/
 # 上传文件
 uploads/
 backend/uploads/
-backend/snapshots/
 *.pdf
 backend/**/*.pdf
 backend/**/*.docx

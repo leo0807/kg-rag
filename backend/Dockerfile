@@ -23,7 +23,7 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 
 # 创建运行时目录
-RUN mkdir -p uploads snapshots
+RUN mkdir -p uploads uploads/snapshots
 
 EXPOSE 8000
 
