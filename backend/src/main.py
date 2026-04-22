@@ -37,6 +37,7 @@ from .routers.admin_api.analytics import router as admin_analytics_router
 from .routers.admin_api.dashboard import router as admin_dashboard_router
 from .routers.admin_api.batch_ingest import router as admin_batch_ingest_router
 from .routers.admin_api.eval     import router as admin_eval_router
+from .routers.admin_api.ops      import router as admin_ops_router
 from .routers.mobile             import router as mobile_router
 from .routers.graph_api.gnn      import router as gnn_router
 from .routers.graph_api.visual_qc import router as visual_qc_router
@@ -132,6 +133,7 @@ app.include_router(admin_activity_router)
 app.include_router(admin_analytics_router)
 app.include_router(admin_batch_ingest_router)
 app.include_router(admin_eval_router)
+app.include_router(admin_ops_router)
 app.include_router(gnn_router)
 app.include_router(visual_qc_router)
 app.include_router(reprocess_router)
@@ -443,3 +445,25 @@ async def ingest_status(task_id: str, _: object = Depends(_get_admin_user)):
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在或已过期")
     return {k: v for k, v in task.items() if k != "created_at"}
+
+
+def list_ingest_tasks(limit: int = 20) -> list[dict]:
+    rows: list[dict] = []
+    for task_id, task in _ingest_tasks.items():
+        rows.append(
+            {
+                "task_id": task_id,
+                "status": task.get("status", "unknown"),
+                "step": task.get("step", ""),
+                "doc_id": task.get("doc_id"),
+                "sections": task.get("sections", 0),
+                "error": task.get("error"),
+                "created_at": (
+                    task["created_at"].isoformat()
+                    if isinstance(task.get("created_at"), datetime)
+                    else str(task.get("created_at") or "")
+                ),
+            },
+        )
+    rows.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+    return rows[: max(limit, 1)]

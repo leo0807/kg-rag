@@ -342,3 +342,16 @@ async def clear_batch(_admin = Depends(get_admin_user)):
     _batch = {"status": "idle"}
     _save_batch_state(_batch)
     return {"message": "批量任务状态已清除"}
+
+
+def list_reprocess_tasks(limit: int = 20) -> list[dict]:
+    rows = sorted(
+        _tasks.values(),
+        key=lambda task: str(task.get("finished_at") or task.get("started_at") or ""),
+        reverse=True,
+    )
+    return rows[: max(limit, 1)]
+
+
+def get_batch_task_snapshot() -> dict:
+    return dict(_batch)

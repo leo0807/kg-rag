@@ -1026,6 +1026,15 @@ def get_objective_task(task_id: str) -> dict[str, Any]:
     return task
 
 
+def list_objective_eval_tasks(limit: int = 20) -> list[dict[str, Any]]:
+    rows = sorted(
+        _tasks.values(),
+        key=lambda task: str(task.get("finished_at") or task.get("started_at") or task.get("created_at") or ""),
+        reverse=True,
+    )
+    return rows[: max(limit, 1)]
+
+
 async def get_objective_task_record(task_id: str) -> dict[str, Any]:
     task = _tasks.get(task_id)
     if task:

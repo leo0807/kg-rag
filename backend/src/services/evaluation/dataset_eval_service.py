@@ -262,6 +262,15 @@ def get_task(task_id: str) -> dict[str, Any]:
     return task
 
 
+def list_dataset_eval_tasks(limit: int = 20) -> list[dict[str, Any]]:
+    rows = sorted(
+        _tasks.values(),
+        key=lambda task: str(task.get("finished_at") or task.get("started_at") or task.get("created_at") or ""),
+        reverse=True,
+    )
+    return rows[: max(limit, 1)]
+
+
 def export_task_csv(task_id: str) -> str:
     task = get_task(task_id)
     if task["status"] != "completed":
