@@ -8,10 +8,16 @@ PDF 图片提取服务
 - 保存到本地临时路径，同时上传到 MinIO extracted-images 桶
 - 返回图片路径和元数据
 """
+import hashlib
 import logging
-import fitz  # pymupdf
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Any
+
+try:
+    import fitz  # pymupdf
+except ImportError:  # pragma: no cover - 运行环境缺依赖时走降级
+    fitz = None
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +33,23 @@ class ExtractedImage:
     path:      str        # 本地文件路径（处理期间保留，处理完毕后可清理）
     width:     int
     height:    int
+    content_hash: str     # 图片内容哈希，用于文档内去重
     caption:   str = ""   # 图片说明（从周围文字提取）
     minio_key: str = ""   # MinIO 对象键（上传成功后填充）
+
+
+def compute_image_content_hash(image_bytes: bytes) -> str:
+    """基于图片二进制计算稳定哈希，用于检测重复抽取。"""
+    return hashlib.sha256(image_bytes).hexdigest()
+
+
+def register_image_hash(seen_hashes: set[str], image_bytes: bytes) -> tuple[str, bool]:
+    """注册图片哈希并返回 `(hash, 是否重复)`。"""
+    content_hash = compute_image_content_hash(image_bytes)
+    if content_hash in seen_hashes:
+        return content_hash, True
+    seen_hashes.add(content_hash)
+    return content_hash, False
 
 
 def _upload_to_minio(image_data: bytes, image_id: str, ext: str) -> str:
@@ -54,8 +75,14 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> list[ExtractedImage]:
       1. 保存到本地 uploads/images/（供后续 VisionService 分析使用）
       2. 异步上传到 MinIO extracted-images 桶（持久化存储）
     """
+    if fitz is None:
+        logger.warning("pymupdf 未安装，跳过图片提取 doc_id=%s", doc_id)
+        return []
+
     doc     = fitz.open(pdf_path)
     results = []
+    seen_hashes: set[str] = set()
+    duplicate_count = 0
 
     for page_num in range(len(doc)):
         page       = doc[page_num]
@@ -75,6 +102,18 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> list[ExtractedImage]:
                 image_id   = f"{doc_id}_page{page_num + 1}_img{img_idx}"
                 ext        = base_image["ext"]
                 img_bytes  = base_image["image"]
+                content_hash, is_duplicate = register_image_hash(seen_hashes, img_bytes)
+                if is_duplicate:
+                    duplicate_count += 1
+                    logger.info(
+                        "跳过重复图片 doc_id=%s page=%d img=%d hash=%s",
+                        doc_id,
+                        page_num + 1,
+                        img_idx,
+                        content_hash[:12],
+                    )
+                    continue
+
                 img_path   = IMAGE_DIR / f"{image_id}.{ext}"
 
                 # 保存到本地（供 VLM 分析读取）
@@ -98,6 +137,7 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> list[ExtractedImage]:
                     path      = str(img_path) if not minio_key else "",
                     width     = width,
                     height    = height,
+                    content_hash = content_hash,
                     caption   = caption,
                     minio_key = minio_key,
                 ))
@@ -109,11 +149,16 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> list[ExtractedImage]:
                 logger.warning("提取图片失败 page=%d img=%d: %s", page_num + 1, img_idx, e)
 
     doc.close()
-    logger.info("共提取 %d 张图片 doc_id=%s", len(results), doc_id)
+    logger.info(
+        "共提取 %d 张图片 doc_id=%s 去重跳过=%d",
+        len(results),
+        doc_id,
+        duplicate_count,
+    )
     return results
 
 
-def _extract_caption(page: fitz.Page, img_idx: int) -> str:
+def _extract_caption(page: Any, img_idx: int) -> str:
     """
     从页面文字中提取图片说明
     查找包含"图"字的文字块作为 caption

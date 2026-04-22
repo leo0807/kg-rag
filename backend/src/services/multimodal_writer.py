@@ -37,7 +37,9 @@ def write_images_to_graph(
                 SET i.doc_id             = $doc_id,
                     i.page               = $page,
                     i.path               = $path,
+                    i.content_hash       = $content_hash,
                     i.minio_key          = $minio_key,
+                    i.minio_path         = $minio_key,
                     i.caption            = $caption,
                     i.description        = $description,
                     i.keywords           = $keywords,
@@ -56,6 +58,7 @@ def write_images_to_graph(
                 doc_id            = doc_id,
                 page              = img["page"],
                 path              = img["path"],
+                content_hash      = img.get("content_hash", ""),
                 minio_key         = img.get("minio_key", ""),
                 caption           = img.get("caption", ""),
                 description       = analysis.get("description", ""),
@@ -83,12 +86,14 @@ def write_images_to_graph(
             session.run("""
                 MATCH (s:Section)
                 WHERE s.doc_id = $doc_id
+                  AND s.page_idx IS NOT NULL
+                  AND s.page_idx <= $page_idx
                 MATCH (i:Image {image_id: $image_id})
                 WITH s, i
-                ORDER BY s.section_number
+                ORDER BY s.page_idx DESC, coalesce(s.number, s.section_number, '') DESC
                 LIMIT 1
                 MERGE (s)-[:HAS_IMAGE]->(i)
-            """, doc_id=doc_id, image_id=img["image_id"])
+            """, doc_id=doc_id, image_id=img["image_id"], page_idx=max(int(img.get("page", 1)) - 1, 0))
 
         logger.info("写入 %d 张图片节点 doc_id=%s", len(images), doc_id)
 

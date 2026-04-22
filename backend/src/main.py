@@ -351,6 +351,7 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
                         "image_id":  img.image_id,
                         "page":      img.page,
                         "path":      img.path,
+                        "content_hash": img.content_hash,
                         "minio_key": img.minio_key,
                         "caption":   img.caption,
                         "analysis":  analysis,

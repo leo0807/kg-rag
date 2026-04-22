@@ -3,6 +3,7 @@ src/routers/documents_entities.py
 文档实体与图片相关 API
 """
 import asyncio
+import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -11,6 +12,29 @@ from ..core.database import get_driver
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["documents"])
+
+_DOCUMENT_IMAGES_MATCH = """
+    MATCH (d:Document {name: $doc_id})
+    OPTIONAL MATCH (d)-[:HAS_SECTION]->(:Section)-[:HAS_IMAGE]->(section_img:Image)
+    WITH d, collect(DISTINCT section_img) AS section_imgs
+    OPTIONAL MATCH (d)-[:HAS_IMAGE]->(doc_img:Image)
+    WITH section_imgs + collect(DISTINCT doc_img) AS all_imgs
+    UNWIND all_imgs AS img
+    WITH DISTINCT img
+    WHERE img IS NOT NULL
+"""
+
+
+def _decode_json_list(raw):
+    if isinstance(raw, str):
+        try:
+            value = json.loads(raw)
+        except Exception:
+            return []
+        return value if isinstance(value, list) else []
+    if raw is None:
+        return []
+    return raw if isinstance(raw, list) else []
 
 
 @router.get("/images/{image_id}")
@@ -65,6 +89,9 @@ async def get_image_detail(image_id: str, driver: Driver = Depends(get_driver)):
                 i.is_drawing      AS is_drawing,
                 i.minio_path      AS minio_path,
                 i.drawing_summary AS drawing_summary,
+                i.part_numbers    AS part_numbers,
+                i.annotations     AS annotations,
+                i.assembly_relations AS assembly_relations,
                 i.keywords        AS keywords,
                 i.page            AS page,
                 s.chunk_id        AS section_chunk_id,
@@ -75,9 +102,12 @@ async def get_image_detail(image_id: str, driver: Driver = Depends(get_driver)):
     if not rec:
         raise HTTPException(404, f"图片不存在: {image_id}")
     row = dict(rec)
+    for field in ("part_numbers", "annotations", "assembly_relations"):
+        row[field] = _decode_json_list(row.get(field))
     mp = row.get("minio_path") or ""
     row["url"] = f"/api/images/{image_id}" if mp else None
     row["analyzed"] = bool(row.get("caption") or row.get("description"))
+    row["annotations_count"] = len(row["annotations"])
     return row
 
 
@@ -152,52 +182,96 @@ async def search_entities(
 
 
 @router.get("/documents/{doc_id}/images")
-async def get_document_images(doc_id: str, driver: Driver = Depends(get_driver)):
-    """列出文档所有图片及 VLM 描述（含工程图纸专项字段）"""
-    import json as _json
+async def get_document_images(
+    doc_id: str,
+    page: int = 1,
+    per_page: int = 0,
+    drawing_only: bool = False,
+    driver: Driver = Depends(get_driver),
+):
+    """列出文档图片，支持按工程图纸过滤与分页。"""
+    page = max(page, 1)
+    per_page = min(max(per_page, 0), 500)
+    skip = (page - 1) * per_page if per_page else 0
+
     with driver.session() as session:
-        result = session.run("""
-            MATCH (d:Document {name: $doc_id})
-            OPTIONAL MATCH (d)-[:HAS_SECTION]->(s:Section)-[:HAS_IMAGE]->(i:Image)
-            OPTIONAL MATCH (d)-[:HAS_IMAGE]->(i2:Image)
-            WITH collect(i) + collect(i2) AS all_imgs
-            UNWIND all_imgs AS img
-            WITH img WHERE img IS NOT NULL
-            RETURN DISTINCT
-                   img.image_id          AS image_id,
-                   img.caption           AS caption,
-                   img.path              AS path,
-                   img.minio_path        AS minio_path,
-                   img.description       AS description,
-                   img.is_drawing        AS is_drawing,
-                   img.part_numbers      AS part_numbers,
-                   img.annotations       AS annotations,
-                   img.assembly_relations AS assembly_relations,
-                   img.drawing_summary   AS drawing_summary,
-                   null                  AS section_chunk_id,
-                   null                  AS section_number,
-                   null                  AS section_title
-            ORDER BY image_id
-        """, doc_id=doc_id)
+        counts = session.run(
+            _DOCUMENT_IMAGES_MATCH
+            + """
+            RETURN
+                count(img) AS total,
+                sum(CASE WHEN coalesce(img.is_drawing, false) THEN 1 ELSE 0 END) AS drawing_total
+            """,
+            doc_id=doc_id,
+        ).single()
+
+        pagination_clause = ""
+        if per_page:
+            pagination_clause = "\n            SKIP $skip LIMIT $per_page"
+
+        result = session.run(
+            _DOCUMENT_IMAGES_MATCH
+            + """
+            WITH img
+            WHERE ($drawing_only = false OR coalesce(img.is_drawing, false))
+            OPTIONAL MATCH (s:Section)-[:HAS_IMAGE]->(img)
+            WITH
+                img,
+                head(collect(DISTINCT s.chunk_id)) AS section_chunk_id,
+                head(collect(DISTINCT s.number)) AS section_number,
+                head(collect(DISTINCT s.title)) AS section_title
+            RETURN
+                img.image_id            AS image_id,
+                img.caption             AS caption,
+                img.path                AS path,
+                img.minio_path          AS minio_path,
+                img.description         AS description,
+                img.is_drawing          AS is_drawing,
+                img.part_numbers        AS part_numbers,
+                img.annotations         AS annotations,
+                img.assembly_relations  AS assembly_relations,
+                img.drawing_summary     AS drawing_summary,
+                section_chunk_id        AS section_chunk_id,
+                section_number          AS section_number,
+                section_title           AS section_title
+            ORDER BY coalesce(img.page, 0), image_id
+            """
+            + pagination_clause,
+            doc_id=doc_id,
+            drawing_only=drawing_only,
+            skip=skip,
+            per_page=per_page,
+        )
         images = []
         for r in result:
             row = dict(r)
             # JSON 字段反序列化
             for field in ("part_numbers", "annotations", "assembly_relations"):
-                raw = row.get(field)
-                if isinstance(raw, str):
-                    try:
-                        row[field] = _json.loads(raw)
-                    except Exception:
-                        row[field] = []
-                elif raw is None:
-                    row[field] = []
+                row[field] = _decode_json_list(row.get(field))
             # 使用代理接口 URL，避免直连 MinIO 的 CORS/内网问题
             image_id = row.get("image_id") or ""
             minio_path = row.get("minio_path") or ""
             row["url"] = f"/api/images/{image_id}" if image_id and minio_path else None
+            row["annotations_count"] = len(row["annotations"])
             images.append(row)
-    return {"doc_id": doc_id, "images": images, "total": len(images)}
+
+    counts_row = dict(counts) if counts else {}
+    total = int(counts_row.get("total") or 0)
+    drawing_total = int(counts_row.get("drawing_total") or 0)
+    filtered_total = drawing_total if drawing_only else total
+    has_more = bool(per_page and (skip + len(images) < filtered_total))
+    effective_per_page = per_page or len(images)
+
+    return {
+        "doc_id": doc_id,
+        "images": images,
+        "total": total,
+        "drawing_total": drawing_total,
+        "filtered_total": filtered_total,
+        "page": page,
+        "per_page": effective_per_page,
+        "has_more": has_more,
+    }
 
 
 @router.post("/documents/{doc_id}/images/{image_id}/analyze-drawing")

@@ -70,6 +70,28 @@ def _find_pdf(doc_id: str) -> Optional[Path]:
     return None
 
 
+def _delete_existing_images_for_doc(doc_id: str, driver) -> int:
+    """
+    删除文档下已有图片节点及其关系。
+    用于重新抽图时替换历史结果，避免旧的重复图片残留。
+    """
+    with driver.session() as session:
+        row = session.run("""
+            MATCH (d:Document {name: $doc_id})-[:HAS_IMAGE]->(i:Image)
+            WITH collect(DISTINCT i) AS images
+            RETURN size(images) AS count
+        """, doc_id=doc_id).single()
+        count = int(row["count"]) if row and row["count"] is not None else 0
+        if count:
+            session.run("""
+                MATCH (d:Document {name: $doc_id})-[:HAS_IMAGE]->(i:Image)
+                WITH collect(DISTINCT i) AS images
+                UNWIND images AS image
+                DETACH DELETE image
+            """, doc_id=doc_id)
+    return count
+
+
 def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver) -> int:
     """
     从单份 PDF 提取图片，写入本地 + MinIO + Neo4j。
@@ -80,6 +102,8 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
     except ImportError:
         logger.warning("pymupdf 未安装，跳过图片提取")
         return 0
+
+    from .pdf_image_extractor import register_image_hash
 
     # 页码 → chunk_id（取页面上最后一个 section）
     page_to_chunk: dict[int, str] = {}
@@ -116,6 +140,8 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
 
     fitz_doc    = fitz.open(str(pdf_path))
     image_nodes: list[dict] = []
+    seen_hashes: set[str] = set()
+    duplicate_count = 0
 
     for page_num in range(len(fitz_doc)):
         page = fitz_doc[page_num]
@@ -134,6 +160,17 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
 
                 ext       = base["ext"] or "png"
                 img_bytes = base["image"]
+                content_hash, is_duplicate = register_image_hash(seen_hashes, img_bytes)
+                if is_duplicate:
+                    duplicate_count += 1
+                    logger.info(
+                        "[backfill] 跳过重复图片 doc_id=%s page=%d img=%d hash=%s",
+                        doc_id,
+                        page_num + 1,
+                        img_idx,
+                        content_hash[:12],
+                    )
+                    continue
                 image_id  = f"{doc_id}_page{page_num + 1}_img{img_idx}"
                 minio_key = f"{doc_id}/{page_num + 1}_{img_idx}.{ext}"
 
@@ -169,6 +206,7 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
                     "page_num":   page_num + 1,
                     "path":       str(local_path) if local_path else "",
                     "minio_path": minio_path,
+                    "content_hash": content_hash,
                     "is_drawing": False,
                     "chunk_id":   _find_chunk(page_num),
                 })
@@ -191,6 +229,7 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
                 i.page_num   = img.page_num,
                 i.path       = img.path,
                 i.minio_path = img.minio_path,
+                i.content_hash = img.content_hash,
                 i.is_drawing = img.is_drawing
             MERGE (d)-[:HAS_IMAGE]->(i)
         """, images=image_nodes)
@@ -204,7 +243,12 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
                 MERGE (s)-[:HAS_IMAGE]->(i)
             """, links=section_links)
 
-    logger.info("[backfill] 图片写入完成 doc_id=%s count=%d", doc_id, len(image_nodes))
+    logger.info(
+        "[backfill] 图片写入完成 doc_id=%s count=%d 去重跳过=%d",
+        doc_id,
+        len(image_nodes),
+        duplicate_count,
+    )
     return len(image_nodes)
 
 

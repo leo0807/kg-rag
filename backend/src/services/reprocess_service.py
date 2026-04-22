@@ -47,7 +47,7 @@ def load_images(driver, doc_id: str) -> list[dict]:
             MATCH (d:Document {name: $doc_id})-[:HAS_SECTION]->(s:Section)
             OPTIONAL MATCH (s)-[:HAS_IMAGE]->(i:Image)
             WHERE i IS NOT NULL
-            RETURN i.image_id AS image_id, i.path AS path,
+            RETURN DISTINCT i.image_id AS image_id, i.path AS path,
                    i.caption AS caption, i.is_drawing AS is_drawing
         """, doc_id=doc_id)
         return [dict(r) for r in result]
@@ -119,7 +119,10 @@ def _run_images(driver, doc_id, pdf_path, sections, task, step):
     step("images", "重新提取图片节点...")
     if _cancelled(task): return -1
     try:
-        from .backfill_service import extract_images_for_doc
+        from .backfill_service import extract_images_for_doc, _delete_existing_images_for_doc
+        deleted = _delete_existing_images_for_doc(doc_id, driver)
+        if deleted:
+            step("images", f"已清理 {deleted} 张旧图片，开始按新规则重新提取...")
         return extract_images_for_doc(doc_id, Path(pdf_path), sections, driver)
     except Exception as e:
         logger.warning("[reprocess %s] 图片提取失败: %s", doc_id, e)
