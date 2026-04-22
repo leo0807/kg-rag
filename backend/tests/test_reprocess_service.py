@@ -1,7 +1,10 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from src.services.ingestion.reprocess_service import _prepare_reprocess_pdf
+from src.services.ingestion.reprocess_service import (
+    _prepare_reprocess_pdf,
+    _resolve_drawing_image_path,
+)
 
 
 def test_prepare_reprocess_pdf_converts_docx(monkeypatch, tmp_path):
@@ -29,3 +32,17 @@ def test_prepare_reprocess_pdf_keeps_native_pdf(tmp_path):
 
     assert pdf_path == pdf
     assert cleanup_paths == []
+
+
+def test_resolve_drawing_image_path_prefers_local_file(tmp_path):
+    image_path = tmp_path / "drawing.png"
+    image_path.write_bytes(b"png")
+
+    resolved, cleanup = _resolve_drawing_image_path(
+        image_id="img-1",
+        local_path=str(image_path),
+        minio_path="CPS1000/1_1.png",
+    )
+
+    assert resolved == image_path
+    assert cleanup is None

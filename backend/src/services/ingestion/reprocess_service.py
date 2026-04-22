@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 UPLOAD_DIR     = Path("uploads")
@@ -44,13 +44,36 @@ def load_sections(driver, doc_id: str) -> list[dict]:
 def load_images(driver, doc_id: str) -> list[dict]:
     with driver.session() as session:
         result = session.run("""
-            MATCH (d:Document {name: $doc_id})-[:HAS_SECTION]->(s:Section)
-            OPTIONAL MATCH (s)-[:HAS_IMAGE]->(i:Image)
-            WHERE i IS NOT NULL
-            RETURN DISTINCT i.image_id AS image_id, i.path AS path,
-                   i.caption AS caption, i.is_drawing AS is_drawing
+            MATCH (d:Document {name: $doc_id})
+            OPTIONAL MATCH (d)-[:HAS_SECTION]->(:Section)-[:HAS_IMAGE]->(section_img:Image)
+            WITH d, collect(DISTINCT section_img) AS section_imgs
+            OPTIONAL MATCH (d)-[:HAS_IMAGE]->(doc_img:Image)
+            WITH section_imgs, collect(DISTINCT doc_img) AS doc_imgs
+            WITH section_imgs + doc_imgs AS all_imgs
+            UNWIND all_imgs AS img
+            WITH DISTINCT img
+            WHERE img IS NOT NULL
+            RETURN img.image_id AS image_id,
+                   img.path AS path,
+                   img.minio_path AS minio_path,
+                   img.caption AS caption,
+                   img.is_drawing AS is_drawing
         """, doc_id=doc_id)
         return [dict(r) for r in result]
+
+
+def _resolve_drawing_image_path(
+    image_id: str,
+    local_path: Optional[str],
+    minio_path: Optional[str],
+):
+    from ..image_file_service import resolve_image_binary_path
+
+    return resolve_image_binary_path(
+        image_id=image_id,
+        local_path=local_path,
+        minio_path=minio_path,
+    )
 
 
 def _prepare_reprocess_pdf(doc_id: str, source_path: Path | None, driver) -> tuple[Path | None, list[Path]]:
@@ -156,15 +179,19 @@ def _run_drawings(driver, doc_id, images, task, step):
     for idx, img in enumerate(images, start=1):
         if _cancelled(task):
             break
-        if not img.get("path"):
-            continue
 
         image_id = img.get("image_id", f"img_{idx}")
-        step("drawings", f"正在分析图纸 ({idx}/{total_imgs}): {Path(img['path']).name}...")
+        cleanup_path = None
 
         try:
+            image_path, cleanup_path = _resolve_drawing_image_path(
+                image_id=image_id,
+                local_path=img.get("path"),
+                minio_path=img.get("minio_path"),
+            )
+            step("drawings", f"正在分析图纸 ({idx}/{total_imgs}): {image_path.name}...")
             # ── VLM 分析（内部已有 60s 超时和 try/finally 清理） ─────────────
-            result = analyze_drawing(img["path"], img.get("caption") or "", doc_id)
+            result = analyze_drawing(str(image_path), img.get("caption") or "", doc_id)
             caption     = result.get("summary", "") or img.get("caption", "")
             analyzed_at = int(_time.time())
 
@@ -234,6 +261,9 @@ def _run_drawings(driver, doc_id, images, task, step):
         except Exception as e:
             failed += 1
             logger.warning("图纸分析失败 image_id=%s 原因: %s", image_id, e)
+        finally:
+            if cleanup_path:
+                cleanup_path.unlink(missing_ok=True)
 
     logger.info(
         "图纸分析完成 doc_id=%s 成功=%d 失败=%d 总=%d",

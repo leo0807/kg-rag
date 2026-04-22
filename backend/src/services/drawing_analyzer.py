@@ -9,6 +9,8 @@ src/services/drawing_analyzer.py
 
 调用方负责在 finally 前保证图片文件存在；本模块统一在 finally 中清理。
 """
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path

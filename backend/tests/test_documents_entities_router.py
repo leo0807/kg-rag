@@ -2,14 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from src.routers.docs.entities import _resolve_image_binary_path
+from src.services.image_file_service import resolve_image_binary_path
 
 
 def test_resolve_image_binary_path_prefers_existing_local_file(tmp_path):
     local_image = tmp_path / "img.png"
     local_image.write_bytes(b"local")
 
-    path, cleanup = _resolve_image_binary_path(
+    path, cleanup = resolve_image_binary_path(
         image_id="img-1",
         local_path=str(local_image),
         minio_path="bucket/key.png",
@@ -22,9 +22,9 @@ def test_resolve_image_binary_path_prefers_existing_local_file(tmp_path):
 def test_resolve_image_binary_path_downloads_from_minio_when_local_missing(tmp_path, monkeypatch):
     temp_root = tmp_path / "tmp"
     temp_root.mkdir()
-    monkeypatch.setattr("src.routers.docs.entities.tempfile.gettempdir", lambda: str(temp_root))
+    monkeypatch.setattr("src.services.image_file_service.tempfile.gettempdir", lambda: str(temp_root))
 
-    path, cleanup = _resolve_image_binary_path(
+    path, cleanup = resolve_image_binary_path(
         image_id="img-2",
         local_path="",
         minio_path="CPS1000/1_1.jpeg",
@@ -38,7 +38,7 @@ def test_resolve_image_binary_path_downloads_from_minio_when_local_missing(tmp_p
 
 def test_resolve_image_binary_path_raises_when_no_source_available():
     with pytest.raises(FileNotFoundError):
-        _resolve_image_binary_path(
+        resolve_image_binary_path(
             image_id="img-3",
             local_path="",
             minio_path="",

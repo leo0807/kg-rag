@@ -5,13 +5,12 @@ src/routers/documents_entities.py
 import asyncio
 import json
 import logging
-import tempfile
 from pathlib import Path
-from typing import Callable, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from neo4j import Driver
 from ...core.database import get_driver
+from ...services.image_file_service import resolve_image_binary_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["documents"])
@@ -39,35 +38,6 @@ def _decode_json_list(raw):
     if raw is None:
         return []
     return raw if isinstance(raw, list) else []
-
-
-def _resolve_image_binary_path(
-    image_id: str,
-    local_path: Optional[str],
-    minio_path: Optional[str],
-    download_image_bytes: Optional[Callable[[str], bytes]] = None,
-) -> tuple[Path, Optional[Path]]:
-    """返回可供图纸分析读取的本地图片路径，以及需要清理的临时文件。"""
-    if local_path:
-        candidate = Path(local_path)
-        if candidate.exists():
-            return candidate, None
-
-    if not minio_path:
-        raise FileNotFoundError(f"图片 {image_id} 缺少可用文件路径")
-
-    if download_image_bytes is None:
-        from ...core.storage import BUCKET_EXTRACTED_IMAGES, download_bytes
-
-        def _download_from_storage(key: str) -> bytes:
-            return download_bytes(BUCKET_EXTRACTED_IMAGES, key)
-
-        download_image_bytes = _download_from_storage
-
-    suffix = Path(minio_path).suffix or ".jpg"
-    temp_path = Path(tempfile.gettempdir()) / f"{image_id}{suffix}"
-    temp_path.write_bytes(download_image_bytes(minio_path))
-    return temp_path, temp_path
 
 
 @router.get("/images/{image_id}")
@@ -333,7 +303,7 @@ async def analyze_drawing_endpoint(
         try:
             from ...services.drawing_analyzer import analyze_drawing
             from ...services.entity_writer    import write_drawing_constraints
-            image_path, cleanup_path = _resolve_image_binary_path(
+            image_path, cleanup_path = resolve_image_binary_path(
                 image_id=image_id,
                 local_path=rec["path"],
                 minio_path=rec["minio_path"],
