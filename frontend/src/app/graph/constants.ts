@@ -97,6 +97,7 @@ export const EDGE_COLOR: Record<string, string> = {
     USES_MATERIAL:    "#f97316",
     INVOLVES_PROCESS: "#a78bfa",
     HAS_CONSTRAINT:   "#ef4444",
+    HAS_ANNOTATION:   "#f87171",
     ALTERNATIVE_TO:   "#fb923c",
     COMPATIBLE_WITH:  "#34d399",
     MENTIONS_TOOL:    "#6ee7b7",
@@ -108,7 +109,7 @@ export const EDGE_COLOR: Record<string, string> = {
 export const NODE_TYPES = ["全部", "Document", "Section", "Image", "Tool", "Material", "Process", "Constraint", "Table"] as const;
 export const EDGE_TYPES = [
     "全部关系", "HAS_SECTION", "REFERENCES", "HAS_SUBSECTION", "HAS_IMAGE",
-    "HAS_TABLE", "REQUIRES_TOOL", "USES_MATERIAL", "INVOLVES_PROCESS", "HAS_CONSTRAINT",
+    "HAS_TABLE", "REQUIRES_TOOL", "USES_MATERIAL", "INVOLVES_PROCESS", "HAS_CONSTRAINT", "HAS_ANNOTATION",
     "ALTERNATIVE_TO", "COMPATIBLE_WITH", "SUPERSEDES", "SIMILAR_TO",
 ] as const;
 

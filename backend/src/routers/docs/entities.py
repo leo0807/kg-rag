@@ -96,7 +96,7 @@ async def get_image_detail(image_id: str, driver: Driver = Depends(get_driver)):
                 i.annotations     AS annotations,
                 i.assembly_relations AS assembly_relations,
                 i.keywords        AS keywords,
-                i.page            AS page,
+                coalesce(i.page_num, i.page, 0) AS page,
                 s.chunk_id        AS section_chunk_id,
                 s.number          AS section_number,
                 s.title           AS section_title
@@ -237,7 +237,7 @@ async def get_document_images(
                 section_chunk_id        AS section_chunk_id,
                 section_number          AS section_number,
                 section_title           AS section_title
-            ORDER BY coalesce(img.page, 0), image_id
+            ORDER BY coalesce(img.page_num, img.page, 0), image_id
             """
             + pagination_clause,
             doc_id=doc_id,
@@ -354,7 +354,7 @@ async def reanalyze_document(doc_id: str, driver: Driver = Depends(get_driver)):
     async def _reanalyze():
         try:
             from ...services.entity_extractor import extract_entities_from_sections
-            from ...services.entity_writer    import write_entities
+            from ...services.entity_writer    import reset_document_entity_graph, write_entities
             with driver.session() as session:
                 sec_result = session.run("""
                     MATCH (d:Document {name: $doc_id})-[:HAS_SECTION]->(s:Section)
@@ -364,9 +364,10 @@ async def reanalyze_document(doc_id: str, driver: Driver = Depends(get_driver)):
                 """, doc_id=doc_id)
                 sections = [dict(r) for r in sec_result]
             if sections:
+                reset_document_entity_graph(driver, doc_id)
                 entities = extract_entities_from_sections(sections)
                 if entities:
-                    write_entities(driver, entities, doc_id)
+                    write_entities(driver, doc_id, entities)
                     logger.info("文档 %s 实体重新提取完成: %d 个", doc_id, len(entities))
         except Exception as e:
             logger.warning("文档 %s 重新分析失败: %s", doc_id, e)

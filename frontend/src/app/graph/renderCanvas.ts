@@ -69,7 +69,11 @@ export function drawGraphCanvas(
             ctx.globalAlpha  = opacity;
             ctx.strokeStyle  = EDGE_COLOR[e.type] ?? "#374151";
             ctx.lineWidth    = e.type === "REFERENCES" ? 2 : 1.5;
-            ctx.setLineDash(e.type === "HAS_IMAGE" || e.type === "MENTIONS_TOOL" ? [4, 2] : []);
+            ctx.setLineDash(
+                e.type === "HAS_IMAGE" || e.type === "MENTIONS_TOOL" || e.type === "HAS_ANNOTATION"
+                    ? [4, 2]
+                    : []
+            );
             ctx.beginPath();
             ctx.moveTo(s.x!, s.y!);
             ctx.lineTo(t.x!, t.y!);

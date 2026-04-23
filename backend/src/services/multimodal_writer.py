@@ -36,6 +36,7 @@ def write_images_to_graph(
                 MERGE (i:Image {image_id: $image_id})
                 SET i.doc_id             = $doc_id,
                     i.page               = $page,
+                    i.page_num           = $page,
                     i.path               = $path,
                     i.content_hash       = $content_hash,
                     i.minio_key          = $minio_key,

@@ -1,6 +1,7 @@
 from src.services.pdf_image_extractor import (
     compute_image_content_hash,
     register_image_hash,
+    _should_fallback_to_page_snapshots,
 )
 
 
@@ -30,3 +31,27 @@ class TestImageDedup:
         assert first_hash != second_hash
         assert first_duplicate is False
         assert second_duplicate is False
+
+
+class _FakePage:
+    def __init__(self, xrefs):
+        self._xrefs = xrefs
+
+    def get_images(self, full=True):
+        return [(xref,) for xref in self._xrefs]
+
+
+class TestOfficePdfFallback:
+    def test_detects_shared_embedded_resources_across_pages(self):
+        doc = [_FakePage(list(range(1, 111))) for _ in range(4)]
+
+        assert _should_fallback_to_page_snapshots(doc) is True
+
+    def test_keeps_normal_pdf_on_small_distinct_sets(self):
+        doc = [
+            _FakePage([1, 2]),
+            _FakePage([3, 4]),
+            _FakePage([5, 6]),
+        ]
+
+        assert _should_fallback_to_page_snapshots(doc) is False

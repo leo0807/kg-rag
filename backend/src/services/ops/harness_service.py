@@ -161,11 +161,11 @@ def _query_image_rows(
                 img.drawing_summary AS drawing_summary,
                 img.is_drawing AS is_drawing,
                 img.minio_path AS minio_path,
-                img.page AS page,
+                coalesce(img.page_num, img.page, 0) AS page,
                 head(collect(DISTINCT s.number)) AS section_number,
                 head(collect(DISTINCT s.title)) AS section_title,
                 keyword_hits
-            ORDER BY keyword_hits DESC, coalesce(img.is_drawing, false) DESC, coalesce(img.page, 0), img.image_id
+            ORDER BY keyword_hits DESC, coalesce(img.is_drawing, false) DESC, coalesce(img.page_num, img.page, 0), img.image_id
             LIMIT $limit
             """,
             terms=terms,

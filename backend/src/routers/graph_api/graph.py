@@ -13,6 +13,17 @@ def _selected_ids(nodes: list[dict], node_type: str) -> list[str]:
     return [str(n["id"]) for n in nodes if n.get("type") == node_type and n.get("id")]
 
 
+def _extend_unique_nodes(nodes: list[dict], extra_nodes: list[dict]) -> list[dict]:
+    existing_ids = {str(n["id"]) for n in nodes if n.get("id")}
+    for node in extra_nodes:
+        node_id = str(node.get("id") or "").strip()
+        if not node_id or node_id in existing_ids:
+            continue
+        nodes.append(node)
+        existing_ids.add(node_id)
+    return nodes
+
+
 def _append_missing_owner_docs(nodes: list[dict]) -> list[dict]:
     """
     全局图下，如果先选中了图片/实体节点，但对应 Document 因 limit_doc 未被带出，
@@ -37,6 +48,113 @@ def _append_missing_owner_docs(nodes: list[dict]) -> list[dict]:
     if extras:
         nodes.extend(extras)
     return nodes
+
+
+def _load_connected_entity_nodes(
+    session,
+    *,
+    doc_id: str,
+    section_ids: list[str],
+    image_ids: list[str],
+    limit: int,
+    expand_all: bool,
+) -> list[dict]:
+    limit_clause = "" if expand_all else "LIMIT $limit"
+    if doc_id:
+        result = session.run(f"""
+            CALL {{
+                WITH $section_ids AS section_ids
+                UNWIND section_ids AS sid
+                MATCH (s:Section {{chunk_id: sid}})-[:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS|HAS_CONSTRAINT]->(e)
+                RETURN DISTINCT e
+                UNION
+                WITH $image_ids AS image_ids
+                UNWIND image_ids AS iid
+                MATCH (i:Image {{image_id: iid}})-[:MENTIONS_TOOL|HAS_ANNOTATION]->(e)
+                RETURN DISTINCT e
+            }}
+            RETURN DISTINCT
+                CASE
+                    WHEN e:Tool THEN e.name
+                    WHEN e:Material THEN e.name
+                    WHEN e:Process THEN e.name
+                    WHEN e:Constraint THEN e.constraint_id
+                    ELSE ''
+                END AS id,
+                CASE
+                    WHEN e:Constraint THEN e.type + ': ' + e.value + e.unit
+                    ELSE coalesce(e.name, '')
+                END AS name,
+                CASE
+                    WHEN e:Tool THEN 'Tool'
+                    WHEN e:Material THEN 'Material'
+                    WHEN e:Process THEN 'Process'
+                    WHEN e:Constraint THEN 'Constraint'
+                    ELSE 'Unknown'
+                END AS type,
+                e.doc_id AS doc_id,
+                e.type AS con_type,
+                e.value AS value,
+                e.value_max AS value_max,
+                e.unit AS unit,
+                e.description AS description,
+                e.standard AS standard
+            ORDER BY type, name
+            {limit_clause}
+        """, section_ids=section_ids, image_ids=image_ids, limit=limit)
+    else:
+        result = session.run(f"""
+            MATCH (e)
+            WHERE e:Tool OR e:Material OR e:Process OR e:Constraint
+            RETURN
+                CASE
+                    WHEN e:Tool THEN e.name
+                    WHEN e:Material THEN e.name
+                    WHEN e:Process THEN e.name
+                    WHEN e:Constraint THEN e.constraint_id
+                    ELSE ''
+                END AS id,
+                CASE
+                    WHEN e:Constraint THEN e.type + ': ' + e.value + e.unit
+                    ELSE coalesce(e.name, '')
+                END AS name,
+                CASE
+                    WHEN e:Tool THEN 'Tool'
+                    WHEN e:Material THEN 'Material'
+                    WHEN e:Process THEN 'Process'
+                    WHEN e:Constraint THEN 'Constraint'
+                    ELSE 'Unknown'
+                END AS type,
+                e.doc_id AS doc_id,
+                e.type AS con_type,
+                e.value AS value,
+                e.value_max AS value_max,
+                e.unit AS unit,
+                e.description AS description,
+                e.standard AS standard
+            ORDER BY type, name
+            {limit_clause}
+        """, limit=limit)
+
+    out: list[dict] = []
+    for r in result:
+        node = {
+            "id": r["id"],
+            "name": r["name"] or r["id"],
+            "type": r["type"],
+            "doc_id": r["doc_id"] or "",
+        }
+        if r["type"] == "Constraint":
+            node.update({
+                "con_type": r["con_type"],
+                "value": r["value"],
+                "value_max": r["value_max"] or "",
+                "unit": r["unit"],
+                "description": r["description"] or "",
+                "standard": r["standard"] or "",
+            })
+        out.append(node)
+    return out
 
 
 @router.get("/graph/schema")
@@ -331,77 +449,18 @@ async def get_graph(
                     "is_drawing":  bool(r["is_drawing"]),
                 })
 
-        # ── Tool 节点 ─────────────────────────────────────────────────────────
-        entity_limit_clause = "" if expand_all else "LIMIT $limit"
         if show_entities:
-            tool_result = session.run(f"""
-                MATCH (t:Tool)
-                WHERE $doc_id = '' OR t.doc_id = $doc_id
-                RETURN t.name AS id, t.name AS name, t.doc_id AS doc_id, 'Tool' AS type
-                ORDER BY t.name
-                {entity_limit_clause}
-            """, doc_id=doc_id, limit=limit_entity)
-            nodes += [
-                {"id": r["id"], "name": r["name"], "type": "Tool", "doc_id": r["doc_id"] or ""}
-                for r in tool_result
-            ]
-
-        # ── Material 节点 ─────────────────────────────────────────────────────
-        if show_entities:
-            mat_result = session.run(f"""
-                MATCH (m:Material)
-                WHERE $doc_id = '' OR m.doc_id = $doc_id
-                RETURN m.name AS id, m.name AS name, m.doc_id AS doc_id, 'Material' AS type
-                ORDER BY m.name
-                {entity_limit_clause}
-            """, doc_id=doc_id, limit=limit_entity)
-            nodes += [
-                {"id": r["id"], "name": r["name"], "type": "Material", "doc_id": r["doc_id"] or ""}
-                for r in mat_result
-            ]
-
-        # ── Process 节点 ──────────────────────────────────────────────────────
-        if show_entities:
-            proc_result = session.run(f"""
-                MATCH (p:Process)
-                WHERE $doc_id = '' OR p.doc_id = $doc_id
-                RETURN p.name AS id, p.name AS name, p.doc_id AS doc_id, 'Process' AS type
-                ORDER BY p.name
-                {entity_limit_clause}
-            """, doc_id=doc_id, limit=limit_entity)
-            nodes += [
-                {"id": r["id"], "name": r["name"], "type": "Process", "doc_id": r["doc_id"] or ""}
-                for r in proc_result
-            ]
-
-        # ── Constraint 节点 ───────────────────────────────────────────────────
-        if show_entities:
-            con_result = session.run(f"""
-                MATCH (c:Constraint)
-                WHERE $doc_id = '' OR c.doc_id = $doc_id
-                RETURN c.constraint_id AS id,
-                       c.type + ': ' + c.value + c.unit AS name,
-                       c.type AS con_type, c.value AS value, c.value_max AS value_max,
-                       c.unit AS unit, c.description AS description,
-                       c.standard AS standard, c.doc_id AS doc_id
-                ORDER BY c.doc_id, c.constraint_id
-                {entity_limit_clause}
-            """, doc_id=doc_id, limit=limit_entity)
-            nodes += [
-                {
-                    "id":          r["id"],
-                    "name":        r["name"],
-                    "type":        "Constraint",
-                    "con_type":    r["con_type"],
-                    "value":       r["value"],
-                    "value_max":   r["value_max"] or "",
-                    "unit":        r["unit"],
-                    "description": r["description"] or "",
-                    "standard":    r["standard"] or "",
-                    "doc_id":      r["doc_id"] or "",
-                }
-                for r in con_result
-            ]
+            section_ids_for_entities = _selected_ids(nodes, "Section")
+            image_ids_for_entities = _selected_ids(nodes, "Image")
+            entity_nodes = _load_connected_entity_nodes(
+                session,
+                doc_id=doc_id,
+                section_ids=section_ids_for_entities,
+                image_ids=image_ids_for_entities,
+                limit=limit_entity,
+                expand_all=expand_all,
+            )
+            nodes = _extend_unique_nodes(nodes, entity_nodes)
 
         # ── Table 节点（按需，limit_tbl > 0 才查询）────────────────────────────
         if limit_tbl > 0:
@@ -532,6 +591,11 @@ async def get_graph(
             WHERE i.image_id IN $image_ids AND t.name IN $tool_ids
             RETURN i.image_id AS source, t.name AS target, 'MENTIONS_TOOL' AS type
         """, image_ids=selected_image_ids, tool_ids=selected_tool_ids)
+        edges += _query_edges("""
+            MATCH (i:Image)-[:HAS_ANNOTATION]->(c:Constraint)
+            WHERE i.image_id IN $image_ids AND c.constraint_id IN $constraint_ids
+            RETURN i.image_id AS source, c.constraint_id AS target, 'HAS_ANNOTATION' AS type
+        """, image_ids=selected_image_ids, constraint_ids=selected_constraint_ids)
         edges += _query_edges("""
             MATCH (new_doc:Document)-[:SUPERSEDES]->(old_doc:Document)
             WHERE new_doc.name IN $doc_ids AND old_doc.name IN $doc_ids

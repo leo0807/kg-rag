@@ -114,11 +114,12 @@ def _run_entities(driver, doc_id, sections, task, step):
     step("entities", "重新提取工具/材料/工序实体...")
     if _cancelled(task): return -1
     from ..entity_extractor import extract_entities_from_sections
-    from ..entity_writer    import write_entities
+    from ..entity_writer    import reset_document_entity_graph, write_entities
     
     def on_prog(i, n):
         step("entities", f"正在提取实体: {i}/{n} 章节...")
         
+    reset_document_entity_graph(driver, doc_id)
     entities = extract_entities_from_sections(sections, on_progress=on_prog)
     write_entities(driver, doc_id, entities)
     return len(entities) if isinstance(entities, list) else 0
@@ -128,11 +129,12 @@ def _run_constraints(driver, doc_id, sections, task, step):
     step("constraints", "重新提取文本约束参数...")
     if _cancelled(task): return -1
     from ..entity_extractor import extract_constraints_from_sections
-    from ..entity_writer    import write_constraints
+    from ..entity_writer    import reset_document_text_constraints, write_constraints
     
     def on_prog(i, n):
         step("constraints", f"正在提取约束: {i}/{n} 章节...")
         
+    reset_document_text_constraints(driver, doc_id)
     data = extract_constraints_from_sections(sections, on_progress=on_prog)
     write_constraints(driver, doc_id, data)
     return len(data) if isinstance(data, list) else 0
@@ -155,14 +157,15 @@ def _run_images(driver, doc_id, pdf_path, sections, task, step):
 def _run_tables(driver, doc_id, pdf_path, sections, task, step):
     step("tables", "PP-Structure 表格提取...")
     if _cancelled(task): return -1
-    from ..table_extractor import extract_all_tables, is_available
-    from ..entity_writer   import write_constraints
+    from ..table_extractor import extract_tables_full, is_available
+    from ..entity_writer   import reset_document_tables, write_tables
     if not is_available():
         return 0
-    cons = extract_all_tables(str(pdf_path), doc_id, sections)
-    if cons:
-        write_constraints(driver, doc_id, cons)
-    return len(cons)
+    reset_document_tables(driver, doc_id)
+    tables = extract_tables_full(str(pdf_path), doc_id, sections)
+    if tables:
+        write_tables(driver, doc_id, tables)
+    return len(tables)
 
 
 def _run_drawings(driver, doc_id, images, task, step):
@@ -192,7 +195,7 @@ def _run_drawings(driver, doc_id, images, task, step):
             step("drawings", f"正在分析图纸 ({idx}/{total_imgs}): {image_path.name}...")
             # ── VLM 分析（内部已有 60s 超时和 try/finally 清理） ─────────────
             result = analyze_drawing(str(image_path), img.get("caption") or "", doc_id)
-            caption     = result.get("summary", "") or img.get("caption", "")
+            caption     = (result.get("summary") or img.get("caption") or "").strip()
             analyzed_at = int(_time.time())
 
             # ── 写回 Neo4j Image 节点 ─────────────────────────────────────────
@@ -231,7 +234,7 @@ def _run_drawings(driver, doc_id, images, task, step):
                 write_drawing_constraints(driver, image_id, doc_id, result["annotations"])
 
             # ── 写入 Milvus（skipped 级别无有效内容，跳过） ───────────────────
-            if caption.strip() and result.get("analysis_level") != "skipped":
+            if caption and result.get("analysis_level") != "skipped":
                 try:
                     from ..embedder      import embed_texts
                     from ..image_vector_service import build_image_milvus_text
@@ -311,6 +314,7 @@ def _run_reparse(driver, doc_id, pdf_path, task, step):
         return 0, None, cleanup_paths
 
     from ..parsing.parser import parse
+    from ..entity_writer import cleanup_stale_document_nodes
     from ..neo4j_writer import rewrite_sections
 
     doc = parse(prepared_pdf if prepared_pdf.suffix.lower() == ".pdf" else source_path or prepared_pdf)
@@ -319,6 +323,7 @@ def _run_reparse(driver, doc_id, pdf_path, task, step):
         cleanup_paths.append(doc.pdf_path)
 
     count = rewrite_sections(driver, doc)
+    cleanup_stale_document_nodes(driver, doc_id)
     step("reparse", f"章节重新解析完成，共 {count} 个章节")
     return count, effective_pdf, cleanup_paths
 

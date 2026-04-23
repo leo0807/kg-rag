@@ -97,13 +97,7 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
     从单份 PDF 提取图片，写入本地 + MinIO + Neo4j。
     返回成功写入的图片数，失败时抛出异常交由调用方处理。
     """
-    try:
-        import fitz
-    except ImportError:
-        logger.warning("pymupdf 未安装，跳过图片提取")
-        return 0
-
-    from ..pdf_image_extractor import register_image_hash
+    from ..pdf_image_extractor import extract_images_from_pdf
 
     # 页码 → chunk_id（取页面上最后一个 section）
     page_to_chunk: dict[int, str] = {}
@@ -128,94 +122,20 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
                 break
         return best
 
-    try:
-        from ...core.storage import upload_bytes, BUCKET_EXTRACTED_IMAGES
-        storage_ok = True
-    except Exception as e:
-        logger.warning("MinIO 不可用，图片只保存本地: %s", e)
-        storage_ok = False
-
-    local_dir = Path("uploads/images")
-    local_dir.mkdir(parents=True, exist_ok=True)
-
-    fitz_doc    = fitz.open(str(pdf_path))
-    image_nodes: list[dict] = []
-    seen_hashes: set[str] = set()
-    duplicate_count = 0
-
-    for page_num in range(len(fitz_doc)):
-        page = fitz_doc[page_num]
-        for img_idx, img_info in enumerate(page.get_images(full=True)):
-            xref = img_info[0]
-            try:
-                base   = fitz_doc.extract_image(xref)
-                w, h   = base["width"], base["height"]
-                # 过滤极小图片（图标/装饰元素）；但保留宽高比在 1:3~3:1 之间的横幅式工程图
-                if w < 50 or h < 50:
-                    continue
-                # 如果宽高比超过 5:1 或 1:5（细长条），且面积 < 200×200，也跳过
-                aspect = w / h if h > 0 else 1.0
-                if (aspect > 5.0 or aspect < 0.2) and (w < 200 or h < 200):
-                    continue
-
-                ext       = base["ext"] or "png"
-                img_bytes = base["image"]
-                content_hash, is_duplicate = register_image_hash(seen_hashes, img_bytes)
-                if is_duplicate:
-                    duplicate_count += 1
-                    logger.info(
-                        "[backfill] 跳过重复图片 doc_id=%s page=%d img=%d hash=%s",
-                        doc_id,
-                        page_num + 1,
-                        img_idx,
-                        content_hash[:12],
-                    )
-                    continue
-                image_id  = f"{doc_id}_page{page_num + 1}_img{img_idx}"
-                minio_key = f"{doc_id}/{page_num + 1}_{img_idx}.{ext}"
-
-                # 本地保存（供后续 VLM 分析）
-                local_path: Optional[Path] = local_dir / f"{image_id}.{ext}"
-                try:
-                    local_path.write_bytes(img_bytes)  # type: ignore[union-attr]
-                except Exception as e:
-                    logger.warning("本地保存失败 %s: %s", image_id, e)
-                    local_path = None
-
-                # MinIO 上传；上传成功后立即删除本地临时文件
-                minio_path = ""
-                if storage_ok:
-                    try:
-                        upload_bytes(
-                            BUCKET_EXTRACTED_IMAGES, minio_key, img_bytes,
-                            content_type=f"image/{ext}",
-                        )
-                        minio_path = minio_key
-                        if local_path:
-                            try:
-                                local_path.unlink(missing_ok=True)
-                                local_path = None
-                            except Exception as _ce:
-                                logger.warning("删除本地临时图片失败 %s: %s", image_id, _ce)
-                    except Exception as e:
-                        logger.warning("MinIO 上传失败 %s: %s", image_id, e)
-
-                image_nodes.append({
-                    "image_id":   image_id,
-                    "doc_id":     doc_id,
-                    "page_num":   page_num + 1,
-                    "path":       str(local_path) if local_path else "",
-                    "minio_path": minio_path,
-                    "content_hash": content_hash,
-                    "is_drawing": False,
-                    "chunk_id":   _find_chunk(page_num),
-                })
-
-            except Exception as e:
-                logger.warning("提取图片失败 doc=%s page=%d img=%d: %s",
-                               doc_id, page_num + 1, img_idx, e)
-
-    fitz_doc.close()
+    extracted_images = extract_images_from_pdf(str(pdf_path), doc_id)
+    image_nodes = [
+        {
+            "image_id": img.image_id,
+            "doc_id": doc_id,
+            "page_num": img.page,
+            "path": img.path,
+            "minio_path": img.minio_key,
+            "content_hash": img.content_hash,
+            "is_drawing": False,
+            "chunk_id": _find_chunk(max(int(img.page) - 1, 0)),
+        }
+        for img in extracted_images
+    ]
 
     if not image_nodes:
         return 0
@@ -226,6 +146,7 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
             MATCH (d:Document {name: img.doc_id})
             MERGE (i:Image {image_id: img.image_id})
             SET i.doc_id     = img.doc_id,
+                i.page       = img.page_num,
                 i.page_num   = img.page_num,
                 i.path       = img.path,
                 i.minio_path = img.minio_path,
@@ -244,10 +165,9 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
             """, links=section_links)
 
     logger.info(
-        "[backfill] 图片写入完成 doc_id=%s count=%d 去重跳过=%d",
+        "[backfill] 图片写入完成 doc_id=%s count=%d",
         doc_id,
         len(image_nodes),
-        duplicate_count,
     )
     return len(image_nodes)
 

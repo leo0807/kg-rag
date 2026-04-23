@@ -61,7 +61,7 @@ export function drawGraph(
             return (tourNodeIds!.has(s) && tourNodeIds!.has(t)) ? 0.85 : 0.05;
         })
         .attr("stroke-dasharray", (d: any) =>
-            d.type === "HAS_IMAGE" || d.type === "MENTIONS_TOOL" ? "4 2" : null
+            d.type === "HAS_IMAGE" || d.type === "MENTIONS_TOOL" || d.type === "HAS_ANNOTATION" ? "4 2" : null
         );
 
     const node = container.append("g")

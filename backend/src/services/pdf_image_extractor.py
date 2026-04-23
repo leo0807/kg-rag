@@ -10,6 +10,7 @@ PDF 图片提取服务
 """
 import hashlib
 import logging
+import re
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
@@ -67,6 +68,102 @@ def _upload_to_minio(image_data: bytes, image_id: str, ext: str) -> str:
         return ""
 
 
+def _persist_image_bytes(
+    *,
+    image_id: str,
+    ext: str,
+    image_bytes: bytes,
+) -> tuple[str, str]:
+    """
+    将图片保存到本地并尽量上传 MinIO。
+    返回 `(local_path, minio_key)`。
+    """
+    img_path = IMAGE_DIR / f"{image_id}.{ext}"
+    with open(img_path, "wb") as f:
+        f.write(image_bytes)
+
+    minio_key = _upload_to_minio(image_bytes, image_id, ext)
+    if minio_key:
+        try:
+            img_path.unlink(missing_ok=True)
+        except Exception as exc:
+            logger.warning("删除本地临时图片失败 %s: %s", img_path, exc)
+    return (str(img_path) if not minio_key else "", minio_key)
+
+
+def _page_image_xrefs(page: Any) -> list[int]:
+    return [int(item[0]) for item in page.get_images(full=True)]
+
+
+def _should_fallback_to_page_snapshots(doc: Any, sample_pages: int = 6) -> bool:
+    """
+    识别 Office 文档转 PDF 后的“共享资源重复挂到每页”场景。
+    这类 PDF 用 raw image extraction 会把整本文档压成第一页的一批图片。
+    """
+    sampled_counts: list[int] = []
+    unique_xrefs: set[int] = set()
+    total_refs = 0
+
+    for page_idx in range(min(len(doc), sample_pages)):
+        refs = _page_image_xrefs(doc[page_idx])
+        if not refs:
+            continue
+        sampled_counts.append(len(refs))
+        unique_xrefs.update(refs)
+        total_refs += len(refs)
+
+    if len(sampled_counts) < 2:
+        return False
+
+    min_count = min(sampled_counts)
+    max_count = max(sampled_counts)
+    repeated_ratio = (len(unique_xrefs) / total_refs) if total_refs else 1.0
+    return min_count >= 20 and max_count - min_count <= 2 and repeated_ratio <= 0.35
+
+
+def _extract_page_caption(page: Any, page_num: int) -> str:
+    blocks = page.get_text("blocks")
+    for block in blocks:
+        text = re.sub(r"\s+", " ", (block[4] or "").strip())
+        if 4 <= len(text) <= 120:
+            return text
+    return f"第{page_num}页"
+
+
+def _extract_page_snapshots(doc: Any, doc_id: str, dpi: int = 110) -> list[ExtractedImage]:
+    """
+    对可疑 PDF 走整页快照抽取，避免共享嵌入资源导致的重复图片/错误页码。
+    每页最多生成一张图片，保留真实页码。
+    """
+    results: list[ExtractedImage] = []
+    matrix = fitz.Matrix(dpi / 72, dpi / 72)
+
+    for page_num in range(len(doc)):
+        page = doc[page_num]
+        pix = page.get_pixmap(matrix=matrix, alpha=False)
+        image_bytes = pix.tobytes("jpeg")
+        image_id = f"{doc_id}_page{page_num + 1}_snapshot"
+        content_hash = compute_image_content_hash(image_bytes)
+        path, minio_key = _persist_image_bytes(
+            image_id=image_id,
+            ext="jpeg",
+            image_bytes=image_bytes,
+        )
+        results.append(ExtractedImage(
+            image_id=image_id,
+            doc_id=doc_id,
+            page=page_num + 1,
+            path=path,
+            width=pix.width,
+            height=pix.height,
+            content_hash=content_hash,
+            caption=_extract_page_caption(page, page_num + 1),
+            minio_key=minio_key,
+        ))
+    logger.info("整页快照抽取完成 doc_id=%s pages=%d", doc_id, len(results))
+    return results
+
+
 def extract_images_from_pdf(pdf_path: str, doc_id: str) -> list[ExtractedImage]:
     """
     从 PDF 提取所有图片。
@@ -80,6 +177,13 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> list[ExtractedImage]:
         return []
 
     doc     = fitz.open(pdf_path)
+    if _should_fallback_to_page_snapshots(doc):
+        logger.info("检测到共享嵌入资源型 PDF，切换整页快照抽取 doc_id=%s", doc_id)
+        try:
+            return _extract_page_snapshots(doc, doc_id)
+        finally:
+            doc.close()
+
     results = []
     seen_hashes: set[str] = set()
     duplicate_count = 0
@@ -114,19 +218,11 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> list[ExtractedImage]:
                     )
                     continue
 
-                img_path   = IMAGE_DIR / f"{image_id}.{ext}"
-
-                # 保存到本地（供 VLM 分析读取）
-                with open(img_path, "wb") as f:
-                    f.write(img_bytes)
-
-                # 上传到 MinIO；上传成功后立即删除本地临时文件
-                minio_key = _upload_to_minio(img_bytes, image_id, ext)
-                if minio_key:
-                    try:
-                        img_path.unlink(missing_ok=True)
-                    except Exception as _ce:
-                        logger.warning("删除本地临时图片失败 %s: %s", img_path, _ce)
+                path, minio_key = _persist_image_bytes(
+                    image_id=image_id,
+                    ext=ext,
+                    image_bytes=img_bytes,
+                )
 
                 caption = _extract_caption(page, img_idx)
 
@@ -134,7 +230,7 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> list[ExtractedImage]:
                     image_id  = image_id,
                     doc_id    = doc_id,
                     page      = page_num + 1,
-                    path      = str(img_path) if not minio_key else "",
+                    path      = path,
                     width     = width,
                     height    = height,
                     content_hash = content_hash,

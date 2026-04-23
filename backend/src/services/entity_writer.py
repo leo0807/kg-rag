@@ -35,6 +35,104 @@ _ALLOWED_RELATIONS = {"REQUIRES_TOOL", "USES_MATERIAL", "ALTERNATIVE_TO", "COMPA
 _TYPE_LABEL = {"Tool": "Tool", "Material": "Material", "Process": "Process"}
 
 
+def _normalize_names(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        name = (value or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
+
+
+def _collect_section_entities(item: dict) -> tuple[list[str], list[str], list[str], list[dict]]:
+    tools = _normalize_names(item.get("tools", []))
+    materials = _normalize_names(item.get("materials", []))
+    processes = _normalize_names(item.get("processes", []))
+    relations = [
+        r for r in item.get("relations", [])
+        if r.get("rel") in _ALLOWED_RELATIONS
+        and r.get("from_type") in _TYPE_LABEL
+        and r.get("to_type") in _TYPE_LABEL
+        and (r.get("from_name") or "").strip()
+        and (r.get("to_name") or "").strip()
+    ]
+
+    section_entities = {
+        "Tool": set(tools),
+        "Material": set(materials),
+        "Process": set(processes),
+    }
+    for rel in relations:
+        section_entities[rel["from_type"]].add(rel["from_name"].strip())
+        section_entities[rel["to_type"]].add(rel["to_name"].strip())
+
+    return (
+        sorted(section_entities["Tool"]),
+        sorted(section_entities["Material"]),
+        sorted(section_entities["Process"]),
+        relations,
+    )
+
+
+def cleanup_stale_document_nodes(driver: Driver, doc_id: str) -> None:
+    """
+    清理当前文档已不再被任何 Section/Image 锚定的历史节点。
+    主要用于 reparse 后删除旧章节，避免旧实体/表格/约束漂浮在图谱里。
+    """
+    with driver.session() as session:
+        session.run("""
+            MATCH (n)
+            WHERE coalesce(n.doc_id, '') = $doc_id
+              AND (n:Tool OR n:Material OR n:Process OR n:Constraint OR n:Table)
+              AND NOT (n)--(:Section)
+              AND NOT (n)--(:Image)
+            DETACH DELETE n
+        """, doc_id=doc_id)
+
+
+def reset_document_entity_graph(driver: Driver, doc_id: str) -> None:
+    """
+    清除文档章节到实体的旧锚点，并删除失去锚点的旧实体节点。
+    图片分析写入的 Image-[:MENTIONS_TOOL] 边会保留。
+    """
+    with driver.session() as session:
+        session.run("""
+            MATCH (:Document {name: $doc_id})-[:HAS_SECTION]->(sec:Section)-[r:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS]->()
+            DELETE r
+        """, doc_id=doc_id)
+    cleanup_stale_document_nodes(driver, doc_id)
+
+
+def reset_document_text_constraints(driver: Driver, doc_id: str) -> None:
+    """重跑文本约束前，清除旧的文本约束节点，保留 drawing/table 来源的约束。"""
+    with driver.session() as session:
+        session.run("""
+            MATCH (c:Constraint)
+            WHERE coalesce(c.doc_id, '') = $doc_id
+              AND coalesce(c.source, 'text') = 'text'
+            DETACH DELETE c
+        """, doc_id=doc_id)
+
+
+def reset_document_tables(driver: Driver, doc_id: str) -> None:
+    """重跑表格前，清除旧 Table 节点及表格来源的 Constraint。"""
+    with driver.session() as session:
+        session.run("""
+            MATCH (t:Table)
+            WHERE coalesce(t.doc_id, '') = $doc_id
+            DETACH DELETE t
+        """, doc_id=doc_id)
+        session.run("""
+            MATCH (c:Constraint)
+            WHERE coalesce(c.doc_id, '') = $doc_id
+              AND c.source = 'table'
+            DETACH DELETE c
+        """, doc_id=doc_id)
+
+
 def write_tables(driver: Driver, doc_id: str, table_data: list[dict]) -> None:
     """
     table_data: [{
@@ -119,13 +217,7 @@ def write_entities(driver: Driver, doc_id: str, entity_data: list[dict]) -> None
     with driver.session() as session:
         for item in entity_data:
             chunk_id  = item.get("chunk_id", "")
-            tools     = [t.strip() for t in item.get("tools", [])     if t and t.strip()]
-            materials = [m.strip() for m in item.get("materials", []) if m and m.strip()]
-            processes = [p.strip() for p in item.get("processes", []) if p and p.strip()]
-            relations = [r for r in item.get("relations", [])
-                         if r.get("rel") in _ALLOWED_RELATIONS
-                         and r.get("from_type") in _TYPE_LABEL
-                         and r.get("to_type")   in _TYPE_LABEL]
+            tools, materials, processes, relations = _collect_section_entities(item)
 
             if tools:
                 session.run("""
@@ -165,9 +257,15 @@ def write_entities(driver: Driver, doc_id: str, entity_data: list[dict]) -> None
                 # Cypher 不支持参数化 label/rel_type，用字符串拼接（值已白名单校验）
                 session.run(f"""
                     MERGE (a:{from_label} {{name: $from_name}})
+                    ON CREATE SET a.doc_id = $doc_id
                     MERGE (b:{to_label}   {{name: $to_name}})
+                    ON CREATE SET b.doc_id = $doc_id
                     MERGE (a)-[:{rel_type}]->(b)
-                """, from_name=rel["from_name"].strip(), to_name=rel["to_name"].strip())
+                """,
+                    from_name=rel["from_name"].strip(),
+                    to_name=rel["to_name"].strip(),
+                    doc_id=doc_id,
+                )
                 relations_total += 1
 
     logger.info(
@@ -203,7 +301,8 @@ def write_constraints(driver: Driver, doc_id: str, constraint_data: list[dict]) 
                         con.unit        = $unit,
                         con.description = $description,
                         con.standard    = $standard,
-                        con.doc_id      = $doc_id
+                        con.doc_id      = $doc_id,
+                        con.source      = 'text'
                     MERGE (sec)-[:HAS_CONSTRAINT]->(con)
                 """,
                     chunk_id=chunk_id,
@@ -271,6 +370,20 @@ def write_drawing_constraints(
                 MATCH (con:Constraint {constraint_id: $cid})
                 MERGE (s)-[:HAS_CONSTRAINT]->(con)
             """, image_id=image_id, cid=cid)
+            # 某些图纸页只有 Document -> Image，没有 Section -> Image。
+            # 这时按图片页码回挂到当前文档最近的章节，避免图纸约束悬空。
+            session.run("""
+                MATCH (i:Image {image_id: $image_id})
+                WHERE NOT EXISTS { MATCH (:Section)-[:HAS_IMAGE]->(i) }
+                MATCH (s:Section {doc_id: $doc_id})
+                WHERE coalesce(s.page_idx, -1) <= coalesce(i.page_num, i.page, 1) - 1
+                WITH i, s
+                ORDER BY coalesce(s.page_idx, -1) DESC, coalesce(s.seq_index, -1) DESC
+                LIMIT 1
+                MATCH (con:Constraint {constraint_id: $cid})
+                MERGE (s)-[:HAS_IMAGE]->(i)
+                MERGE (s)-[:HAS_CONSTRAINT]->(con)
+            """, image_id=image_id, doc_id=doc_id, cid=cid)
             total += 1
     logger.info("图纸约束写入完成 image_id=%s constraints=%d", image_id, total)
 

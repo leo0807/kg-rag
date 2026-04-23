@@ -125,6 +125,77 @@ _TRAILING_CONNECTOR_RE = re.compile(r'(?:and|or|with|for|to|of|the|a|an|及|和|
 _REFERENCE_TITLE_RE = re.compile(r'^(?:节|章|条|before\b|after\b|refer\b|as per\b)', re.IGNORECASE)
 
 
+def _table_bbox_list(page) -> list[list[float]]:
+    """
+    收集页面内表格区域的 bbox，供章节检测避开表格文本。
+    优先使用 pdfplumber 的 find_tables()，这样能拿到稳定坐标；
+    若失败则返回空列表，保持旧行为。
+    """
+    try:
+        tables = page.find_tables() or []
+    except Exception:
+        return []
+
+    out: list[list[float]] = []
+    for table in tables:
+        bbox = getattr(table, "bbox", None)
+        if not bbox or len(bbox) != 4:
+            continue
+        out.append([float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])])
+    return out
+
+
+def _bbox_overlap_ratio(a: list[float], b: list[float]) -> float:
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    ix0 = max(ax0, bx0)
+    iy0 = max(ay0, by0)
+    ix1 = min(ax1, bx1)
+    iy1 = min(ay1, by1)
+    if ix1 <= ix0 or iy1 <= iy0:
+        return 0.0
+    area = max((ax1 - ax0) * (ay1 - ay0), 1.0)
+    return ((ix1 - ix0) * (iy1 - iy0)) / area
+
+
+def _line_overlaps_table(line_bbox: list[float], table_bboxes: list[list[float]]) -> bool:
+    """
+    判断一行文本是否主要位于表格区域内。
+    这里用“行 bbox 与表格 bbox 的重叠比例”做保守判定，
+    避免把表格中的行号/参数项误判成章节标题。
+    """
+    for table_bbox in table_bboxes:
+        if _bbox_overlap_ratio(line_bbox, table_bbox) >= 0.45:
+            return True
+    return False
+
+
+def _extract_page_tables(page) -> list[dict]:
+    """
+    返回页面上的表格及其 bbox，供章节解析和表格提取共用。
+    """
+    tables: list[dict] = []
+    try:
+        for table in page.find_tables() or []:
+            rows = table.extract() or []
+            tables.append({
+                "rows": rows,
+                "bbox": list(table.bbox) if getattr(table, "bbox", None) else None,
+            })
+    except Exception:
+        tables = []
+
+    if tables:
+        return tables
+
+    try:
+        raw_tables = page.extract_tables() or []
+    except Exception:
+        raw_tables = []
+
+    return [{"rows": rows, "bbox": None} for rows in raw_tables]
+
+
 def _match_section_heading(text: str) -> tuple[str, str] | None:
     """从单行文本中提取章节号和标题。"""
     candidate = (text or "").strip()
@@ -669,6 +740,7 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
             all_lines = []
             for page_idx, page in enumerate(pdf.pages):
                 words = page.extract_words()
+                table_bboxes = _table_bbox_list(page)
                 # 按行合并单词
                 lines_in_page = []
                 if not words: continue
@@ -717,22 +789,25 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
                             consumed_lines = 2
                             bbox_words = sorted(line_words + next_words, key=lambda w: (w["top"], w["x0"]))
 
-                    if heading and is_likely_section_title(heading[0], heading[1]):
+                    bbox = [
+                        min(w["x0"] for w in bbox_words),
+                        min(w["top"] for w in bbox_words),
+                        max(w["x1"] for w in bbox_words),
+                        max(w["bottom"] for w in bbox_words),
+                    ]
+                    is_in_table = _line_overlaps_table(bbox, table_bboxes)
+
+                    if heading and not is_in_table and is_likely_section_title(heading[0], heading[1]):
                         # 这是一个章节标题行
                         all_lines.append({
                             "type": "heading",
                             "number": heading[0],
                             "title": heading[1],
                             "page_idx": page_idx,
-                            "bbox": [
-                                min(w["x0"] for w in bbox_words),
-                                min(w["top"] for w in bbox_words),
-                                max(w["x1"] for w in bbox_words),
-                                max(w["bottom"] for w in bbox_words),
-                            ],
+                            "bbox": bbox,
                             "global_pos": len(all_lines)
                         })
-                    elif heading and page_is_toc:
+                    elif heading and page_is_toc and not is_in_table:
                         all_lines.append({
                             "type": "toc_heading",
                             "number": heading[0],
@@ -913,12 +988,12 @@ def extract_tables_pdfplumber(pdf_path: Path, doc_id: str, sections: list[dict])
         with pdfplumber.open(pdf_path) as pdf:
             table_seq = 0
             for page_idx, page in enumerate(pdf.pages):
-                raw_tables = page.extract_tables() or []
-                for tbl in raw_tables:
-                    if not tbl:
+                for table in _extract_page_tables(page):
+                    rows = table.get("rows") or []
+                    if not rows:
                         continue
                     # 过滤空行，规整化单元格
-                    rows = [[str(cell or "").strip() for cell in row] for row in tbl]
+                    rows = [[str(cell or "").strip() for cell in row] for row in rows]
                     rows = [r for r in rows if any(c for c in r)]
                     if len(rows) < 2:  # 少于 2 行（含表头）无意义
                         continue
@@ -942,7 +1017,7 @@ def extract_tables_pdfplumber(pdf_path: Path, doc_id: str, sections: list[dict])
                         "rows_json":   rows_json,
                         "page_index":  page_idx,
                         "row_count":   max(0, len(rows) - 1),
-                        "bbox":        tbl.bbox,  # 新增：保存表格在 PDF 页面上的坐标 [x0, top, x1, bottom]
+                        "bbox":        table.get("bbox"),
                         "constraints": [],
                     })
                     table_seq += 1

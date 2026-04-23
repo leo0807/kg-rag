@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 src/services/entity_extractor.py
 从章节文本中提取：
@@ -6,10 +8,43 @@ src/services/entity_extractor.py
 """
 import json
 import logging
+import re
 from typing import Callable
 from .llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
+
+_DOC_ID_RE = re.compile(r"^[A-Z]{2,}\d{3,}[A-Z0-9_-]*$")
+_ENTITY_EMPTY_WORDS = {"无", "见", "详见", "无要求", "本规范", "本工艺规范"}
+_PROCESS_SHORT_ALLOW = {
+    "清洗", "清理", "检查", "检验", "测试", "试验", "涂胶", "点胶", "混胶", "混合",
+    "定位", "夹紧", "固化", "切割", "打磨", "装配", "加工", "拒收",
+}
+_PROCESS_ACTION_HINTS = (
+    "清洗", "清理", "检查", "检验", "测试", "试验", "紧固", "涂胶", "涂覆", "点胶", "混胶",
+    "混合", "固化", "校准", "测量", "装配", "加工", "切割", "打磨",
+    "修补", "封包", "封严", "定位", "夹紧", "密封", "验证", "拒收",
+)
+_PROCESS_EXACT_BLOCKLIST = {
+    "完成", "连接", "设计", "实现", "相连", "装于", "位于", "用于", "引用",
+    "获得", "规定", "记录", "控制", "分析", "确定", "编制", "作为依据",
+    "作为文件", "入口接", "出口接", "检索",
+}
+_PROCESS_PREFIX_BLOCKLIST = (
+    "实现", "完成", "连接", "引用", "作为", "入口接", "出口接", "装于", "位于",
+    "确认", "查看", "处于", "停放",
+)
+_PROCESS_PHRASE_BLOCK_HINTS = ("状态", "区域", "待机", "关停", "已完成")
+_PROCESS_CANONICAL_HINTS = (
+    "完工验证测试", "完工测试", "涂胶密封检验", "验证试验", "手工修补",
+    "自动涂胶", "机器人自动涂胶", "重做试件", "压力测试", "清理", "清洗",
+    "检查", "检验", "测试", "试验", "点胶", "涂胶", "修补", "拒收",
+)
+_PROCESS_META_HINTS = (
+    "人员", "培训", "规范", "手册", "要求", "引用", "依据", "文件",
+    "职责", "范围", "定义",
+)
+_META_SECTION_HINTS = ("范围", "引用", "术语", "定义", "缩略语")
 
 
 def _call_llm(prompt: str) -> str | None:
@@ -40,6 +75,137 @@ def _parse_json(raw: str) -> list | dict | None:
         return None
 
 
+def _normalize_entity_text(value: str) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text.strip("，。；;：:、\"'`()[]【】<>《》")
+
+
+def _looks_like_meta_section(section: dict) -> bool:
+    title = _normalize_entity_text(section.get("title", ""))
+    if any(hint in title for hint in _META_SECTION_HINTS):
+        return True
+    content = _normalize_entity_text(section.get("content", ""))[:80]
+    if title and len(title) <= 12 and content.startswith(title):
+        return True
+    return False
+
+
+def _keep_common_entity(name: str) -> bool:
+    text = _normalize_entity_text(name)
+    compact = text.replace(" ", "")
+    if not compact or compact in _ENTITY_EMPTY_WORDS:
+        return False
+    if len(compact) <= 1:
+        return False
+    if _DOC_ID_RE.fullmatch(compact):
+        return False
+    return True
+
+
+def _keep_process_name(name: str, section: dict) -> bool:
+    text = _normalize_entity_text(name)
+    compact = text.replace(" ", "")
+    if not _keep_common_entity(text):
+        return False
+    if compact in _PROCESS_EXACT_BLOCKLIST:
+        return False
+    if any(compact.startswith(prefix) for prefix in _PROCESS_PREFIX_BLOCKLIST):
+        return False
+    if any(hint in compact for hint in _PROCESS_PHRASE_BLOCK_HINTS):
+        return False
+    if len(compact) <= 2 and compact not in _PROCESS_SHORT_ALLOW:
+        return False
+
+    has_action_hint = any(hint in compact for hint in _PROCESS_ACTION_HINTS)
+    has_meta_hint = any(hint in compact for hint in _PROCESS_META_HINTS)
+
+    if has_meta_hint and not has_action_hint:
+        return False
+    if _looks_like_meta_section(section) and not has_action_hint:
+        return False
+    return True
+
+
+def _normalize_process_name(name: str) -> str:
+    compact = _normalize_entity_text(name).replace(" ", "")
+    if compact.startswith("机器人自动") and "涂胶" in compact:
+        return "自动涂胶"
+    for hint in _PROCESS_CANONICAL_HINTS:
+        if hint in compact:
+            return hint
+    return compact
+
+
+def _postprocess_entity_item(section: dict, item: dict) -> dict:
+    tools = [
+        _normalize_entity_text(t)
+        for t in item.get("tools", [])
+        if isinstance(t, str) and _keep_common_entity(t)
+    ]
+    materials = [
+        _normalize_entity_text(m)
+        for m in item.get("materials", [])
+        if isinstance(m, str) and _keep_common_entity(m)
+    ]
+    processes = [
+        _normalize_process_name(p)
+        for p in item.get("processes", [])
+        if isinstance(p, str) and _keep_process_name(p, section)
+    ]
+
+    allowed_processes = {p.replace(" ", "") for p in processes}
+    relations = []
+    for rel in item.get("relations", []):
+        if not isinstance(rel, dict):
+            continue
+        if not rel.get("from_name") or not rel.get("to_name"):
+            continue
+        if rel.get("rel") not in {"REQUIRES_TOOL", "USES_MATERIAL", "ALTERNATIVE_TO", "COMPATIBLE_WITH"}:
+            continue
+        from_name = _normalize_entity_text(rel["from_name"])
+        to_name = _normalize_entity_text(rel["to_name"])
+        from_type = rel.get("from_type")
+        to_type = rel.get("to_type")
+        if from_type == "Process":
+            from_name = _normalize_process_name(from_name)
+        if to_type == "Process":
+            to_name = _normalize_process_name(to_name)
+        if from_type == "Process" and from_name.replace(" ", "") not in allowed_processes:
+            continue
+        if to_type == "Process" and to_name.replace(" ", "") not in allowed_processes:
+            continue
+        if from_type in {"Tool", "Material"} and not _keep_common_entity(from_name):
+            continue
+        if to_type in {"Tool", "Material"} and not _keep_common_entity(to_name):
+            continue
+        relations.append({
+            "from_type": from_type,
+            "from_name": from_name,
+            "rel": rel.get("rel"),
+            "to_type": to_type,
+            "to_name": to_name,
+        })
+
+    def _dedupe(values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for value in values:
+            key = value.replace(" ", "")
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(value)
+        return out
+
+    return {
+        "chunk_id": section["chunk_id"],
+        "tools": _dedupe(tools),
+        "materials": _dedupe(materials),
+        "processes": _dedupe(processes),
+        "relations": relations,
+    }
+
+
 # ── 实体提取 ──────────────────────────────────────────────────────────────────
 
 def extract_entities_from_sections(sections: list[dict], on_progress: Callable[[int, int], None] = None) -> list[dict]:
@@ -53,7 +219,7 @@ def extract_entities_from_sections(sections: list[dict], on_progress: Callable[[
     }]
     """
     results = []
-    batch_size = 5
+    batch_size = 3
     total = len(sections)
     for i in range(0, total, batch_size):
         if on_progress:
@@ -69,7 +235,10 @@ def _extract_entity_batch(sections: list[dict]) -> list[dict]:
     """对一批章节提取实体及实体间关系"""
     combined = ""
     for s in sections:
-        combined += f"\n### [{s['chunk_id']}] {s.get('title','')}\n{s.get('content','')[:600]}\n"
+        combined += (
+            f"\n### [{s['chunk_id']}] {s.get('number', '')} {s.get('title', '')}\n"
+            f"{s.get('content','')[:500]}\n"
+        )
 
     prompt = f"""你是航空制造工艺规范分析专家。请从以下规范章节中提取实体和实体间关系。
 
@@ -94,12 +263,17 @@ def _extract_entity_batch(sections: list[dict]) -> list[dict]:
 提取规则：
 - tools:     工具/设备/仪器（扳手、液压泵、检测仪等）
 - materials: 原材料/耗材/零件（密封胶、润滑脂、O型圈等）
-- processes: 操作工序动词短语（清洗、力矩紧固、压力测试等）
+- processes: 只保留“可执行的制造/装配/检验/测试动作”，必须是工艺动作短语（如“清洗”“力矩紧固”“压力测试”“点胶”“固化”）
+- 不要把定义性描述、功能说明、状态词、连接关系、培训/职责/引用要求当成 process
+- 以下这类通常应直接排除：完成、连接、设计、实现、作为依据、引用、人员培训、文件要求
+- 若章节属于范围/引用文件/术语定义，除非出现明确工艺动作，否则 processes 留空
+- 工具、材料名称必须是实体名，不要输出“无”或文档编号（如 CPS1000）
 - relations 支持的类型：
     REQUIRES_TOOL  — Process 执行需要某 Tool
     USES_MATERIAL  — Process 执行使用某 Material
     ALTERNATIVE_TO — Material 可替代另一 Material
     COMPATIBLE_WITH — Material 与另一 Material 或 Tool 兼容使用
+- chunk_id 必须逐字照抄输入中的章节 ID
 - 若无关系，relations 为空数组
 - 只输出 JSON，不要其他内容"""
 
@@ -115,18 +289,20 @@ def _extract_entity_batch(sections: list[dict]) -> list[dict]:
     # 补充缺失字段
     chunk_ids = {s["chunk_id"] for s in sections}
     out = []
+    section_by_chunk_id = {s["chunk_id"]: s for s in sections}
     for item in data:
         if item.get("chunk_id") not in chunk_ids:
             continue
-        out.append({
-            "chunk_id":  item.get("chunk_id", ""),
-            "tools":     [t for t in item.get("tools", [])     if t and isinstance(t, str)],
-            "materials": [m for m in item.get("materials", []) if m and isinstance(m, str)],
-            "processes": [p for p in item.get("processes", []) if p and isinstance(p, str)],
-            "relations": [r for r in item.get("relations", [])
-                          if isinstance(r, dict) and r.get("from_name") and r.get("to_name")
-                          and r.get("rel") in {"REQUIRES_TOOL", "USES_MATERIAL", "ALTERNATIVE_TO", "COMPATIBLE_WITH"}],
-        })
+        out.append(_postprocess_entity_item(
+            section_by_chunk_id[item["chunk_id"]],
+            {
+                "chunk_id": item.get("chunk_id", ""),
+                "tools": item.get("tools", []),
+                "materials": item.get("materials", []),
+                "processes": item.get("processes", []),
+                "relations": item.get("relations", []),
+            },
+        ))
     # 补充未返回的 chunk
     returned = {item["chunk_id"] for item in out}
     for s in sections:

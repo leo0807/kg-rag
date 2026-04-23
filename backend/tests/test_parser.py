@@ -251,3 +251,61 @@ class TestWrappedHeadingMerge:
             "7.5.16.3",
             "需要湿安装的衬套和轴承的密封(Sealing for Wet Assembly Bush and Bearing)",
         )
+
+
+class _FakePdf:
+    def __init__(self, pages):
+        self.pages = pages
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeTable:
+    def __init__(self, bbox, rows):
+        self.bbox = bbox
+        self._rows = rows
+
+    def extract(self):
+        return self._rows
+
+
+class _FakePage:
+    def __init__(self, words, tables=None):
+        self._words = words
+        self._tables = tables or []
+
+    def extract_words(self, extra_attrs=None):
+        return list(self._words)
+
+    def find_tables(self):
+        return list(self._tables)
+
+    def extract_tables(self):
+        return [table.extract() for table in self._tables]
+
+
+class TestTableAwareSectionParsing:
+    def test_skips_heading_like_lines_inside_table_bbox(self, monkeypatch):
+        words = [
+            {"text": "7.3", "x0": 20, "x1": 45, "top": 100, "bottom": 112},
+            {"text": "采购方接收要求", "x0": 60, "x1": 180, "top": 100, "bottom": 112},
+            {"text": "8", "x0": 20, "x1": 28, "top": 200, "bottom": 212},
+            {"text": "熔点", "x0": 40, "x1": 72, "top": 200, "bottom": 212},
+            {"text": "见表", "x0": 86, "x1": 114, "top": 200, "bottom": 212},
+            {"text": "6-1", "x0": 118, "x1": 142, "top": 200, "bottom": 212},
+            {"text": "见", "x0": 156, "x1": 164, "top": 200, "bottom": 212},
+            {"text": "6.2.9", "x0": 176, "x1": 214, "top": 200, "bottom": 212},
+        ]
+        table = _FakeTable((0, 190, 260, 220), [["熔点", "见表6-1"]])
+        fake_pdf = _FakePdf([_FakePage(words, [table])])
+
+        monkeypatch.setattr("src.services.parsing.parser.pdfplumber.open", lambda _: fake_pdf)
+
+        sections = extract_sections(Path("dummy.pdf"), "CPS0205")
+
+        assert [section["number"] for section in sections] == ["7.3"]
+        assert sections[0]["title"] == "采购方接收要求"
