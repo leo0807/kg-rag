@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
+import { fetchApi } from "@/lib/api";
 import {
   GraphNode,
   GraphData,
@@ -268,8 +269,7 @@ export default function GraphPage() {
       show_images: String(limits.show_images),
       show_entities: String(limits.show_entities),
     });
-    fetch(`/api/graph?${params}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
+    fetchApi<GraphData>(`/api/graph?${params}`)
       .then((d: GraphData) => {
         setData(d);
         if (d.stats) setGraphStats(d.stats);
@@ -281,9 +281,9 @@ export default function GraphPage() {
   async function expandSection(chunkId: string) {
     setExpandingId(chunkId);
     try {
-      const res = await fetch(`/api/graph/expand/${chunkId}`);
-      if (!res.ok) return;
-      const { nodes: children } = await res.json();
+      const { nodes: children } = await fetchApi<{ nodes: GraphNode[] }>(
+        `/api/graph/expand/${chunkId}`,
+      );
       if (!children?.length) return;
       setData((prev) => {
         if (!prev) return prev;
@@ -308,8 +308,9 @@ export default function GraphPage() {
   }
 
   useEffect(() => {
-    fetch(`/api/documents?per_page=500`)
-      .then((r) => r.json())
+    fetchApi<{ data?: Array<{ doc_id: string; title?: string }> }>(
+      "/api/documents?per_page=500",
+    )
       .then((d) =>
         setDocs(
           (d.data || []).map((doc: any) => ({
@@ -322,8 +323,9 @@ export default function GraphPage() {
   }, []);
 
   useEffect(() => {
-    fetch(`/api/graph/hot-nodes?days=30&top_k=200`)
-      .then((r) => (r.ok ? r.json() : null))
+    fetchApi<{ nodes?: Array<{ chunk_id: string; heat_norm: number }> }>(
+      "/api/graph/hot-nodes?days=30&top_k=200",
+    )
       .then((d: any) => {
         if (d?.nodes?.length)
           setHeatMap(
@@ -390,10 +392,10 @@ export default function GraphPage() {
 
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      fetch(`/api/documents?page=1&per_page=8&q=${encodeURIComponent(query)}`, {
-        signal: controller.signal,
-      })
-        .then((r) => (r.ok ? r.json() : Promise.reject()))
+      fetchApi<{ data?: Array<{ doc_id?: string; title?: string }> }>(
+        `/api/documents?page=1&per_page=8&q=${encodeURIComponent(query)}`,
+        { signal: controller.signal },
+      )
         .then(
           (payload: { data?: Array<{ doc_id?: string; title?: string }> }) => {
             const matches = (payload.data || [])
@@ -669,8 +671,7 @@ export default function GraphPage() {
             show_entities: String(limits.show_entities),
             expand_all: "true",
           });
-          fetch(`/api/graph?${params}`)
-            .then((r) => (r.ok ? r.json() : Promise.reject()))
+          fetchApi<GraphData>(`/api/graph?${params}`)
             .then((d: GraphData) => {
               setData(d);
               if (d.stats) setGraphStats(d.stats);
@@ -756,13 +757,86 @@ export default function GraphPage() {
                 <div className="flex flex-col gap-1.5">
                   {Object.entries(NODE_COLOR).map(([k, c]) => (
                     <div key={k} className="flex items-center gap-2">
-                      <div
-                        className="w-3 h-3 rounded-full shrink-0"
-                        style={{ backgroundColor: c }}
-                      />
+                      <div className="w-7 shrink-0 flex justify-center">
+                        {k === "Document" && (
+                          <div
+                            className="w-5 h-3 rounded-md"
+                            style={{ backgroundColor: c }}
+                          />
+                        )}
+                        {k === "Section" && (
+                          <div
+                            className="w-6 h-3 rounded-full"
+                            style={{ backgroundColor: c }}
+                          />
+                        )}
+                        {k === "Image" && (
+                          <div
+                            className="w-4 h-4 rounded-sm"
+                            style={{ backgroundColor: c }}
+                          />
+                        )}
+                        {k === "Constraint" && (
+                          <div
+                            className="w-4 h-4 rotate-45 rounded-[2px]"
+                            style={{ backgroundColor: c }}
+                          />
+                        )}
+                        {k === "Process" && (
+                          <div
+                            className="w-5 h-4"
+                            style={{
+                              backgroundColor: c,
+                              clipPath:
+                                "polygon(14% 0%, 86% 0%, 100% 50%, 86% 100%, 14% 100%, 0% 50%)",
+                            }}
+                          />
+                        )}
+                        {!["Document", "Section", "Image", "Constraint", "Process"].includes(
+                          k,
+                        ) && (
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: c }}
+                          />
+                        )}
+                      </div>
                       <span className="text-xs text-gray-400">{k}</span>
                     </div>
                   ))}
+                </div>
+                <div className="mt-3 pt-2.5 border-t border-gray-800">
+                  <div className="text-xs text-gray-500 mb-2">章节外圈状态</div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-9 h-5 shrink-0">
+                        <div className="absolute inset-0 rounded-full bg-amber-500/20 border border-orange-500/80" />
+                        <div className="absolute inset-[3px] rounded-full bg-amber-500" />
+                      </div>
+                      <span className="text-xs text-gray-400">搜索命中高亮</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-10 h-6 shrink-0">
+                        <div className="absolute inset-0 rounded-full border border-amber-500/70 bg-amber-500/10" />
+                        <div className="absolute inset-[4px] rounded-full bg-amber-500" />
+                      </div>
+                      <span className="text-xs text-gray-400">热点章节</span>
+                    </div>
+                    {tour.tourOpen && (
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-10 h-6 shrink-0">
+                          <div className="absolute inset-0 rounded-full border-2 border-amber-300 bg-amber-300/10" />
+                          <div className="absolute inset-[4px] rounded-full bg-amber-500" />
+                        </div>
+                        <span className="text-xs text-gray-400">
+                          漫游当前节点
+                        </span>
+                      </div>
+                    )}
+                    <div className="text-[11px] text-gray-600 leading-relaxed">
+                      无外圈表示普通章节节点。
+                    </div>
+                  </div>
                 </div>
                 {heatMap.size > 0 && (
                   <div className="mt-3 pt-2.5 border-t border-gray-800">
