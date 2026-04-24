@@ -13,6 +13,8 @@ from sqlalchemy import String, Integer, Text, DateTime, Boolean, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 from sqlalchemy import func
+from ..auth.deps import get_current_user
+from ..db.models import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/feedback", tags=["feedback"])
@@ -50,6 +52,7 @@ class FeedbackRequest(BaseModel):
 async def submit_feedback(
     req: FeedbackRequest,
     db:  AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     import json
     feedback = QueryFeedback(
@@ -58,7 +61,7 @@ async def submit_feedback(
         sources  = json.dumps(req.sources, ensure_ascii=False),
         rating   = req.rating,
         strategy = req.strategy,
-        user_id  = req.user_id,
+        user_id  = req.user_id or user.id,
         detail   = req.detail,
     )
     db.add(feedback)

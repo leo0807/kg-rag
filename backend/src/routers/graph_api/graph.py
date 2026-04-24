@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import logging
 
 from fastapi import APIRouter, Depends, Query
 from neo4j import Driver
 
+from ...auth.deps import get_current_user, get_protected_driver
 from ...core.database import get_driver
+from ...db.models import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["graph"])
@@ -48,6 +52,64 @@ def _append_missing_owner_docs(nodes: list[dict]) -> list[dict]:
     if extras:
         nodes.extend(extras)
     return nodes
+
+
+def _owner_doc_ids(nodes: list[dict]) -> list[str]:
+    doc_ids = {
+        str(node.get("doc_id") or "").strip()
+        for node in nodes
+        if node.get("type") != "Document" and str(node.get("doc_id") or "").strip()
+    }
+    return sorted(doc_ids)
+
+
+def _load_document_nodes(session, doc_ids: list[str]) -> list[dict]:
+    if not doc_ids:
+        return []
+    result = session.run("""
+        MATCH (d:Document)
+        WHERE d.name IN $doc_ids
+        RETURN d.name AS id,
+               coalesce(d.title, d.name) AS name,
+               d.name AS doc_id,
+               d.version AS version,
+               'Document' AS type
+        ORDER BY d.name
+    """, doc_ids=doc_ids)
+    return [
+        {
+            "id": row["id"],
+            "name": row["name"],
+            "doc_id": row["doc_id"],
+            "version": row["version"] or "",
+            "type": "Document",
+        }
+        for row in result
+    ]
+
+
+def _filter_zero_degree_document_nodes(
+    nodes: list[dict],
+    edges: list[dict],
+    *,
+    keep_doc_ids: set[str] | None = None,
+) -> list[dict]:
+    keep_doc_ids = keep_doc_ids or set()
+    degree: dict[str, int] = {}
+    for edge in edges:
+        source = str(edge.get("source") or "").strip()
+        target = str(edge.get("target") or "").strip()
+        if source:
+            degree[source] = degree.get(source, 0) + 1
+        if target:
+            degree[target] = degree.get(target, 0) + 1
+
+    return [
+        node for node in nodes
+        if node.get("type") != "Document"
+        or str(node.get("id") or "") in keep_doc_ids
+        or degree.get(str(node.get("id") or ""), 0) > 0
+    ]
 
 
 def _load_connected_entity_nodes(
@@ -334,7 +396,8 @@ async def get_graph(
     show_images:    bool = True,    # 是否返回图片节点
     show_entities:  bool = True,    # 是否返回 Tool/Material/Process/Constraint
     expand_all:     bool = False,   # 忽略所有 LIMIT，返回全部节点
-    driver: Driver = Depends(get_driver),
+    _: User = Depends(get_current_user),
+    driver: Driver = Depends(get_protected_driver),
 ):
     import json as _json, hashlib
     _cache_key = "graph:" + hashlib.md5(
@@ -350,26 +413,7 @@ async def get_graph(
         _rc = None
 
     with driver.session() as session:
-        doc_filter = "WHERE $doc_id = '' OR d.name = $doc_id" if doc_id else ""
-
-        # ── Document 节点 ─────────────────────────────────────────────────────
-        doc_result = session.run(f"""
-            MATCH (d:Document)
-            {("WHERE $doc_id = '' OR d.name = $doc_id") if True else ""}
-            RETURN d.name AS id, coalesce(d.title, d.name) AS name,
-                   d.name AS doc_id, d.version AS version, 'Document' AS type
-            LIMIT $limit
-        """, doc_id=doc_id, limit=limit_doc)
-        nodes = [
-            {
-                "id":      r["id"],
-                "name":    r["name"],
-                "doc_id":  r["doc_id"],
-                "version": r["version"] or "",
-                "type":    "Document",
-            }
-            for r in doc_result
-        ]
+        nodes: list[dict] = []
 
         # ── Section 节点 ──────────────────────────────────────────────────────
         sec_level_filter = "AND ($show_level = 0 OR coalesce(s.level, 1) <= $show_level)"
@@ -487,7 +531,31 @@ async def get_graph(
                     "row_count":   r["row_count"] or 2,
                 })
 
-        nodes = _append_missing_owner_docs(nodes)
+        visible_doc_ids = _owner_doc_ids(nodes)
+        if doc_id:
+            visible_doc_ids = sorted(set(visible_doc_ids) | {doc_id})
+
+        if visible_doc_ids:
+            nodes = _load_document_nodes(session, visible_doc_ids) + nodes
+        else:
+            doc_result = session.run("""
+                MATCH (d:Document)
+                WHERE $doc_id = '' OR d.name = $doc_id
+                RETURN d.name AS id, coalesce(d.title, d.name) AS name,
+                       d.name AS doc_id, d.version AS version, 'Document' AS type
+                LIMIT $limit
+            """, doc_id=doc_id, limit=limit_doc)
+            nodes = [
+                {
+                    "id":      r["id"],
+                    "name":    r["name"],
+                    "doc_id":  r["doc_id"],
+                    "version": r["version"] or "",
+                    "type":    "Document",
+                }
+                for r in doc_result
+            ]
+
         node_ids = {n["id"] for n in nodes}
         selected_doc_ids = _selected_ids(nodes, "Document")
         selected_section_ids = _selected_ids(nodes, "Section")
@@ -609,6 +677,12 @@ async def get_graph(
             RETURN a.chunk_id AS source, b.chunk_id AS target,
                    'SIMILAR_TO' AS type
         """, section_ids=selected_section_ids)
+
+        nodes = _filter_zero_degree_document_nodes(
+            nodes,
+            edges,
+            keep_doc_ids={doc_id} if doc_id else set(),
+        )
 
     stats = {
         "total":    len(nodes),

@@ -132,8 +132,8 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="该工号不存在，请联系管理员开通账号",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户名或密码错误",
         )
 
     if not verify_password(req.password, user.hashed_pw):
@@ -271,4 +271,3 @@ async def me(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User))
     users  = result.scalars().all()
     return [{"id": u.id, "username": u.username, "is_admin": u.is_admin} for u in users]
-

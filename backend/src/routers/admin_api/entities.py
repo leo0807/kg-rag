@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_driver
 from ...db.session import get_db
 from ...db.models import User, AuditLog
-from ...auth.deps import get_current_user
+from ...auth.deps import get_admin_driver, get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -32,9 +32,9 @@ class MergeRequest(BaseModel):
 async def delete_entity(
     name: str,
     type: str = "Tool",
-    driver: Driver = Depends(get_driver),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(_require_admin),
+    driver: Driver = Depends(get_admin_driver),
 ):
     """删除指定实体节点（含所有关系）"""
     valid_types = {"Tool", "Material", "Process"}
@@ -66,9 +66,9 @@ async def delete_entity(
 @router.post("/entities/merge")
 async def merge_entities(
     req: MergeRequest,
-    driver: Driver = Depends(get_driver),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(_require_admin),
+    driver: Driver = Depends(get_admin_driver),
 ):
     """
     将多个源实体合并到目标实体。

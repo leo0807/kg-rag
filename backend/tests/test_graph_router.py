@@ -1,6 +1,10 @@
 import asyncio
 
-from src.routers.graph_api.graph import _append_missing_owner_docs, get_graph
+from src.routers.graph_api.graph import (
+    _append_missing_owner_docs,
+    _filter_zero_degree_document_nodes,
+    get_graph,
+)
 
 
 def test_append_missing_owner_docs_adds_missing_document_nodes():
@@ -26,6 +30,20 @@ def test_append_missing_owner_docs_does_not_duplicate_existing_documents():
     result = _append_missing_owner_docs(nodes)
 
     assert sum(1 for node in result if node["type"] == "Document" and node["id"] == "CPS1000") == 1
+
+
+def test_filter_zero_degree_document_nodes_drops_unconnected_documents():
+    nodes = [
+        {"id": "CPS0100", "type": "Document", "doc_id": "CPS0100", "name": "CPS0100"},
+        {"id": "CPS0200", "type": "Document", "doc_id": "CPS0200", "name": "CPS0200"},
+        {"id": "CPS0100_1", "type": "Section", "doc_id": "CPS0100", "name": "范围"},
+    ]
+    edges = [{"source": "CPS0100", "target": "CPS0100_1", "type": "HAS_SECTION"}]
+
+    result = _filter_zero_degree_document_nodes(nodes, edges)
+
+    assert any(node["id"] == "CPS0100" for node in result)
+    assert not any(node["id"] == "CPS0200" for node in result)
 
 
 class _FakeSession:

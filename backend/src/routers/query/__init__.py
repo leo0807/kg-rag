@@ -4,14 +4,12 @@ src/routers/query/__init__.py
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, Request
 from neo4j import Driver
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from ...core.database import get_driver
-from ...auth.deps import get_optional_user
+from ...auth.deps import get_current_user, get_protected_driver
 from ...db.models import User
 from .models  import QueryRequest, QueryResponse
 from .sync    import query_sync
@@ -27,8 +25,8 @@ limiter = Limiter(key_func=get_remote_address)
 async def query(
     request:      Request,
     req:          QueryRequest,
-    driver:       Driver     = Depends(get_driver),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
+    driver:       Driver = Depends(get_protected_driver),
 ):
     return await query_sync(request, req, driver, current_user)
 
@@ -38,8 +36,8 @@ async def query(
 async def query_stream_route(
     request:      Request,
     req:          QueryRequest,
-    driver:       Driver     = Depends(get_driver),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
+    driver:       Driver = Depends(get_protected_driver),
 ):
     return await query_stream(request, req, driver, current_user)
 

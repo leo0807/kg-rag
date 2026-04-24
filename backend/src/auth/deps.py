@@ -3,20 +3,27 @@ FastAPI 依赖注入：从请求头提取当前用户
 """
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from neo4j import Driver
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from .jwt import decode_token
+from ..core.database import get_driver
 from ..db.session import get_db
 from ..db.models import User
 
-bearer = HTTPBearer()
+bearer = HTTPBearer(auto_error=False)
 bearer_optional = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="缺少认证凭证",
+        )
     try:
         payload = decode_token(credentials.credentials)
         user_id = payload["sub"]
@@ -63,3 +70,11 @@ async def get_optional_user(
     result = await db.execute(select(User).where(User.id == user_id))
     user   = result.scalar_one_or_none()
     return user if (user and user.is_active) else None
+
+
+def get_protected_driver(_: User = Depends(get_current_user)) -> Driver:
+    return get_driver()
+
+
+def get_admin_driver(_: User = Depends(get_admin_user)) -> Driver:
+    return get_driver()

@@ -1,7 +1,9 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from neo4j import Driver
+from ...auth.deps import get_current_user, get_protected_driver
 from ...core.database import get_driver
+from ...db.models import User
 try:
     from ...core.cache import get_redis
 except ImportError:
@@ -42,7 +44,8 @@ async def list_documents(
     page:     int    = 1,
     per_page: int    = 20,
     q:        str    = "",
-    driver:   Driver = Depends(get_driver),
+    _:        User   = Depends(get_current_user),
+    driver:   Driver = Depends(get_protected_driver),
 ):
     cache_key = f"docs:{page}:{per_page}:{q}"
     _rc = None
