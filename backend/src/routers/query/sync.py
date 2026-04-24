@@ -8,8 +8,8 @@ from neo4j import Driver
 from ...core.database import get_driver
 from ...core.config import settings
 from ...core.observability import send_generation
-from ...services.llm_service import get_llm_service
-from ...services.cache import get_cached_result, set_cached_result
+from ...services.ai.llm_service import get_llm_service
+from ...services.infra.cache import get_cached_result, set_cached_result
 from ...db.models import User
 from .models import QueryRequest, QueryResponse, SourceSection
 from .core   import do_retrieval
@@ -38,7 +38,7 @@ async def query_sync(
 
     if req.strategy == "multi_hop":
         try:
-            from ...services.multi_hop import multi_hop_query
+            from ...services.retrieval.multi_hop import multi_hop_query
             answer, mh_sections, _steps = multi_hop_query(req.question, driver, top_k=top_k)
             sources = [
                 SourceSection(
@@ -81,7 +81,7 @@ async def query_sync(
             for s in sections
         )
         try:
-            from ...services.llm import generate_answer_with_usage
+            from ...services.ai.llm import generate_answer_with_usage
             answer, usage = generate_answer_with_usage(
                 question=req.question, context=context, history=req.history,
             )

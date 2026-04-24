@@ -13,7 +13,7 @@ from neo4j import Driver
 from pydantic import BaseModel
 
 from ...core.database import get_driver
-from ...services.llm_service import get_llm_service
+from ...services.ai.llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["graph"])
@@ -212,6 +212,6 @@ async def trigger_semantic_links(
     触发跨文档语义边构建（离线批处理）。
     可先用 dry_run=true 预览会写入多少条边。
     """
-    from ...services.semantic_linker import build_semantic_links
+    from ...services.retrieval.semantic_linker import build_semantic_links
     result = build_semantic_links(driver, threshold=threshold, top_k=top_k, dry_run=dry_run)
     return result

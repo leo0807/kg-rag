@@ -1,4 +1,4 @@
-from src.services import embedding_service as svc
+from src.services.retrieval import embedding_service as svc
 
 
 class _FallbackProvider:

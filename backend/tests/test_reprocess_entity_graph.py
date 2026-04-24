@@ -2,7 +2,7 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from src.services.entity_writer import _collect_section_entities
+from src.services.graph.entity_writer import _collect_section_entities
 from src.services.ingestion.reprocess_service import _run_entities, _run_tables
 
 
@@ -42,9 +42,9 @@ def test_run_entities_resets_document_entity_graph_before_write():
     entity_data = [{"chunk_id": "CPS0100_1", "tools": ["设备"], "materials": [], "processes": [], "relations": []}]
 
     fake_entity_extractor = SimpleNamespace(extract_entities_from_sections=MagicMock(return_value=entity_data))
-    with patch.dict(sys.modules, {"src.services.entity_extractor": fake_entity_extractor}), \
-         patch("src.services.entity_writer.reset_document_entity_graph") as reset_graph, \
-         patch("src.services.entity_writer.write_entities") as write_entities:
+    with patch.dict(sys.modules, {"src.services.graph.entity_extractor": fake_entity_extractor}), \
+         patch("src.services.graph.entity_writer.reset_document_entity_graph") as reset_graph, \
+         patch("src.services.graph.entity_writer.write_entities") as write_entities:
         result = _run_entities(driver, "CPS0100", sections, task, lambda *_: None)
 
     assert result == 1
@@ -65,10 +65,10 @@ def test_run_tables_resets_and_writes_tables():
         "constraints": [],
     }]
 
-    with patch("src.services.table_extractor.is_available", return_value=True), \
-         patch("src.services.table_extractor.extract_tables_full", return_value=table_data), \
-         patch("src.services.entity_writer.reset_document_tables") as reset_tables, \
-         patch("src.services.entity_writer.write_tables") as write_tables:
+    with patch("src.services.tables.table_extractor.is_available", return_value=True), \
+         patch("src.services.tables.table_extractor.extract_tables_full", return_value=table_data), \
+         patch("src.services.graph.entity_writer.reset_document_tables") as reset_tables, \
+         patch("src.services.graph.entity_writer.write_tables") as write_tables:
         result = _run_tables(driver, "CPS0100", "/tmp/CPS0100.pdf", sections, task, lambda *_: None)
 
     assert result == 1

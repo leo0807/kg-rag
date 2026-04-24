@@ -1,4 +1,4 @@
-from src.services.image_vector_service import (
+from src.services.images.image_vector_service import (
     build_image_milvus_text,
     normalize_image_text_values,
 )

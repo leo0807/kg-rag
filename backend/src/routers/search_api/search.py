@@ -17,7 +17,7 @@ async def global_search(
         return {"results": [], "total": 0, "query": q}
 
     try:
-        from ...services.es_store import search_sections_es
+        from ...services.storage.es_store import search_sections_es
         es_results = search_sections_es(q, top_k=top_k, highlight=True)
         results = [
             {

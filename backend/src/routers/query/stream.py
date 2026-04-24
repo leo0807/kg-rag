@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from neo4j import Driver
 from ...core.database import get_driver
 from ...db.models import User
-from ...services.llm_service import get_llm_service, LLMError
+from ...services.ai.llm_service import get_llm_service, LLMError
 from .models import QueryRequest
 from .core   import do_retrieval
 
@@ -86,8 +86,8 @@ async def query_stream(
         try:
             _q_emb: list[float] | None = None
             try:
-                from ...services.embedder import embed_texts
-                from ...services import semantic_cache
+                from ...services.retrieval.embedder import embed_texts
+                from ...services.retrieval import semantic_cache
                 _q_emb = (await asyncio.to_thread(embed_texts, [req.question]) or [None])[0]
                 hit = _q_emb and semantic_cache.lookup(_q_emb, req.strategy or "parallel")
                 if hit:
@@ -123,7 +123,7 @@ async def query_stream(
             # 多跳推理单独处理，以便发送中间步骤
             if req.strategy == "multi_hop":
                 try:
-                    from ...services.multi_hop import multi_hop_query_stream
+                    from ...services.retrieval.multi_hop import multi_hop_query_stream
                     full_answer = ""
                     async for event in multi_hop_query_stream(req.question, driver, top_k=top_k):
                         if event["type"] == "done":
@@ -150,7 +150,7 @@ async def query_stream(
             # 反事实图查询
             if req.strategy == "counterfactual":
                 try:
-                    from ...services.counterfactual import prepare_counterfactual
+                    from ...services.retrieval.counterfactual import prepare_counterfactual
                     yield f"data: {json.dumps({'type': 'status', 'content': '分析因果链...'}, ensure_ascii=False)}\n\n"
                     cf_sections, causal_chain, cf_messages = prepare_counterfactual(
                         req.question, driver, top_k=top_k

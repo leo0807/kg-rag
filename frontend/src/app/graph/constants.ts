@@ -116,6 +116,7 @@ export const EDGE_TYPES = [
 export type NodeFilter  = typeof NODE_TYPES[number];
 export type EdgeFilter  = typeof EDGE_TYPES[number];
 export type RenderMode  = "svg" | "canvas" | "webgl" | "heatmap";
+export type NodeShape = "circle" | "roundedRect" | "pill" | "square" | "diamond" | "hexagon";
 
 export function nodeRadius(d: SimNode, heatNorm = 0): number {
     const t = d.type || d.label;
@@ -125,4 +126,105 @@ export function nodeRadius(d: SimNode, heatNorm = 0): number {
     if (t === "Tool" || t === "Material" || t === "Process") return 16;
     if (t === "Table")      return Math.round(12 + Math.min((d.row_count ?? 2), 20) * 0.8);
     return Math.round(22 + heatNorm * 16);
+}
+
+export function nodeShape(d: Pick<GraphNode, "type" | "label">): NodeShape {
+    const t = d.type || d.label;
+    if (t === "Document") return "roundedRect";
+    if (t === "Section") return "pill";
+    if (t === "Image") return "square";
+    if (t === "Constraint") return "diamond";
+    if (t === "Process") return "hexagon";
+    return "circle";
+}
+
+export function nodeDimensions(d: SimNode, heatNorm = 0, expand = 0): { r: number; width: number; height: number } {
+    const r = nodeRadius(d, heatNorm) + expand;
+    const shape = nodeShape(d);
+    if (shape === "roundedRect") return { r, width: r * 2.5, height: r * 1.55 };
+    if (shape === "pill") return { r, width: Math.max(76, r * 3.15), height: r * 1.45 };
+    if (shape === "square") return { r, width: r * 2.1, height: r * 2.1 };
+    if (shape === "diamond") return { r, width: r * 2.3, height: r * 2.3 };
+    if (shape === "hexagon") return { r, width: r * 2.55, height: r * 1.95 };
+    return { r, width: r * 2, height: r * 2 };
+}
+
+export function nodeCornerRadius(d: SimNode, heatNorm = 0, expand = 0): number {
+    const { height } = nodeDimensions(d, heatNorm, expand);
+    const shape = nodeShape(d);
+    if (shape === "pill") return height / 2;
+    if (shape === "roundedRect") return Math.min(height * 0.32, 18 + expand);
+    return 0;
+}
+
+export function nodePolygonVertices(d: SimNode, heatNorm = 0, expand = 0): Array<[number, number]> {
+    const { width, height } = nodeDimensions(d, heatNorm, expand);
+    const hw = width / 2;
+    const hh = height / 2;
+    const shape = nodeShape(d);
+
+    if (shape === "diamond") {
+        return [
+            [0, -hh],
+            [hw, 0],
+            [0, hh],
+            [-hw, 0],
+        ];
+    }
+    if (shape === "hexagon") {
+        return [
+            [-hw * 0.92, 0],
+            [-hw * 0.46, -hh],
+            [hw * 0.46, -hh],
+            [hw * 0.92, 0],
+            [hw * 0.46, hh],
+            [-hw * 0.46, hh],
+        ];
+    }
+    return [];
+}
+
+export function nodePolygonPoints(d: SimNode, heatNorm = 0, expand = 0): string {
+    return nodePolygonVertices(d, heatNorm, expand)
+        .map(([x, y]) => `${x},${y}`)
+        .join(" ");
+}
+
+function pointInPolygon(x: number, y: number, vertices: Array<[number, number]>): boolean {
+    let inside = false;
+    for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+        const [xi, yi] = vertices[i];
+        const [xj, yj] = vertices[j];
+        const intersects = ((yi > y) !== (yj > y))
+            && (x < (xj - xi) * (y - yi) / ((yj - yi) || Number.EPSILON) + xi);
+        if (intersects) inside = !inside;
+    }
+    return inside;
+}
+
+export function nodeContainsPoint(d: SimNode, x: number, y: number, heatNorm = 0): boolean {
+    const shape = nodeShape(d);
+    const { r, width, height } = nodeDimensions(d, heatNorm);
+    const hw = width / 2;
+    const hh = height / 2;
+
+    if (shape === "circle") {
+        return x * x + y * y <= r * r;
+    }
+    if (shape === "square") {
+        return Math.abs(x) <= hw && Math.abs(y) <= hh;
+    }
+    if (shape === "diamond") {
+        return (Math.abs(x) / hw) + (Math.abs(y) / hh) <= 1;
+    }
+    if (shape === "hexagon") {
+        return pointInPolygon(x, y, nodePolygonVertices(d, heatNorm));
+    }
+    if (shape === "pill") {
+        const innerHalf = Math.max(0, hw - hh);
+        if (Math.abs(x) <= innerHalf && Math.abs(y) <= hh) return true;
+        const cx = x < 0 ? -innerHalf : innerHalf;
+        return (x - cx) ** 2 + y ** 2 <= hh ** 2;
+    }
+    return Math.abs(x) <= hw && Math.abs(y) <= hh;
 }

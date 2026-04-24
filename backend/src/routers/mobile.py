@@ -11,7 +11,7 @@ from pathlib import Path
 import shutil
 
 from ..core.database import get_driver
-from ..services.image_analyzer import analyze_image
+from ..services.images.image_analyzer import analyze_image
 from .query.sync import query_sync
 from .query.models import QueryRequest
 from ..auth.deps import get_current_user

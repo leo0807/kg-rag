@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from ...db.models import ObjectiveDocEvalTask
-from ..llm_service import get_llm_service
+from ..ai.llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
 

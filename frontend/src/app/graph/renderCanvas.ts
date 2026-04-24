@@ -1,5 +1,43 @@
 import * as d3 from "d3";
-import { GraphData, GraphNode, SimNode, NODE_COLOR, EDGE_COLOR, MIN_SCALE, MAX_SCALE, nodeRadius } from "./constants";
+import {
+    GraphData,
+    GraphNode,
+    SimNode,
+    NODE_COLOR,
+    EDGE_COLOR,
+    MIN_SCALE,
+    MAX_SCALE,
+    nodeRadius,
+    nodeShape,
+    nodeDimensions,
+    nodeCornerRadius,
+    nodePolygonVertices,
+    nodeContainsPoint,
+} from "./constants";
+
+function drawNodePath(ctx: CanvasRenderingContext2D, node: SimNode, heatNorm = 0, expand = 0) {
+    const shape = nodeShape(node);
+    const { r, width, height } = nodeDimensions(node, heatNorm, expand);
+    const hw = width / 2;
+    const hh = height / 2;
+
+    ctx.beginPath();
+    if (shape === "roundedRect" || shape === "pill" || shape === "square") {
+        const radius = nodeCornerRadius(node, heatNorm, expand);
+        ctx.roundRect(-hw, -hh, width, height, radius);
+        return;
+    }
+    if (shape === "diamond" || shape === "hexagon") {
+        const vertices = nodePolygonVertices(node, heatNorm, expand);
+        vertices.forEach(([x, y], index) => {
+            if (index === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        return;
+    }
+    ctx.arc(0, 0, r, 0, 2 * Math.PI);
+}
 
 export function drawGraphCanvas(
     data: GraphData,
@@ -47,8 +85,7 @@ export function drawGraphCanvas(
         for (let i = nodes.length - 1; i >= 0; i--) {
             const n = nodes[i];
             if (n.x == null) continue;
-            const r = nodeRadius(n);
-            if ((sx - n.x!) ** 2 + (sy - n.y!) ** 2 <= r * r) return n;
+            if (nodeContainsPoint(n, sx - n.x!, sy - n.y!, heatMap.get(n.id) ?? 0)) return n;
         }
         return null;
     }
@@ -93,39 +130,47 @@ export function drawGraphCanvas(
             const isHot     = !tourMode && heatNorm > 0.15 && (n.type || n.label) === "Section";
 
             if (isHot) {
+                ctx.save();
+                ctx.translate(n.x!, n.y!);
                 ctx.globalAlpha = 0.25 + heatNorm * 0.45;
                 ctx.strokeStyle = "#f59e0b";
                 ctx.lineWidth   = 1.5 + heatNorm * 3;
-                ctx.beginPath();
-                ctx.arc(n.x!, n.y!, r + 7, 0, 2 * Math.PI);
+                drawNodePath(ctx, n, heatNorm, 7 + heatNorm * 4);
                 ctx.stroke();
+                ctx.restore();
             }
             if (tourMode && isCurrent) {
+                ctx.save();
+                ctx.translate(n.x!, n.y!);
                 ctx.globalAlpha = 0.75;
                 ctx.strokeStyle = "#fbbf24";
                 ctx.lineWidth   = 3.5;
-                ctx.beginPath();
-                ctx.arc(n.x!, n.y!, r + 11, 0, 2 * Math.PI);
+                drawNodePath(ctx, n, heatNorm, 11);
                 ctx.stroke();
+                ctx.restore();
             }
             if (!tourMode && isHighlight) {
+                ctx.save();
+                ctx.translate(n.x!, n.y!);
                 ctx.globalAlpha = 0.9;
                 ctx.strokeStyle = "#f97316";
                 ctx.lineWidth   = 2.5;
-                ctx.beginPath();
-                ctx.arc(n.x!, n.y!, r + 6, 0, 2 * Math.PI);
+                drawNodePath(ctx, n, heatNorm, 6);
                 ctx.stroke();
+                ctx.restore();
             }
+            ctx.save();
+            ctx.translate(n.x!, n.y!);
             ctx.globalAlpha = opacity;
             ctx.fillStyle   = color;
-            ctx.beginPath();
-            ctx.arc(n.x!, n.y!, r, 0, 2 * Math.PI);
+            drawNodePath(ctx, n, heatNorm);
             ctx.fill();
             if (isCurrent || isHighlight) {
                 ctx.strokeStyle = isCurrent ? "#fbbf24" : "#f97316";
                 ctx.lineWidth   = 2.5;
                 ctx.stroke();
             }
+            ctx.restore();
             ctx.globalAlpha    = (tourMode && !inPath && !isCurrent) ? 0.3 : 1;
             ctx.fillStyle      = labelFill;
             ctx.font           = `${(n.type || n.label) === "Document" ? 12 : 10}px Arial`;

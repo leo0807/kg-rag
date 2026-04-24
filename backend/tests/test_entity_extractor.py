@@ -1,4 +1,4 @@
-from src.services.entity_extractor import (
+from src.services.graph.entity_extractor import (
     _keep_process_name,
     _normalize_process_name,
     _postprocess_entity_item,

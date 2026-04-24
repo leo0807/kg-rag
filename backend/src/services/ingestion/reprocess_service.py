@@ -9,112 +9,27 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
+
+from .reprocess_support import (
+    cancelled as _cancelled,
+    download_from_minio,
+    find_pdf,
+    get_storage_key,
+    load_images,
+    load_sections,
+    prepare_reprocess_pdf as _prepare_reprocess_pdf,
+    resolve_drawing_image_path as _resolve_drawing_image_path,
+)
 
 logger = logging.getLogger(__name__)
-UPLOAD_DIR     = Path("uploads")
-DOC_UPLOAD_DIR = Path("uploads") / "docs"   # 新版上传目录
-
-
-# ── 辅助 ──────────────────────────────────────────────────────────────────────
-
-def find_pdf(doc_id: str) -> Path | None:
-    """在 uploads/docs/ 和 uploads/ 两个目录中查找文档文件（PDF/DOCX/DOC）。"""
-    exts = ["pdf", "PDF", "docx", "DOCX", "doc", "DOC"]
-    for base in (DOC_UPLOAD_DIR, UPLOAD_DIR):
-        for ext in exts:
-            candidates = sorted(base.glob(f"{doc_id}*.{ext}"))
-            if candidates:
-                return candidates[0]
-    return None
-
-
-def load_sections(driver, doc_id: str) -> list[dict]:
-    with driver.session() as session:
-        result = session.run("""
-            MATCH (d:Document {name: $doc_id})-[:HAS_SECTION]->(s:Section)
-            RETURN s.chunk_id AS chunk_id, s.number AS number,
-                   s.title AS title, s.content AS content,
-                   s.page_idx AS page_idx, s.bbox AS bbox
-            ORDER BY s.number
-        """, doc_id=doc_id)
-        return [dict(r) for r in result]
-
-
-def load_images(driver, doc_id: str) -> list[dict]:
-    with driver.session() as session:
-        result = session.run("""
-            MATCH (d:Document {name: $doc_id})
-            OPTIONAL MATCH (d)-[:HAS_SECTION]->(:Section)-[:HAS_IMAGE]->(section_img:Image)
-            WITH d, collect(DISTINCT section_img) AS section_imgs
-            OPTIONAL MATCH (d)-[:HAS_IMAGE]->(doc_img:Image)
-            WITH section_imgs, collect(DISTINCT doc_img) AS doc_imgs
-            WITH section_imgs + doc_imgs AS all_imgs
-            UNWIND all_imgs AS img
-            WITH DISTINCT img
-            WHERE img IS NOT NULL
-            RETURN img.image_id AS image_id,
-                   img.path AS path,
-                   img.minio_path AS minio_path,
-                   img.caption AS caption,
-                   img.is_drawing AS is_drawing
-        """, doc_id=doc_id)
-        return [dict(r) for r in result]
-
-
-def _resolve_drawing_image_path(
-    image_id: str,
-    local_path: Optional[str],
-    minio_path: Optional[str],
-):
-    from ..image_file_service import resolve_image_binary_path
-
-    return resolve_image_binary_path(
-        image_id=image_id,
-        local_path=local_path,
-        minio_path=minio_path,
-    )
-
-
-def _prepare_reprocess_pdf(doc_id: str, source_path: Path | None, driver) -> tuple[Path | None, list[Path]]:
-    """
-    为图片/表格抽取准备一个可直接打开的 PDF 路径。
-    返回 `(pdf_path, cleanup_paths)`，由调用方在流程结束后统一清理。
-    """
-    cleanup_paths: list[Path] = []
-    path = source_path
-
-    if not path:
-        storage_key = _get_storage_key(driver, doc_id)
-        if storage_key:
-            path = _download_from_minio(doc_id, storage_key)
-            if path:
-                cleanup_paths.append(path)
-        if not path:
-            return None, cleanup_paths
-
-    if path.suffix.lower() in {".doc", ".docx"}:
-        from ..parsing.parser import _convert_office_to_pdf
-
-        pdf_path = _convert_office_to_pdf(path)
-        if pdf_path != path:
-            cleanup_paths.append(pdf_path)
-        return pdf_path, cleanup_paths
-
-    return path, cleanup_paths
-
-
-def _cancelled(task: dict) -> bool:
-    return task.get("cancel_requested", False)
-
-
 # ── 各管道 ────────────────────────────────────────────────────────────────────
 
 def _run_entities(driver, doc_id, sections, task, step):
     step("entities", "重新提取工具/材料/工序实体...")
     if _cancelled(task): return -1
-    from ..entity_extractor import extract_entities_from_sections
-    from ..entity_writer    import reset_document_entity_graph, write_entities
+    from ..graph.entity_extractor import extract_entities_from_sections
+    from ..graph.entity_writer    import reset_document_entity_graph, write_entities
     
     def on_prog(i, n):
         step("entities", f"正在提取实体: {i}/{n} 章节...")
@@ -128,8 +43,8 @@ def _run_entities(driver, doc_id, sections, task, step):
 def _run_constraints(driver, doc_id, sections, task, step):
     step("constraints", "重新提取文本约束参数...")
     if _cancelled(task): return -1
-    from ..entity_extractor import extract_constraints_from_sections
-    from ..entity_writer    import reset_document_text_constraints, write_constraints
+    from ..graph.entity_extractor import extract_constraints_from_sections
+    from ..graph.entity_writer    import reset_document_text_constraints, write_constraints
     
     def on_prog(i, n):
         step("constraints", f"正在提取约束: {i}/{n} 章节...")
@@ -145,10 +60,22 @@ def _run_images(driver, doc_id, pdf_path, sections, task, step):
     if _cancelled(task): return -1
     try:
         from .backfill_service import extract_images_for_doc, _delete_existing_images_for_doc
+        cleanup_paths: list[Path] = []
+        image_source = find_pdf(doc_id)
+        if not image_source:
+            storage_key = get_storage_key(driver, doc_id)
+            if storage_key:
+                image_source = download_from_minio(doc_id, storage_key)
+                if image_source:
+                    cleanup_paths.append(image_source)
+        image_source = image_source or Path(pdf_path)
         deleted = _delete_existing_images_for_doc(doc_id, driver)
         if deleted:
             step("images", f"已清理 {deleted} 张旧图片，开始按新规则重新提取...")
-        return extract_images_for_doc(doc_id, Path(pdf_path), sections, driver)
+        count = extract_images_for_doc(doc_id, Path(image_source), sections, driver)
+        for cleanup_path in cleanup_paths:
+            cleanup_path.unlink(missing_ok=True)
+        return count
     except Exception as e:
         logger.warning("[reprocess %s] 图片提取失败: %s", doc_id, e)
         return -1
@@ -157,8 +84,8 @@ def _run_images(driver, doc_id, pdf_path, sections, task, step):
 def _run_tables(driver, doc_id, pdf_path, sections, task, step):
     step("tables", "PP-Structure 表格提取...")
     if _cancelled(task): return -1
-    from ..table_extractor import extract_tables_full, is_available
-    from ..entity_writer   import reset_document_tables, write_tables
+    from ..tables.table_extractor import extract_tables_full, is_available
+    from ..graph.entity_writer   import reset_document_tables, write_tables
     if not is_available():
         return 0
     reset_document_tables(driver, doc_id)
@@ -171,11 +98,32 @@ def _run_tables(driver, doc_id, pdf_path, sections, task, step):
 def _run_drawings(driver, doc_id, images, task, step):
     import json
     import time as _time
-    from ..drawing_analyzer import analyze_drawing
-    from ..entity_writer    import write_drawing_constraints
+    from ..images.drawing_analyzer import analyze_drawing
+    from ..graph.entity_writer    import write_drawing_constraints
+    from ..storage.milvus_store import delete_image_vectors
 
     total_imgs = len(images)
     step("drawings", f"准备分析 {total_imgs} 张图片中的工程图纸...")
+    delete_image_vectors(doc_id)
+    with driver.session() as s:
+        # 清理当前文档已有的图纸分析结果，避免重跑时混入旧摘要/旧标注。
+        s.run(
+            """
+            MATCH (:Document {name: $doc_id})-[:HAS_IMAGE]->(i:Image)
+            SET i.is_drawing = false
+            REMOVE i.analyzed_at, i.analysis_level, i.skip_reason,
+                   i.part_numbers, i.annotations, i.assembly_relations,
+                   i.drawing_summary, i.table_data, i.formula_data
+            """,
+            doc_id=doc_id,
+        )
+        s.run(
+            """
+            MATCH (c:Constraint {doc_id: $doc_id, source: 'drawing'})
+            DETACH DELETE c
+            """,
+            doc_id=doc_id,
+        )
     count = 0
     failed = 0
 
@@ -236,9 +184,9 @@ def _run_drawings(driver, doc_id, images, task, step):
             # ── 写入 Milvus（skipped 级别无有效内容，跳过） ───────────────────
             if caption and result.get("analysis_level") != "skipped":
                 try:
-                    from ..embedder      import embed_texts
-                    from ..image_vector_service import build_image_milvus_text
-                    from ..milvus_store  import upsert_sections
+                    from ..retrieval.embedder import embed_texts
+                    from ..images.image_vector_service import build_image_milvus_text
+                    from ..storage.milvus_store import upsert_sections
 
                     milvus_text = build_image_milvus_text(
                         summary=caption,
@@ -277,30 +225,6 @@ def _run_drawings(driver, doc_id, images, task, step):
     )
     return count
 
-
-def _get_storage_key(driver, doc_id: str) -> str | None:
-    """从 Neo4j 读取文档的 MinIO 对象键。"""
-    with driver.session() as s:
-        r = s.run("MATCH (d:Document {name: $doc_id}) RETURN d.storage_key AS key", doc_id=doc_id)
-        row = r.single()
-        return row["key"] if row and row["key"] else None
-
-
-def _download_from_minio(doc_id: str, storage_key: str) -> Path | None:
-    """从 MinIO 下载文档到 /tmp，返回本地路径。"""
-    try:
-        from ...core.storage import download_bytes, BUCKET_RAW_DOCUMENTS
-        raw_bytes = download_bytes(BUCKET_RAW_DOCUMENTS, storage_key)
-        suffix = Path(storage_key).suffix or ".pdf"
-        tmp_path = Path(f"/tmp/{doc_id}_reparse{suffix}")
-        tmp_path.write_bytes(raw_bytes)
-        logger.info("[reparse %s] 从 MinIO 下载到 %s (%d bytes)", doc_id, tmp_path, len(raw_bytes))
-        return tmp_path
-    except Exception as e:
-        logger.warning("[reparse %s] MinIO 下载失败: %s", doc_id, e)
-        return None
-
-
 def _run_reparse(driver, doc_id, pdf_path, task, step):
     """重新解析章节，并返回 (章节数, 可复用的 PDF 路径, 待清理路径列表)。"""
     step("reparse", "重新解析文档提取章节结构...")
@@ -314,8 +238,8 @@ def _run_reparse(driver, doc_id, pdf_path, task, step):
         return 0, None, cleanup_paths
 
     from ..parsing.parser import parse
-    from ..entity_writer import cleanup_stale_document_nodes
-    from ..neo4j_writer import rewrite_sections
+    from ..graph.entity_writer import cleanup_stale_document_nodes
+    from ..graph.neo4j_writer import rewrite_sections
 
     doc = parse(prepared_pdf if prepared_pdf.suffix.lower() == ".pdf" else source_path or prepared_pdf)
     effective_pdf = doc.pdf_path if doc and doc.pdf_path and doc.pdf_path.exists() else prepared_pdf
@@ -329,8 +253,8 @@ def _run_reparse(driver, doc_id, pdf_path, task, step):
 
 
 def _run_defects(driver, doc_id, images, task, step):
-    from ..defect_detector import detect_defects, detect_defects_vlm, is_available
-    from ..defect_writer   import write_defects_batch
+    from ..quality.defect_detector import detect_defects, detect_defects_vlm, is_available
+    from ..quality.defect_writer import write_defects_batch
     total_imgs = len(images)
     step("defects", f"准备对 {total_imgs} 张图片进行缺陷检测...")
     total = 0

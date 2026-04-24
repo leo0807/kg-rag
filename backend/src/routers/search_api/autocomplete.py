@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from neo4j import Driver
 from ...core.database import get_driver
-from ...services.es_store import search_sections_es
+from ...services.storage.es_store import search_sections_es
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["search"])

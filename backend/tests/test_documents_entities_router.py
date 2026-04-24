@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from src.services.image_file_service import resolve_image_binary_path
+from src.services.images.image_file_service import resolve_image_binary_path
 
 
 def test_resolve_image_binary_path_prefers_existing_local_file(tmp_path):
@@ -22,7 +22,7 @@ def test_resolve_image_binary_path_prefers_existing_local_file(tmp_path):
 def test_resolve_image_binary_path_downloads_from_minio_when_local_missing(tmp_path, monkeypatch):
     temp_root = tmp_path / "tmp"
     temp_root.mkdir()
-    monkeypatch.setattr("src.services.image_file_service.tempfile.gettempdir", lambda: str(temp_root))
+    monkeypatch.setattr("src.services.images.image_file_service.tempfile.gettempdir", lambda: str(temp_root))
 
     path, cleanup = resolve_image_binary_path(
         image_id="img-2",

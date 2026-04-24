@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from neo4j import Driver
 from ...core.database import get_driver
-from ...services.image_file_service import resolve_image_binary_path
+from ...services.images.image_file_service import resolve_image_binary_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["documents"])
@@ -301,8 +301,8 @@ async def analyze_drawing_endpoint(
     async def _run():
         cleanup_path: Path | None = None
         try:
-            from ...services.drawing_analyzer import analyze_drawing
-            from ...services.entity_writer    import write_drawing_constraints
+            from ...services.images.drawing_analyzer import analyze_drawing
+            from ...services.graph.entity_writer    import write_drawing_constraints
             image_path, cleanup_path = resolve_image_binary_path(
                 image_id=image_id,
                 local_path=rec["path"],
@@ -353,8 +353,8 @@ async def reanalyze_document(doc_id: str, driver: Driver = Depends(get_driver)):
 
     async def _reanalyze():
         try:
-            from ...services.entity_extractor import extract_entities_from_sections
-            from ...services.entity_writer    import reset_document_entity_graph, write_entities
+            from ...services.graph.entity_extractor import extract_entities_from_sections
+            from ...services.graph.entity_writer    import reset_document_entity_graph, write_entities
             with driver.session() as session:
                 sec_result = session.run("""
                     MATCH (d:Document {name: $doc_id})-[:HAS_SECTION]->(s:Section)

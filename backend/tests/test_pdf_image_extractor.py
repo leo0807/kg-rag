@@ -1,5 +1,6 @@
-from src.services.pdf_image_extractor import (
+from src.services.images.pdf_image_extractor import (
     compute_image_content_hash,
+    extract_images_from_document,
     register_image_hash,
     _should_fallback_to_page_snapshots,
 )
@@ -55,3 +56,15 @@ class TestOfficePdfFallback:
         ]
 
         assert _should_fallback_to_page_snapshots(doc) is False
+
+
+def test_extract_images_from_document_prefers_docx_path(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(
+        "src.services.images.pdf_image_extractor._extract_images_from_docx",
+        lambda source_path, doc_id, sections=None: [sentinel],
+    )
+
+    results = extract_images_from_document("CPS1000.docx", "CPS1000", [])
+
+    assert results == [sentinel]

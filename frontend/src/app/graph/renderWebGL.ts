@@ -1,5 +1,18 @@
 import * as d3 from "d3";
-import { GraphData, GraphNode, SimNode, NODE_COLOR, MIN_SCALE, MAX_SCALE, nodeRadius } from "./constants";
+import {
+    GraphData,
+    GraphNode,
+    SimNode,
+    NODE_COLOR,
+    MIN_SCALE,
+    MAX_SCALE,
+    nodeRadius,
+    nodeShape,
+    nodeDimensions,
+    nodeCornerRadius,
+    nodePolygonVertices,
+    nodeContainsPoint,
+} from "./constants";
 
 export async function drawGraphWebGL(
     PIXI: typeof import("pixi.js"),
@@ -39,12 +52,22 @@ export async function drawGraphWebGL(
 
     const nc = nodes.length;
     const texCache = new Map<string, any>();
-    function getTex(color: string, r: number): any {
-        const key = `${color}|${r}`;
+    function getTex(node: SimNode, color: string, heatNorm = 0): any {
+        const shape = nodeShape(node);
+        const { r, width, height } = nodeDimensions(node, heatNorm);
+        const key = `${shape}|${color}|${width}|${height}|${r}`;
         if (!texCache.has(key)) {
             const g = new PIXI.Graphics();
             g.beginFill(parseInt(color.replace("#", ""), 16));
-            g.drawCircle(r + 1, r + 1, r);
+            if (shape === "roundedRect" || shape === "pill" || shape === "square") {
+                const radius = nodeCornerRadius(node, heatNorm);
+                g.drawRoundedRect(1, 1, width, height, radius);
+            } else if (shape === "diamond" || shape === "hexagon") {
+                const points = nodePolygonVertices(node, heatNorm).flatMap(([x, y]) => [x + width / 2 + 1, y + height / 2 + 1]);
+                g.drawPolygon(points);
+            } else {
+                g.drawCircle(r + 1, r + 1, r);
+            }
             g.endFill();
             texCache.set(key, app.renderer.generateTexture(g));
         }
@@ -59,13 +82,13 @@ export async function drawGraphWebGL(
         const type  = n.type || n.label;
         const color = NODE_COLOR[type] ?? "#6b7280";
         const heat  = heatMap.get(n.id) ?? 0;
-        const r     = nodeRadius(n, heat);
+        const { height: nodeHeight } = nodeDimensions(n, heat);
         
         const container = new PIXI.Container();
         container.x = n.x!;
         container.y = n.y!;
         
-        const sp = new PIXI.Sprite(getTex(color, r));
+        const sp = new PIXI.Sprite(getTex(n, color, heat));
         sp.anchor.set(0.5);
         sp.alpha     = highlightedIds.size === 0 || highlightedIds.has(n.id) ? 1 : 0.25;
         sp.eventMode = "static";
@@ -81,7 +104,7 @@ export async function drawGraphWebGL(
             fontWeight: "normal",
         });
         txt.anchor.set(0.5, 0);
-        txt.y = r + 4;
+        txt.y = nodeHeight / 2 + 4;
         txt.visible = false; // Hidden by default, shown on zoom
         container.addChild(txt);
 
@@ -138,9 +161,9 @@ export async function drawGraphWebGL(
         const my = (event.offsetY - tr.y) / tr.k;
         let found: SimNode | null = null;
         for (const n of nodes) {
-            const r = nodeRadius(n, heatMap.get(n.id) ?? 0);
-            const dx = (n.x ?? 0) - mx, dy = (n.y ?? 0) - my;
-            if (dx * dx + dy * dy <= r * r) { found = n; break; }
+            const dx = mx - (n.x ?? 0);
+            const dy = my - (n.y ?? 0);
+            if (nodeContainsPoint(n, dx, dy, heatMap.get(n.id) ?? 0)) { found = n; break; }
         }
         if (found) {
             tooltipEl.classList.remove("hidden");

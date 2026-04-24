@@ -8,7 +8,7 @@ import logging
 from fastapi import Depends
 from neo4j import Driver
 from ...core.database import get_driver
-from ...services.llm_service import get_llm_service, LLMError
+from ...services.ai.llm_service import get_llm_service, LLMError
 from .models import QueryRequest
 from .core import do_retrieval
 
@@ -28,7 +28,7 @@ async def _run_strategy(driver: Driver, question: str, strategy: str, top_k: int
     t0 = time.time()
     try:
         if strategy == "multi_hop":
-            from ...services.multi_hop import multi_hop_query
+            from ...services.retrieval.multi_hop import multi_hop_query
             answer, sections, _ = await asyncio.to_thread(
                 multi_hop_query, question, driver, top_k=top_k
             )

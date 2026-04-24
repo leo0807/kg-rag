@@ -4,7 +4,7 @@ neo4j_writer 的单元测试
 """
 from unittest.mock import MagicMock, patch
 from src.models.schemas import DocumentSchema, SectionSchema
-from src.services.neo4j_writer import write_document
+from src.services.graph.neo4j_writer import write_document
 
 
 def make_doc(**kwargs) -> DocumentSchema:
@@ -33,10 +33,10 @@ def make_mock_driver():
 
 
 def run_write(doc, mock_driver):
-    with patch("src.services.neo4j_writer.get_driver", return_value=mock_driver), \
-         patch("src.services.neo4j_writer.embed_texts",
+    with patch("src.services.graph.neo4j_writer.get_driver", return_value=mock_driver), \
+         patch("src.services.graph.neo4j_writer.embed_texts",
                return_value=[[0.1] * 1024] * len(doc.sections)), \
-         patch("src.services.neo4j_writer.upsert_sections"):
+         patch("src.services.graph.neo4j_writer.upsert_sections"):
         write_document(doc)
 
 

@@ -13,7 +13,7 @@ import asyncio
 from .core.config import settings
 from .core.database import get_driver
 from .services.parsing.parser import parse
-from .services.neo4j_writer import write_document
+from .services.graph.neo4j_writer import write_document
 from .startup import lifespan
 from .routers.docs.files         import router as document_files_router
 from .routers.docs.analysis      import router as document_analysis_router
@@ -50,7 +50,7 @@ from .routers.favorites          import router as favorites_router
 from .routers.search_api.autocomplete import router as search_autocomplete_router
 from .auth.deps import get_admin_user as _get_admin_user
 
-from .services.health import health_monitor
+from .services.infra.health import health_monitor
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -269,11 +269,11 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
         # ── 实体/约束提取 ──────────────────────────────────────────────────
         _task_update(task_id, step="entities")
         try:
-            from .services.entity_extractor import (
+            from .services.graph.entity_extractor import (
                 extract_entities_from_sections,
                 extract_constraints_from_sections,
             )
-            from .services.entity_writer import write_entities, write_constraints
+            from .services.graph.entity_writer import write_entities, write_constraints
 
             entity_data = await asyncio.to_thread(extract_entities_from_sections, section_dicts)
             await asyncio.to_thread(write_entities, driver, doc.doc_id, entity_data)
@@ -291,8 +291,8 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
         # ── 表格约束提取 ──────────────────────────────────────────────────
         _task_update(task_id, step="tables")
         try:
-            from .services.table_extractor import extract_all_tables, is_available as tables_available
-            from .services.entity_writer   import write_constraints as _wc
+            from .services.tables.table_extractor import extract_all_tables, is_available as tables_available
+            from .services.graph.entity_writer   import write_constraints as _wc
             if tables_available():
                 table_cons = await asyncio.to_thread(extract_all_tables, _pdf_for_extraction, doc.doc_id, section_dicts)
                 if table_cons:
@@ -304,10 +304,10 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
         # ── 多模态图片分析 ────────────────────────────────────────────────
         _task_update(task_id, step="images")
         try:
-            from .services.pdf_image_extractor import extract_images_from_pdf
-            from .services.image_analyzer      import analyze_image_smart
-            from .services.multimodal_writer   import write_images_to_graph
-            from .services.entity_writer       import link_image_tools
+            from .services.images.pdf_image_extractor import extract_images_from_pdf
+            from .services.images.image_analyzer      import analyze_image_smart
+            from .services.images.multimodal_writer   import write_images_to_graph
+            from .services.graph.entity_writer       import link_image_tools
 
             images = await asyncio.to_thread(extract_images_from_pdf, _pdf_for_extraction, doc.doc_id)
             images = [img for img in images if not _is_logo(img)]
@@ -340,7 +340,7 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
                     # 图纸深度分析（仅 figure 任务）
                     drawing: dict = {}
                     if analysis.get("task") != "formula":
-                        from .services.drawing_analyzer import analyze_drawing, is_likely_drawing
+                        from .services.images.drawing_analyzer import analyze_drawing, is_likely_drawing
                         if is_likely_drawing(analysis):
                             try:
                                 drawing = await asyncio.to_thread(
@@ -361,7 +361,7 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
                     })
 
                 await asyncio.to_thread(write_images_to_graph, driver, doc.doc_id, analyzed)
-                from .services.entity_writer import write_drawing_constraints
+                from .services.graph.entity_writer import write_drawing_constraints
                 for item in analyzed:
                     link_image_tools(driver, item["image_id"], item.get("analysis", {}).get("tools", []))
                     if anns := item.get("drawing", {}).get("annotations", []):

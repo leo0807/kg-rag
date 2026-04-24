@@ -341,7 +341,7 @@ async def get_graph(
         f"{limit_doc}:{limit_sec}:{limit_img}:{limit_entity}:{limit_tbl}:{doc_id}:{show_level}:{show_images}:{show_entities}:{expand_all}".encode()
     ).hexdigest()[:12]
     try:
-        from ...services.cache import get_redis
+        from ...services.infra.cache import get_redis
         _rc = get_redis()
         _cached = _rc.get(_cache_key)
         if _cached:

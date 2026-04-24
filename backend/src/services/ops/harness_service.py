@@ -35,7 +35,7 @@ def _get_answer_generator():
     if callable(ANSWER_GENERATOR):
         return ANSWER_GENERATOR
 
-    from ..llm import generate_answer_with_usage
+    from ..ai.llm import generate_answer_with_usage
 
     ANSWER_GENERATOR = generate_answer_with_usage
     return generate_answer_with_usage

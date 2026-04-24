@@ -158,7 +158,7 @@ class TestStreamEndpoint:
                     hyde_alpha=0.5,
                 )
                 with patch("src.routers.query.stream.do_retrieval", side_effect=RuntimeError("boom")), \
-                     patch("src.services.embedder.embed_texts", return_value=[None]):
+                     patch("src.services.retrieval.embedder.embed_texts", return_value=[None]):
                     response = await query_stream(
                         request=request,
                         req=req,

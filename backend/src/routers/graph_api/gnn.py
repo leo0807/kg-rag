@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ...services.gnn_service import get_gnn_service
+from ...services.storage.gnn_service import get_gnn_service
 
 # 项目根目录（kg-rag/），训练脚本运行时需要以此为 cwd
 _PROJECT_ROOT  = Path(__file__).resolve().parent.parent.parent.parent

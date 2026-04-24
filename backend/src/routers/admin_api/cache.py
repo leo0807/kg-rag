@@ -24,7 +24,7 @@ class CacheConfigUpdate(BaseModel):
 @router.get("/semantic-cache/config")
 async def get_cache_config(_: User = Depends(_require_admin)):
     """读取当前语义缓存配置"""
-    from ...services.semantic_cache import get_config
+    from ...services.retrieval.semantic_cache import get_config
     return get_config()
 
 
@@ -34,9 +34,9 @@ async def update_cache_config(
     _: User = Depends(_require_admin),
 ):
     """更新语义缓存配置（threshold / ttl / enabled）"""
-    from ...services.semantic_cache import set_config
+    from ...services.retrieval.semantic_cache import set_config
     set_config(threshold=body.threshold, ttl=body.ttl, enabled=body.enabled)
-    from ...services.semantic_cache import get_config
+    from ...services.retrieval.semantic_cache import get_config
     return {"ok": True, "config": get_config()}
 
 
@@ -46,7 +46,7 @@ async def get_cache_stats(
     _: User = Depends(_require_admin),
 ):
     """活跃缓存条目数 + 命中统计（节省 token 和费用）"""
-    from ...services.semantic_cache import get_stats
+    from ...services.retrieval.semantic_cache import get_stats
     from ...db.models import CacheHit
 
     store_stats = get_stats()
@@ -105,7 +105,7 @@ async def invalidate_cache(
     _: User = Depends(_require_admin),
 ):
     """按 doc_id 批量失效相关语义缓存条目"""
-    from ...services.semantic_cache import invalidate_by_doc
+    from ...services.retrieval.semantic_cache import invalidate_by_doc
     import asyncio
     count = await asyncio.to_thread(invalidate_by_doc, doc_id)
     return {"ok": True, "doc_id": doc_id, "invalidated": count}

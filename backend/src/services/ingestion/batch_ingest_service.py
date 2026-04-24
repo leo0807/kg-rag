@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Optional, List
 
 from ..parsing.parser import parse
-from ..neo4j_writer import write_document
-from ..cache import get_redis
+from ..graph.neo4j_writer import write_document
+from ..infra.cache import get_redis
 from ...core.database import get_driver
 
 logger = logging.getLogger(__name__)

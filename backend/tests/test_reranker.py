@@ -11,10 +11,10 @@ from unittest.mock import MagicMock, patch
 class TestRerankOrder:
     """验证 rerank 按分数降序返回"""
 
-    @patch("src.services.reranker._get_reranker")
+    @patch("src.services.retrieval.reranker._get_reranker")
     def test_reranker_sorts_by_score_descending(self, mock_get):
         """分数高的结果应排在前面"""
-        from src.services.reranker import rerank
+        from src.services.retrieval.reranker import rerank
 
         mock_model = MagicMock()
         # predict 返回顺序：第1条低分，第2条高分，第3条中分
@@ -33,10 +33,10 @@ class TestRerankOrder:
         assert result[1]["chunk_id"] == "c3"
         assert result[2]["chunk_id"] == "c1"
 
-    @patch("src.services.reranker._get_reranker")
+    @patch("src.services.retrieval.reranker._get_reranker")
     def test_reranker_respects_top_k(self, mock_get):
         """top_k 参数限制返回数量"""
-        from src.services.reranker import rerank
+        from src.services.retrieval.reranker import rerank
 
         mock_model = MagicMock()
         mock_model.predict.return_value = [0.9, 0.8, 0.7, 0.6, 0.5]
@@ -46,10 +46,10 @@ class TestRerankOrder:
         result = rerank("查询词", sections, top_k=3)
         assert len(result) == 3
 
-    @patch("src.services.reranker._get_reranker")
+    @patch("src.services.retrieval.reranker._get_reranker")
     def test_reranker_returns_all_when_top_k_exceeds_input(self, mock_get):
         """top_k 大于输入数量时，返回全部"""
-        from src.services.reranker import rerank
+        from src.services.retrieval.reranker import rerank
 
         mock_model = MagicMock()
         mock_model.predict.return_value = [0.8, 0.6]
@@ -62,10 +62,10 @@ class TestRerankOrder:
         result = rerank("查询词", sections, top_k=10)
         assert len(result) == 2
 
-    @patch("src.services.reranker._get_reranker")
+    @patch("src.services.retrieval.reranker._get_reranker")
     def test_reranker_preserves_original_fields(self, mock_get):
         """rerank 返回原始 section 字典（含所有字段）"""
-        from src.services.reranker import rerank
+        from src.services.retrieval.reranker import rerank
 
         mock_model = MagicMock()
         mock_model.predict.return_value = [0.7]
@@ -85,10 +85,10 @@ class TestRerankOrder:
         assert result[0]["number"]   == "2.3"
         assert result[0]["title"]    == "安装步骤"
 
-    @patch("src.services.reranker._get_reranker")
+    @patch("src.services.retrieval.reranker._get_reranker")
     def test_reranker_handles_empty_sections(self, mock_get):
         """空列表输入时返回空列表"""
-        from src.services.reranker import rerank
+        from src.services.retrieval.reranker import rerank
 
         mock_model = MagicMock()
         mock_get.return_value = mock_model
@@ -101,10 +101,10 @@ class TestRerankOrder:
 class TestRerankTruncation:
     """验证内容截断不丢失 chunk_id"""
 
-    @patch("src.services.reranker._get_reranker")
+    @patch("src.services.retrieval.reranker._get_reranker")
     def test_long_content_is_truncated_before_predict(self, mock_get):
         """超长内容应被截断，避免模型 OOM"""
-        from src.services.reranker import rerank
+        from src.services.retrieval.reranker import rerank
 
         mock_model = MagicMock()
         mock_model.predict.return_value = [0.5]
@@ -125,8 +125,8 @@ class TestRerankQuality:
 
     def test_relevant_section_ranks_higher_than_irrelevant(self):
         """相关段落得分应高于不相关段落（不需要真实模型，使用 mock 验证逻辑链路）"""
-        with patch("src.services.reranker._get_reranker") as mock_get:
-            from src.services.reranker import rerank
+        with patch("src.services.retrieval.reranker._get_reranker") as mock_get:
+            from src.services.retrieval.reranker import rerank
 
             mock_model = MagicMock()
             # 假设真正相关的段落排在第二位（验证 rerank 能够将其提升）

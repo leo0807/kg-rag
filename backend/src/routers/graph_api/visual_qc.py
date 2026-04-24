@@ -26,7 +26,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 def _run_detection(image_path: str, doc_id: str) -> list[dict]:
     """尝试 YOLO 检测，fallback 到 VLM 检测"""
-    from ...services.defect_detector import (
+    from ...services.quality.defect_detector import (
         detect_defects, detect_defects_vlm, is_available,
     )
     if is_available():
@@ -58,7 +58,7 @@ async def detect_upload(
 
     defect_ids = []
     if defects and image_id:
-        from ...services.defect_writer import write_defects_batch
+        from ...services.quality.defect_writer import write_defects_batch
         defect_ids = write_defects_batch(driver, image_id, doc_id, defects)
 
     return {
@@ -88,13 +88,13 @@ async def detect_existing_image(
 
     defect_ids = []
     if defects:
-        from ...services.defect_writer import write_defects_batch
+        from ...services.quality.defect_writer import write_defects_batch
         defect_ids = write_defects_batch(driver, image_id, doc_id, defects)
 
     # 自动查询 Hazard 整改建议
     remediation_map: dict[str, list] = {}
     if defects:
-        from ...services.defect_writer import query_hazard_remediation
+        from ...services.quality.defect_writer import query_hazard_remediation
         for d in defects:
             dt = d["defect_type"]
             if dt not in remediation_map:
@@ -146,7 +146,7 @@ async def get_hazard_remediation(
     driver:      Driver = Depends(get_driver),
 ):
     """查询指定缺陷类型对应的 Hazard 节点和整改建议"""
-    from ...services.defect_writer import query_hazard_remediation
+    from ...services.quality.defect_writer import query_hazard_remediation
     hazards = query_hazard_remediation(driver, defect_type, doc_id)
     return {
         "defect_type": defect_type,

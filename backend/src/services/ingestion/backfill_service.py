@@ -34,7 +34,7 @@ _task: Optional[asyncio.Task] = None
 # ── 内部工具 ──────────────────────────────────────────────────────────────────
 
 def _redis():
-    from ..cache import get_redis
+    from ..infra.cache import get_redis
     return get_redis()
 
 
@@ -61,9 +61,9 @@ def _count_all_docs(driver) -> int:
 
 
 def _find_pdf(doc_id: str) -> Optional[Path]:
-    """在 uploads/docs/ 和 uploads/ 中查找对应 PDF 文件。"""
+    """在 uploads/docs/ 和 uploads/ 中查找对应文档文件。"""
     for base in (Path("uploads/docs"), Path("uploads")):
-        for ext in ("pdf", "PDF"):
+        for ext in ("pdf", "PDF", "docx", "DOCX", "doc", "DOC"):
             matches = sorted(base.glob(f"{doc_id}*.{ext}"))
             if matches:
                 return matches[0]
@@ -89,6 +89,13 @@ def _delete_existing_images_for_doc(doc_id: str, driver) -> int:
                 UNWIND images AS image
                 DETACH DELETE image
             """, doc_id=doc_id)
+    if count:
+        try:
+            from ..storage.milvus_store import delete_image_vectors
+
+            delete_image_vectors(doc_id)
+        except Exception as exc:
+            logger.warning("[backfill] 删除旧图片向量失败 doc_id=%s: %s", doc_id, exc)
     return count
 
 
@@ -97,7 +104,7 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
     从单份 PDF 提取图片，写入本地 + MinIO + Neo4j。
     返回成功写入的图片数，失败时抛出异常交由调用方处理。
     """
-    from ..pdf_image_extractor import extract_images_from_pdf
+    from ..images.pdf_image_extractor import extract_images_from_document
 
     # 页码 → chunk_id（取页面上最后一个 section）
     page_to_chunk: dict[int, str] = {}
@@ -122,7 +129,7 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
                 break
         return best
 
-    extracted_images = extract_images_from_pdf(str(pdf_path), doc_id)
+    extracted_images = extract_images_from_document(str(pdf_path), doc_id, sections)
     image_nodes = [
         {
             "image_id": img.image_id,
@@ -132,7 +139,7 @@ def _extract_images_for_doc(doc_id: str, pdf_path: Path, sections: list, driver)
             "minio_path": img.minio_key,
             "content_hash": img.content_hash,
             "is_drawing": False,
-            "chunk_id": _find_chunk(max(int(img.page) - 1, 0)),
+            "chunk_id": img.chunk_id or _find_chunk(max(int(img.page) - 1, 0)),
         }
         for img in extracted_images
     ]

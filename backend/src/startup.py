@@ -12,9 +12,9 @@ from .core.config import settings
 from .core.database import init_db, get_driver
 from .core.logging import setup_logging
 from .db.session import AsyncSessionLocal, init_tables
-from .services.health import health_monitor
-from .services.milvus_store import connect_milvus, get_or_create_collection
-from .services.es_store import init_es_index
+from .services.infra.health import health_monitor
+from .services.storage.milvus_store import connect_milvus, get_or_create_collection
+from .services.storage.es_store import init_es_index
 from .core.storage import ensure_buckets
 
 logger = logging.getLogger(__name__)

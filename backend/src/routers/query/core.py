@@ -12,7 +12,7 @@ from __future__ import annotations
 """
 import logging
 from neo4j import Driver
-from ...services.health import health_monitor
+from ...services.infra.health import health_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -131,14 +131,14 @@ def do_retrieval(
     source_meta: dict[str, dict] = {}
 
     # 0. 查询扩展（近义词）
-    from ...services.query_expander import expand_query
+    from ...services.retrieval.query_expander import expand_query
     search_query = expand_query(driver, question)
 
     # ES 全文检索
     ft_ids, ft_score_map = [], {}
     if health_monitor.elasticsearch.is_ok:
         try:
-            from ...services.es_store import search_sections_es
+            from ...services.storage.es_store import search_sections_es
             es_results   = search_sections_es(search_query, top_k=top_k * 2, doc_id=doc_id)
             ft_ids       = [r["chunk_id"] for r in es_results]
             ft_score_map = {r["chunk_id"]: r["score"] for r in es_results}
@@ -186,10 +186,10 @@ def do_retrieval(
             logger.info("Milvus 不可用（已知 DOWN），跳过向量检索，仅使用全文结果")
         else:
             try:
-                from ...services.embedder     import embed_query
-                from ...services.milvus_store import search_sections
+                from ...services.retrieval.embedder import embed_query
+                from ...services.storage.milvus_store import search_sections
                 if use_hyde:
-                    from ...services.hyde_service import get_hyde_service
+                    from ...services.retrieval.hyde_service import get_hyde_service
                     query_vec = get_hyde_service().hybrid_embedding(question, alpha=hyde_alpha)
                     logger.info("HyDE 增强向量检索（alpha=%.2f）", hyde_alpha)
                 else:
@@ -209,8 +209,8 @@ def do_retrieval(
     gnn_ids: list[str] = []
     if strategy == "gnn":
         try:
-            from ...services.embedder   import embed_query
-            from ...services.gnn_service import get_gnn_service
+            from ...services.retrieval.embedder import embed_query
+            from ...services.storage.gnn_service import get_gnn_service
             gnn_svc = get_gnn_service()
             if gnn_svc.loaded:
                 q_vec   = embed_query(question)
@@ -244,10 +244,10 @@ def do_retrieval(
         fused_ids = list(ft_ids[:top_k])
         if len(fused_ids) < top_k:
             try:
-                from ...services.embedder     import embed_query
-                from ...services.milvus_store import search_sections
+                from ...services.retrieval.embedder import embed_query
+                from ...services.storage.milvus_store import search_sections
                 if use_hyde:
-                    from ...services.hyde_service import get_hyde_service
+                    from ...services.retrieval.hyde_service import get_hyde_service
                     _seq_vec = get_hyde_service().hybrid_embedding(question, alpha=hyde_alpha)
                 else:
                     _seq_vec = embed_query(question)
@@ -368,7 +368,7 @@ def do_retrieval(
     else:
         # Neo4j 不可用：从 ES 获取章节内容作为降级方案
         try:
-            from ...services.es_store import search_sections_es
+            from ...services.storage.es_store import search_sections_es
             es_fallback = search_sections_es(question, top_k=top_k * 2, doc_id=doc_id)
             sections = [
                 {k: r[k] for k in ("chunk_id", "doc_id", "number", "title", "content") if k in r}
@@ -389,7 +389,7 @@ def do_retrieval(
     from ...core.config import settings as _s
     if _s.RERANKER_ENABLED and sections and strategy in ("parallel", "graph_augmented", "sequential", "gnn"):
         try:
-            from ...services.reranker import rerank
+            from ...services.retrieval.reranker import rerank
             sections = rerank(question, sections, top_k=top_k)
         except Exception as e:
             logger.warning("Reranker 失败: %s", e)

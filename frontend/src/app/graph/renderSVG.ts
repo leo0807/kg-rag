@@ -1,5 +1,71 @@
 import * as d3 from "d3";
-import { GraphData, GraphNode, SimNode, NODE_COLOR, EDGE_COLOR, MIN_SCALE, MAX_SCALE, nodeRadius } from "./constants";
+import {
+    GraphData,
+    GraphNode,
+    SimNode,
+    NODE_COLOR,
+    EDGE_COLOR,
+    MIN_SCALE,
+    MAX_SCALE,
+    nodeRadius,
+    nodeShape,
+    nodeDimensions,
+    nodeCornerRadius,
+    nodePolygonPoints,
+} from "./constants";
+
+function appendNodeShape(
+    selection: d3.Selection<d3.BaseType, SimNode, d3.BaseType, unknown>,
+    options: {
+        fill?: string | ((d: SimNode) => string);
+        stroke?: string | ((d: SimNode) => string);
+        strokeWidth?: number | ((d: SimNode) => number);
+        strokeOpacity?: number | ((d: SimNode) => number);
+        opacity?: number | ((d: SimNode) => number);
+        expand?: number | ((d: SimNode) => number);
+        heatNorm?: number | ((d: SimNode) => number);
+    },
+) {
+    selection.each(function renderShape(d) {
+        const group = d3.select<SVGGElement, SimNode>(this as SVGGElement);
+        const expand = typeof options.expand === "function" ? options.expand(d) : (options.expand ?? 0);
+        const heatNorm = typeof options.heatNorm === "function" ? options.heatNorm(d) : (options.heatNorm ?? 0);
+        const shape = nodeShape(d);
+        const { width, height, r } = nodeDimensions(d, heatNorm, expand);
+        let element: any;
+
+        if (shape === "roundedRect" || shape === "pill" || shape === "square") {
+            element = group.append("rect")
+                .attr("x", -width / 2)
+                .attr("y", -height / 2)
+                .attr("width", width)
+                .attr("height", height)
+                .attr("rx", nodeCornerRadius(d, heatNorm, expand))
+                .attr("ry", nodeCornerRadius(d, heatNorm, expand));
+        } else if (shape === "diamond" || shape === "hexagon") {
+            element = group.append("polygon")
+                .attr("points", nodePolygonPoints(d, heatNorm, expand));
+        } else {
+            element = group.append("circle").attr("r", r);
+        }
+
+        if (options.fill !== undefined) {
+            element.attr("fill", typeof options.fill === "function" ? options.fill(d) : options.fill);
+        }
+        if (options.stroke !== undefined) {
+            element.attr("stroke", typeof options.stroke === "function" ? options.stroke(d) : options.stroke);
+        }
+        if (options.strokeWidth !== undefined) {
+            element.attr("stroke-width", typeof options.strokeWidth === "function" ? options.strokeWidth(d) : options.strokeWidth);
+        }
+        if (options.strokeOpacity !== undefined) {
+            element.attr("stroke-opacity", typeof options.strokeOpacity === "function" ? options.strokeOpacity(d) : options.strokeOpacity);
+        }
+        if (options.opacity !== undefined) {
+            element.attr("opacity", typeof options.opacity === "function" ? options.opacity(d) : options.opacity);
+        }
+    });
+}
 
 export function drawGraph(
     data: GraphData,
@@ -79,38 +145,50 @@ export function drawGraph(
 
     if (!tourMode) {
         node.filter(d => (d.type || d.label) === "Section" && (heatMap.get(d.id) ?? 0) > 0.15)
-            .append("circle")
-            .attr("r",              d => nodeRadius(d, heatMap.get(d.id) ?? 0) + 7)
-            .attr("fill",           "none").attr("stroke", "#f59e0b")
-            .attr("stroke-width",   d => 1.5 + (heatMap.get(d.id) ?? 0) * 3)
-            .attr("stroke-opacity", d => 0.25 + (heatMap.get(d.id) ?? 0) * 0.45);
+            .call(appendNodeShape, {
+                fill: "none",
+                stroke: "#f59e0b",
+                heatNorm: d => heatMap.get(d.id) ?? 0,
+                expand: d => 7 + (heatMap.get(d.id) ?? 0) * 4,
+                strokeWidth: d => 1.5 + (heatMap.get(d.id) ?? 0) * 3,
+                strokeOpacity: d => 0.25 + (heatMap.get(d.id) ?? 0) * 0.45,
+            });
     }
     if (tourMode && tourCurrentId) {
         node.filter(d => d.id === tourCurrentId)
-            .append("circle")
-            .attr("r",              d => nodeRadius(d, heatMap.get(d.id) ?? 0) + 11)
-            .attr("fill",           "none").attr("stroke", "#fbbf24")
-            .attr("stroke-width",   3.5).attr("stroke-opacity", 0.75);
+            .call(appendNodeShape, {
+                fill: "none",
+                stroke: "#fbbf24",
+                heatNorm: d => heatMap.get(d.id) ?? 0,
+                expand: 11,
+                strokeWidth: 3.5,
+                strokeOpacity: 0.75,
+            });
     }
     if (!tourMode) {
         node.filter(d => highlightedIds.has(d.id))
-            .append("circle")
-            .attr("r",              d => nodeRadius(d, heatMap.get(d.id) ?? 0) + 6)
-            .attr("fill",           "none").attr("stroke", "#f97316")
-            .attr("stroke-width",   2.5).attr("stroke-opacity", 0.9);
+            .call(appendNodeShape, {
+                fill: "none",
+                stroke: "#f97316",
+                heatNorm: d => heatMap.get(d.id) ?? 0,
+                expand: 6,
+                strokeWidth: 2.5,
+                strokeOpacity: 0.9,
+            });
     }
 
-    node.append("circle")
-        .attr("r",    d => nodeRadius(d, heatMap.get(d.id) ?? 0))
-        .attr("fill", d => NODE_COLOR[d.type || d.label] ?? "#6b7280")
-        .attr("opacity", d => {
+    node.call(appendNodeShape, {
+        fill: d => NODE_COLOR[d.type || d.label] ?? "#6b7280",
+        heatNorm: d => heatMap.get(d.id) ?? 0,
+        opacity: d => {
             if (!tourMode) return 0.95;
-            if (d.id === tourCurrentId)  return 1;
-            if (tourNodeIds!.has(d.id))  return 0.72;
+            if (d.id === tourCurrentId) return 1;
+            if (tourNodeIds!.has(d.id)) return 0.72;
             return 0.1;
-        })
-        .attr("stroke",       d => d.id === tourCurrentId ? "#fbbf24" : (highlightedIds.has(d.id) ? "#f97316" : "none"))
-        .attr("stroke-width", 2.5);
+        },
+        stroke: d => d.id === tourCurrentId ? "#fbbf24" : (highlightedIds.has(d.id) ? "#f97316" : "none"),
+        strokeWidth: 2.5,
+    });
 
     node
         .on("mouseover", (event: MouseEvent, d) => {

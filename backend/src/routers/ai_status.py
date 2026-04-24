@@ -107,7 +107,7 @@ async def _probe_llm() -> ServiceInfo:
 
     # ── API 模式：发一次最小 chat 请求 ─────────────────────────────────────
     try:
-        from ..services.llm_service import get_llm_service
+        from ..services.ai.llm_service import get_llm_service
         llm  = get_llm_service()
         text = await asyncio.to_thread(
             llm.chat,
@@ -132,7 +132,7 @@ async def _probe_embedding() -> ServiceInfo:
 
     if mode == "local":
         # 先看单例是否已加载（懒加载场景不强制初始化）
-        from ..services import embedding_service as _esvc
+        from ..services.retrieval import embedding_service as _esvc
         model_path = Path(settings.EMBEDDING_MODEL) if settings.EMBEDDING_MODEL \
                      else Path(__file__).parent.parent.parent / "models" / "bge-m3"
         path_ok = model_path.exists()
@@ -168,7 +168,7 @@ async def _probe_embedding() -> ServiceInfo:
 
     t0 = time.monotonic()
     try:
-        from ..services.embedding_service import get_embedding_service
+        from ..services.retrieval.embedding_service import get_embedding_service
         svc = get_embedding_service()
         await asyncio.to_thread(svc.embed, "test")
         return ServiceInfo(mode=mode, provider=provider or "openai_compat", model=model,

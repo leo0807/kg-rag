@@ -147,19 +147,19 @@ class TestGraphAugmentedStrategy:
 # ── 多跳推理 ─────────────────────────────────────────────────────────────────
 class TestMultiHopStrategy:
     def test_multi_hop_returns_three_values(self):
-        from src.services.multi_hop import multi_hop_query
+        from src.services.retrieval.multi_hop import multi_hop_query
 
         driver = make_driver()
 
-        with patch("src.services.multi_hop.requests.post") as mock_post:
+        with patch("src.services.retrieval.multi_hop.requests.post") as mock_post:
             mock_resp = MagicMock()
             mock_resp.json.return_value = {
                 "choices": [{"message": {"content": "子问题1\n子问题2"}}]
             }
             mock_post.return_value = mock_resp
 
-            with patch("src.services.multi_hop.embed_query", return_value=[0.1] * 512), \
-                 patch("src.services.multi_hop.search_sections", return_value=[]):
+            with patch("src.services.retrieval.multi_hop.embed_query", return_value=[0.1] * 512), \
+                 patch("src.services.retrieval.multi_hop.search_sections", return_value=[]):
                 answer, sources, steps = multi_hop_query("跨文档复杂问题", driver, top_k=3)
 
         assert isinstance(answer, str)
@@ -167,7 +167,7 @@ class TestMultiHopStrategy:
         assert isinstance(steps, list)
 
     def test_max_hops_protection(self):
-        from src.services.multi_hop import MAX_HOPS, should_continue, AgentState
+        from src.services.retrieval.multi_hop import MAX_HOPS, should_continue, AgentState
 
         state: AgentState = {
             "question": "test", "sub_queries": ["q1", "q2", "q3", "q4", "q5", "q6"],
