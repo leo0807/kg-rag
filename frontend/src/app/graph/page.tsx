@@ -539,12 +539,14 @@ export default function GraphPage() {
             isDarkTheme,
           )
             .then(({ zoom, destroy }) => {
+              // 先存 destroy，再检查 canceled，确保 cleanup 函数一定能清理
+              pixiDestroyRef.current = destroy;
               if (canceled) {
                 destroy();
+                pixiDestroyRef.current = null;
                 return;
               }
               zoomRef.current = zoom;
-              pixiDestroyRef.current = destroy;
             })
             .catch(() => {});
         })

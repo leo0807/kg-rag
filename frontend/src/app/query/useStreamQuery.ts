@@ -91,14 +91,17 @@ export function useStreamQuery({
       content: m.content,
     }));
 
+    // 每 800ms 同步一次流式内容到对话状态，供侧边栏实时预览；
+    // 流结束后会再做一次完整写入，此处仅用于 UI 视觉反馈。
     const intervalId = setInterval(() => {
+      if (!convId) return;
       updateConversation(
         convId,
         newMsgs.map((m) =>
           m.id === aiMsgId ? { ...m, content: answerRef.current } : m,
         ),
       );
-    }, 150);
+    }, 800);
 
     let sources: SourceSection[] = [];
     let streamCausalChain: CausalChainData | null = null;

@@ -264,10 +264,3 @@ async def refresh_token(
         "access_token": new_token,
         "token_type":   "bearer",
     }
-
-@router.get("/me")
-async def me(db: AsyncSession = Depends(get_db)):
-    """临时接口，测试用"""
-    result = await db.execute(select(User))
-    users  = result.scalars().all()
-    return [{"id": u.id, "username": u.username, "is_admin": u.is_admin} for u in users]

@@ -268,17 +268,24 @@ def do_retrieval(
         logger.info("Neo4j 不可用（已知 DOWN），跳过实体感知检索和图谱增强")
     else:
         try:
+            # 先在 Python 侧提取候选词（2-8 字），再用精确 IN 查询避免全表扫描
+            import re as _re
+            _terms = list({
+                t for t in _re.findall(r'[\u4e00-\u9fa5a-zA-Z0-9][^\s，。；：、！？,.;:!?]{1,7}', question)
+                if len(t) >= 2
+            })[:20]
             with driver.session() as session:
                 entity_result = session.run("""
+                    UNWIND $terms AS term
                     MATCH (e)
                     WHERE (e:Tool OR e:Material OR e:Process)
-                      AND toLower($question) CONTAINS toLower(e.name)
+                      AND (e.name = term OR e.name CONTAINS term)
                     WITH e LIMIT 10
                     MATCH (s:Section)-[:REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS]->(e)
                     WHERE ($doc_id = '' OR s.doc_id = $doc_id)
                     RETURN DISTINCT s.chunk_id AS chunk_id
                     LIMIT 20
-                """, question=question, doc_id=doc_id)
+                """, terms=_terms, doc_id=doc_id)
                 entity_section_ids = [r["chunk_id"] for r in entity_result]
                 if entity_section_ids:
                     _mark_sources(

@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from neo4j import Driver
 
-from ...auth.deps import get_current_user, get_protected_driver
+from ...auth.deps import get_current_user, get_protected_driver, get_admin_user
 from ...core.database import get_driver
 from ...db.models import User
 
@@ -241,16 +241,24 @@ async def get_graph_schema(driver: Driver = Depends(get_driver)):
         }
 
 
+_CYPHER_DENY = ("delete", "detach", "drop", "create", "merge", "set", "remove",
+                "call apoc", "call dbms", "load csv", "call db.index")
+
 @router.post("/graph/query")
 async def execute_cypher_query(
     query: dict,
-    driver: Driver = Depends(get_driver)
+    driver: Driver = Depends(get_driver),
+    _admin: User = Depends(get_admin_user),
 ):
-    """执行自定义 Cypher 查询并返回图结果"""
+    """执行自定义 Cypher 查询并返回图结果（仅管理员）"""
     cypher = query.get("cypher")
     if not cypher:
         return {"error": "Missing cypher query"}
-    
+
+    lowered = cypher.lower()
+    if any(kw in lowered for kw in _CYPHER_DENY):
+        return {"error": "不允许执行写入或危险操作", "success": False}
+
     with driver.session() as session:
         try:
             result = session.run(cypher)

@@ -51,6 +51,7 @@ from .routers.search_api.autocomplete import router as search_autocomplete_route
 from .auth.deps import get_admin_user as _get_admin_user
 
 from .services.infra.health import health_monitor
+from .services.ops.presence_service import track_request_activity
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -112,6 +113,15 @@ app.add_middleware(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+@app.middleware("http")
+async def activity_presence_middleware(request: Request, call_next):
+    track_request_activity(
+        request.headers.get("authorization", ""),
+        request.url.path,
+    )
+    return await call_next(request)
+
 app.include_router(sessions_router)
 app.include_router(document_files_router)
 app.include_router(document_analysis_router)
@@ -131,6 +141,7 @@ app.include_router(conversations_router)
 app.include_router(admin_entities_router)
 app.include_router(admin_activity_router)
 app.include_router(admin_analytics_router)
+app.include_router(admin_dashboard_router)
 app.include_router(admin_batch_ingest_router)
 app.include_router(admin_eval_router)
 app.include_router(admin_ops_router)
@@ -422,6 +433,30 @@ async def ingest(
 
     # 文件保存在请求期间同步完成，background task 只处理已落盘的文件
     await asyncio.to_thread(_save_upload_file, file, tmp_path)
+
+    # 魔数校验：防止攻击者通过伪造扩展名绕过格式检查
+    _MAGIC = {
+        ".pdf":  [(0, b"%PDF-")],
+        ".docx": [(0, b"PK\x03\x04")],
+        ".doc":  [(0, b"\xd0\xcf\x11\xe0")],
+    }
+    try:
+        with tmp_path.open("rb") as _f:
+            _header = _f.read(8)
+        _ok = any(
+            _header[off:off + len(sig)] == sig
+            for off, sig in _MAGIC.get(suffix, [])
+        )
+        if not _ok:
+            tmp_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400,
+                detail=f"文件内容与扩展名 {suffix} 不符，请上传真实的 {suffix.upper()} 文件",
+            )
+    except HTTPException:
+        raise
+    except Exception as _me:
+        logger.warning("魔数校验异常（跳过）: %s", _me)
 
     _ingest_tasks[task_id] = {
         "status":     "running",

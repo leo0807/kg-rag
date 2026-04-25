@@ -3,11 +3,20 @@ src/services/milvus_store.py
 Milvus 向量存储服务
 """
 import logging
+import re
 from pymilvus import (
     connections, Collection, CollectionSchema,
     FieldSchema, DataType, utility
 )
 from ...core.config import settings
+
+_DOC_ID_RE = re.compile(r'^[\w\-\.]{1,128}$')
+
+def _safe_doc_id(doc_id: str) -> str:
+    """校验 doc_id 格式，防止过滤表达式注入。"""
+    if doc_id and not _DOC_ID_RE.match(doc_id):
+        raise ValueError(f"非法 doc_id 格式: {doc_id!r}")
+    return doc_id
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +117,7 @@ def upsert_sections(sections: list[dict]) -> None:
 def delete_by_doc_id(doc_id: str) -> None:
     """删除指定文档的所有章节向量"""
     try:
+        doc_id = _safe_doc_id(doc_id)
         col = get_or_create_collection()
         col.delete(expr=f'doc_id == "{doc_id}"')
         logger.info("Milvus 删除 doc_id=%s 的向量", doc_id)
@@ -118,6 +128,7 @@ def delete_by_doc_id(doc_id: str) -> None:
 def delete_image_vectors(doc_id: str) -> None:
     """删除指定文档的图片向量，不影响章节向量。"""
     try:
+        doc_id = _safe_doc_id(doc_id)
         col = get_or_create_collection()
         col.delete(expr=f'doc_id == "{doc_id}" and chunk_id like "{doc_id}_img_%"')
         logger.info("Milvus 删除 doc_id=%s 的图片向量", doc_id)
@@ -131,6 +142,8 @@ def search_sections(
     doc_id:    str = "",
 ) -> list[dict]:
     """向量检索，返回最相关的章节"""
+    if doc_id:
+        doc_id = _safe_doc_id(doc_id)
     col    = get_or_create_collection()
     expr   = f'doc_id == "{doc_id}"' if doc_id else ""
 

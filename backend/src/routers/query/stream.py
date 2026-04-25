@@ -207,9 +207,10 @@ async def query_stream(
 
                 if req.use_hyde:
                     yield f"data: {json.dumps({'type': 'status', 'content': '增强模式：生成假设答案...'}, ensure_ascii=False)}\n\n"
-                sections, ft_score_map = do_retrieval(
+                sections, ft_score_map = await asyncio.to_thread(
+                    do_retrieval,
                     driver, req.question, req.strategy, top_k,
-                    use_hyde=req.use_hyde, hyde_alpha=req.hyde_alpha,
+                    req.use_hyde, req.hyde_alpha,
                 )
 
                 sources = [
