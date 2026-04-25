@@ -3,9 +3,14 @@ src/services/reranker.py
 重排序服务，使用 BAAI/bge-reranker-v2-m3
 """
 import logging
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
+
+import requests
 from sentence_transformers import CrossEncoder
+
+from ...core.config import settings
+from ..runtime.model_settings import get_runtime_settings_namespace
 
 logger = logging.getLogger(__name__)
 
@@ -24,18 +29,67 @@ def _get_device() -> str:
     return "cpu"
 
 
-@lru_cache(maxsize=1)
-def get_reranker() -> CrossEncoder:
+@lru_cache(maxsize=4)
+def get_reranker(model_path: str | None = None) -> CrossEncoder:
     device = _get_device()
-    logger.info("加载 Reranker 模型: %s (device=%s)", RERANKER_PATH, device)
-    model = CrossEncoder(str(RERANKER_PATH), device=device)
+    path = model_path or str(RERANKER_PATH)
+    logger.info("加载 Reranker 模型: %s (device=%s)", path, device)
+    model = CrossEncoder(path, device=device)
     logger.info("Reranker 模型加载完成")
     return model
 
 
 def _get_reranker() -> CrossEncoder:
     """向后兼容旧测试和调用方的私有入口。"""
-    return get_reranker()
+    runtime_settings = get_runtime_settings_namespace()
+    model_path = runtime_settings.RERANKER_MODEL or str(RERANKER_PATH)
+    return get_reranker(model_path)
+
+
+class _ApiRerankerProvider:
+    def __init__(self, api_url: str, api_key: str, model: str):
+        self._url = api_url.rstrip("/")
+        self._key = api_key
+        self._model = model
+
+    def predict(self, query: str, sections: list[dict]) -> list[float]:
+        documents = [
+            f"{section.get('title', '')}\n{section.get('content', '')}"[:2048]
+            for section in sections
+        ]
+        response = requests.post(
+            f"{self._url}/rerank",
+            headers={
+                "Authorization": f"Bearer {self._key}" if self._key else "",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self._model,
+                "query": query,
+                "documents": documents,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        body = response.json()
+        items = body.get("results") or body.get("data") or []
+        score_map: dict[int, float] = {}
+        for item in items:
+            index = item.get("index")
+            score = item.get("relevance_score", item.get("score", 0.0))
+            if isinstance(index, int):
+                score_map[index] = float(score)
+        return [score_map.get(idx, 0.0) for idx in range(len(sections))]
+
+
+def _get_runtime_reranker_settings():
+    runtime_settings = get_runtime_settings_namespace()
+    mode = (runtime_settings.RERANKER_MODE or "local").lower()
+    provider = (getattr(runtime_settings, "RERANKER_PROVIDER", "") or "").lower()
+    enabled = getattr(runtime_settings, "RERANKER_ENABLED", settings.RERANKER_ENABLED)
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() in {"1", "true", "yes", "on"}
+    return runtime_settings, mode, provider, bool(enabled)
 
 
 def rerank(
@@ -51,13 +105,24 @@ def rerank(
     if not sections:
         return []
 
-    model = _get_reranker()
-    pairs = [
-        # 1024 chars ≈ 512 tokens for Chinese text（比原来的 512 字符更充分）
-        (query, f"{s.get('title', '')}\n{s.get('content', '')}"[:1024])
-        for s in sections
-    ]
-    scores = model.predict(pairs)
+    runtime_settings, mode, _provider, enabled = _get_runtime_reranker_settings()
+    if not enabled:
+        return sections[:top_k]
+
+    if mode == "api" and runtime_settings.RERANKER_API_URL:
+        scores = _ApiRerankerProvider(
+            api_url=runtime_settings.RERANKER_API_URL,
+            api_key=runtime_settings.RERANKER_API_KEY,
+            model=runtime_settings.RERANKER_MODEL or "reranker-v1",
+        ).predict(query, sections)
+    else:
+        model = _get_reranker()
+        pairs = [
+            # 1024 chars ≈ 512 tokens for Chinese text（比原来的 512 字符更充分）
+            (query, f"{s.get('title', '')}\n{s.get('content', '')}"[:1024])
+            for s in sections
+        ]
+        scores = model.predict(pairs)
 
     ranked = sorted(
         zip(sections, scores),

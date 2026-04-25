@@ -10,28 +10,10 @@ from pydantic import BaseModel
 from ..db.session import get_db
 from ..db.models import User, UserSetting, SystemSetting, AuditLog
 from ..auth.deps import get_current_user, get_admin_user
+from ..services.runtime.model_settings import DEFAULT_SETTINGS
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/settings", tags=["settings"])
-
-# 系统默认配置
-DEFAULT_SETTINGS = {
-    "embedding_mode":    "local",
-    "embedding_model":   "models/bge-m3",
-    "embedding_api_url": "",
-    "embedding_api_key": "",
-    "reranker_mode":     "local",
-    "reranker_model":    "models/bge-reranker-v2-m3",
-    "reranker_api_url":  "",
-    "reranker_api_key":  "",
-    "llm_mode":          "api",
-    "llm_api_url":       "http://localhost:11434/v1",
-    "llm_api_key":       "ollama",
-    "llm_model":         "qwen2.5:7b",
-    "query_top_k":       "5",
-    "query_strategy":    "parallel",
-}
-
 
 class SettingUpdate(BaseModel):
     key:   str

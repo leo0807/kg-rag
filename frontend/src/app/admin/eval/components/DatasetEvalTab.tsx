@@ -11,6 +11,8 @@ import {
 import { DATASET_TEMPLATE_CSV } from "../templates";
 import type { EvalRow, EvalTask, Strategy } from "../types";
 import { pct } from "../types";
+import { DatasetResultsTable } from "./DatasetResultsTable";
+import { ProgressBar, StatCard } from "./EvalStatusBits";
 import { TemplateCard } from "./TemplateCard";
 
 interface Props {
@@ -154,12 +156,7 @@ export function DatasetEvalTab({
                 />
               </div>
 
-              <ProgressBlock
-                label="进度"
-                current={task.completed}
-                total={task.total}
-                progress={progress}
-              />
+              <ProgressBar label="进度" current={task.completed} total={task.total} value={progress} />
 
               {task.current_question && task.status === "running" && (
                 <div className="text-xs text-gray-400 bg-gray-950 border border-gray-800 rounded-xl p-3">
@@ -208,126 +205,9 @@ export function DatasetEvalTab({
             </div>
           </div>
 
-          <div className="overflow-auto">
-            <table className="w-full text-sm min-w-[1100px]">
-              <thead className="bg-gray-950 text-gray-400">
-                <tr>
-                  <th className="px-4 py-3 text-left">行号</th>
-                  <th className="px-4 py-3 text-left">结果</th>
-                  <th className="px-4 py-3 text-left">问题</th>
-                  <th className="px-4 py-3 text-left">标准答案</th>
-                  <th className="px-4 py-3 text-left">系统答案</th>
-                  <th className="px-4 py-3 text-left">相似度</th>
-                  <th className="px-4 py-3 text-left">来源</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={`${row.row_no}-${row.question}`}
-                    className="border-t border-gray-800 align-top"
-                  >
-                    <td className="px-4 py-3 text-gray-500">{row.row_no}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                          row.matched
-                            ? "bg-emerald-500/15 text-emerald-400"
-                            : "bg-rose-500/15 text-rose-400"
-                        }`}
-                      >
-                        {row.matched ? "PASS" : "FAIL"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-200 whitespace-pre-wrap">
-                      {row.question}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 whitespace-pre-wrap">
-                      {row.expected_answer}
-                    </td>
-                    <td className="px-4 py-3 text-gray-300 whitespace-pre-wrap">
-                      {row.actual_answer}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">
-                      {row.similarity.toFixed(4)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {row.source_refs.join(", ") || "—"}
-                    </td>
-                  </tr>
-                ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="px-4 py-10 text-center text-gray-500"
-                    >
-                      暂无结果
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DatasetResultsTable rows={rows} />
         </section>
       )}
     </section>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  compact = false,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  compact?: boolean;
-  tone?: "default" | "emerald" | "rose";
-}) {
-  const toneClass =
-    tone === "emerald"
-      ? "text-emerald-400"
-      : tone === "rose"
-        ? "text-rose-400"
-        : "text-white";
-
-  return (
-    <div className="rounded-xl bg-gray-950 border border-gray-800 p-4">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className={`mt-1 ${compact ? "text-sm" : "text-lg"} ${toneClass}`}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function ProgressBlock({
-  label,
-  current,
-  total,
-  progress,
-}: {
-  label: string;
-  current: number;
-  total: number;
-  progress: number;
-}) {
-  return (
-    <div>
-      <div className="flex justify-between text-xs text-gray-500 mb-2">
-        <span>{label}</span>
-        <span>
-          {current}/{total}
-        </span>
-      </div>
-      <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
-        <div
-          className="h-full bg-indigo-500 transition-all"
-          style={{ width: pct(progress) }}
-        />
-      </div>
-    </div>
   );
 }

@@ -9,12 +9,26 @@ export interface UserInfo {
 }
 
 export interface ModelSettings {
+    llm_mode:           string;
+    llm_provider:       string;
+    llm_api_url:        string;
+    llm_api_key:        string;
+    llm_api_secret:     string;
+    llm_model:          string;
     embedding_mode:    string;
+    embedding_provider:string;
     embedding_model:   string;
     embedding_api_url: string;
     embedding_api_key: string;
     reranker_mode:     string;
+    reranker_provider: string;
     reranker_model:    string;
+    reranker_api_url:  string;
+    reranker_api_key:  string;
+    reranker_enabled:  string;
+    vision_mode:       string;
+    qwen_vl_model:     string;
+    vlm_model:         string;
     query_top_k:       string;
     query_strategy:    string;
 }

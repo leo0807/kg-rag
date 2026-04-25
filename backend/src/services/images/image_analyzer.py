@@ -12,6 +12,7 @@ import base64
 from pathlib import Path
 from ...core.config import settings
 from ..ai.llm_service import get_llm_service
+from ..runtime.model_settings import get_runtime_setting
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,11 @@ def analyze_image(
                 {"type": "text", "text": prompt},
             ],
         }]
-        content = get_llm_service().chat(messages, model=settings.VLM_MODEL, timeout=60)
+        content = get_llm_service().chat(
+            messages,
+            model=get_runtime_setting("VLM_MODEL", settings.VLM_MODEL),
+            timeout=60,
+        )
 
         # 清理 JSON 格式
         import json

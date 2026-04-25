@@ -23,8 +23,9 @@ backend/src/services/embedding_service.py
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 from pathlib import Path
+
+from ..runtime.model_settings import get_runtime_settings_namespace
 
 logger = logging.getLogger(__name__)
 
@@ -121,15 +122,16 @@ class EmbeddingService:
       .model_name          → str
     """
 
-    def __init__(self):
-        from ...core.config import settings
-        self._settings = settings
-        self._provider = self._build_provider(settings)
+    def __init__(self, runtime_settings=None):
+        self._settings = runtime_settings or get_runtime_settings_namespace()
+        self._provider = self._build_provider(self._settings)
 
     @staticmethod
     def _build_provider(s):
         mode     = (s.EMBEDDING_MODE     or "local").lower()
         provider = (s.EMBEDDING_PROVIDER or "").lower()
+        if provider in {"openai", "openai_compatible", "openai-compatible", "generic"}:
+            provider = ""
 
         if mode == "local":
             model_path = Path(s.EMBEDDING_MODEL) if s.EMBEDDING_MODEL else \
@@ -139,12 +141,12 @@ class EmbeddingService:
 
         # API 模式
         if provider == "qwen":
-            model = s.EMBEDDING_QWEN_MODEL or "text-embedding-v3"
+            model = s.EMBEDDING_MODEL or s.EMBEDDING_QWEN_MODEL or "text-embedding-v3"
             dim   = s.EMBEDDING_QWEN_DIM   or 1024
             logger.info("EmbeddingService → 通义文本向量 model=%s dim=%d", model, dim)
             return _OpenAICompatEmbeddingProvider(
                 api_url = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                api_key = s.DASHSCOPE_API_KEY,
+                api_key = s.EMBEDDING_API_KEY or s.DASHSCOPE_API_KEY,
                 model   = model,
                 dim     = dim,
             )
@@ -161,12 +163,12 @@ class EmbeddingService:
     @staticmethod
     def _build_api_fallback_provider(s):
         if s.DASHSCOPE_API_KEY:
-            model = s.EMBEDDING_QWEN_MODEL or "text-embedding-v3"
+            model = s.EMBEDDING_MODEL or s.EMBEDDING_QWEN_MODEL or "text-embedding-v3"
             dim   = s.EMBEDDING_QWEN_DIM or 1024
             logger.warning("本地 Embedding 不可用，自动回落到通义文本向量 model=%s", model)
             return _OpenAICompatEmbeddingProvider(
                 api_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-                api_key=s.DASHSCOPE_API_KEY,
+                api_key=s.EMBEDDING_API_KEY or s.DASHSCOPE_API_KEY,
                 model=model,
                 dim=dim,
             )
@@ -217,12 +219,23 @@ class EmbeddingService:
 # 模块级单例
 # ─────────────────────────────────────────────────────────────────────────────
 
-_service: EmbeddingService | None = None
+_services: dict[tuple, EmbeddingService] = {}
+
+
+def _service_key(runtime_settings) -> tuple:
+    return (
+        runtime_settings.EMBEDDING_MODE,
+        runtime_settings.EMBEDDING_PROVIDER,
+        runtime_settings.EMBEDDING_MODEL,
+        runtime_settings.EMBEDDING_API_URL,
+        runtime_settings.EMBEDDING_API_KEY,
+    )
 
 
 def get_embedding_service() -> EmbeddingService:
-    """获取全局 EmbeddingService 单例（首次调用时初始化）。"""
-    global _service
-    if _service is None:
-        _service = EmbeddingService()
-    return _service
+    """按当前运行时配置返回 EmbeddingService。"""
+    runtime_settings = get_runtime_settings_namespace()
+    key = _service_key(runtime_settings)
+    if key not in _services:
+        _services[key] = EmbeddingService(runtime_settings)
+    return _services[key]

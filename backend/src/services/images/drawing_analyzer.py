@@ -17,6 +17,7 @@ from pathlib import Path
 from ...core.config import settings
 from .image_analyzer import image_to_base64
 from ..ai.llm_service import get_llm_service
+from ..runtime.model_settings import get_runtime_setting
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,11 @@ def analyze_drawing(
                 {"type": "text", "text": prompt},
             ],
         }]
-        content = get_llm_service().chat(messages, model=settings.VLM_MODEL, timeout=60).strip()
+        content = get_llm_service().chat(
+            messages,
+            model=get_runtime_setting("VLM_MODEL", settings.VLM_MODEL),
+            timeout=60,
+        ).strip()
         if content.startswith("```"):
             content = content.split("```")[1]
             if content.startswith("json"):

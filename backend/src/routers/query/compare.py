@@ -7,8 +7,11 @@ import time
 import logging
 from fastapi import Depends
 from neo4j import Driver
+from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_driver
 from ...services.ai.llm_service import get_llm_service, LLMError
+from ...services.runtime.model_settings import load_effective_settings, use_runtime_settings
+from ...db.models import User
 from .models import QueryRequest
 from .core import do_retrieval
 
@@ -99,8 +102,12 @@ async def _run_strategy(driver: Driver, question: str, strategy: str, top_k: int
 async def query_compare(
     req:    QueryRequest,
     driver: Driver = Depends(get_driver),
+    current_user: User | None = None,
+    db: AsyncSession | None = None,
 ):
     top_k = req.top_k or 5
-    tasks = [_run_strategy(driver, req.question, s, top_k) for s in COMPARE_STRATEGIES]
-    results = await asyncio.gather(*tasks)
-    return {"question": req.question, "results": list(results)}
+    effective_settings = await load_effective_settings(db, current_user.id if current_user else None)
+    with use_runtime_settings(effective_settings):
+        tasks = [_run_strategy(driver, req.question, s, top_k) for s in COMPARE_STRATEGIES]
+        results = await asyncio.gather(*tasks)
+        return {"question": req.question, "results": list(results)}

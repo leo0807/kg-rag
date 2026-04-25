@@ -4,6 +4,8 @@ import { Download, FlaskConical, Loader2, Play, RefreshCw } from "lucide-react";
 import { RETRIEVAL_TEMPLATE_CSV, RETRIEVAL_TEMPLATE_JSONL } from "../templates";
 import type { RetrievalRow, RetrievalStrategy, RetrievalTask } from "../types";
 import { pct } from "../types";
+import { MetricCard, ProgressBar } from "./EvalStatusBits";
+import { RetrievalResultsTable } from "./RetrievalResultsTable";
 import { TemplateCard } from "./TemplateCard";
 
 interface Props {
@@ -164,11 +166,7 @@ export function RetrievalEvalTab({
                 />
               </div>
 
-              <ProgressBar
-                current={task.completed}
-                total={task.total}
-                value={progress}
-              />
+              <ProgressBar current={task.completed} total={task.total} value={progress} />
 
               {task.current_question && task.status === "running" && (
                 <div className="text-xs text-gray-400 bg-gray-950 border border-gray-800 rounded-xl p-3">
@@ -208,130 +206,8 @@ export function RetrievalEvalTab({
       )}
 
       {task && (
-        <div className="overflow-auto rounded-3xl border border-gray-800">
-          <table className="w-full text-sm min-w-[1300px]">
-            <thead className="bg-gray-950 text-gray-400">
-              <tr>
-                <th className="px-4 py-3 text-left">行号</th>
-                <th className="px-4 py-3 text-left">结果</th>
-                <th className="px-4 py-3 text-left">目标</th>
-                <th className="px-4 py-3 text-left">问题</th>
-                <th className="px-4 py-3 text-left">Gold Chunk</th>
-                <th className="px-4 py-3 text-left">Gold Doc</th>
-                <th className="px-4 py-3 text-left">命中位置</th>
-                <th className="px-4 py-3 text-left">Recall</th>
-                <th className="px-4 py-3 text-left">RR</th>
-                <th className="px-4 py-3 text-left">检索结果</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={`${row.row_no}-${row.question}`}
-                  className="border-t border-gray-800 align-top"
-                >
-                  <td className="px-4 py-3 text-gray-500">{row.row_no}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                        row.matched
-                          ? "bg-emerald-500/15 text-emerald-400"
-                          : "bg-rose-500/15 text-rose-400"
-                      }`}
-                    >
-                      {row.matched ? "PASS" : "FAIL"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-400">{row.target_type}</td>
-                  <td className="px-4 py-3 text-gray-200 whitespace-pre-wrap">
-                    {row.question}
-                  </td>
-                  <td className="px-4 py-3 text-gray-400">
-                    {row.gold_chunk_ids.join(", ") || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-gray-400">
-                    {row.gold_doc_ids.join(", ") || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-gray-400">
-                    {row.hit_rank ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-gray-400">
-                    {row.recall.toFixed(4)}
-                  </td>
-                  <td className="px-4 py-3 text-gray-400">
-                    {row.reciprocal_rank.toFixed(4)}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {row.retrieved_chunk_ids.join(", ") ||
-                      row.source_refs.join(", ") ||
-                      "—"}
-                  </td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={10}
-                    className="px-4 py-10 text-center text-gray-500"
-                  >
-                    暂无结果
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <RetrievalResultsTable rows={rows} />
       )}
     </section>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  tone?: "default" | "emerald";
-}) {
-  return (
-    <div className="rounded-xl bg-gray-950 border border-gray-800 p-4">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div
-        className={`mt-1 text-lg ${
-          tone === "emerald" ? "text-emerald-400" : "text-white"
-        }`}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function ProgressBar({
-  current,
-  total,
-  value,
-}: {
-  current: number;
-  total: number;
-  value: number;
-}) {
-  return (
-    <div>
-      <div className="flex justify-between text-xs text-gray-500 mb-2">
-        <span>进度</span>
-        <span>
-          {current}/{total}
-        </span>
-      </div>
-      <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
-        <div
-          className="h-full bg-indigo-500 transition-all"
-          style={{ width: pct(value) }}
-        />
-      </div>
-    </div>
   );
 }

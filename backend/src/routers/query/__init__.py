@@ -6,15 +6,20 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 from neo4j import Driver
+from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from ...core.database import get_driver
-from ...auth.deps import get_current_user, get_protected_driver
+from ...auth import deps as auth_deps
+from ...db.session import get_db
 from ...db.models import User
 from .models  import QueryRequest, QueryResponse
 from .sync    import query_sync
 from .stream  import query_stream
 from .compare import query_compare
+
+get_current_user = getattr(auth_deps, "get_current_user", getattr(auth_deps, "get_optional_user"))
+get_protected_driver = getattr(auth_deps, "get_protected_driver", get_driver)
 
 router  = APIRouter(prefix="/api", tags=["query"])
 limiter = Limiter(key_func=get_remote_address)
@@ -27,8 +32,9 @@ async def query(
     req:          QueryRequest,
     current_user: User = Depends(get_current_user),
     driver:       Driver = Depends(get_protected_driver),
+    db:           AsyncSession = Depends(get_db),
 ):
-    return await query_sync(request, req, driver, current_user)
+    return await query_sync(request, req, driver, current_user, db)
 
 
 @router.post("/query/stream")
@@ -38,8 +44,9 @@ async def query_stream_route(
     req:          QueryRequest,
     current_user: User = Depends(get_current_user),
     driver:       Driver = Depends(get_protected_driver),
+    db:           AsyncSession = Depends(get_db),
 ):
-    return await query_stream(request, req, driver, current_user)
+    return await query_stream(request, req, driver, current_user, db)
 
 
 @router.get("/query/source-graph")
@@ -179,9 +186,11 @@ async def query_suggest(
 async def query_compare_route(
     request: Request,
     req:     QueryRequest,
-    driver:  Driver     = Depends(get_driver),
+    current_user: User = Depends(get_current_user),
+    driver:  Driver     = Depends(get_protected_driver),
+    db:      AsyncSession = Depends(get_db),
 ):
-    return await query_compare(req, driver)
+    return await query_compare(req, driver, current_user, db)
 
 
 @router.post("/query/auto-strategy")
