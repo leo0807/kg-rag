@@ -1,13 +1,31 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+@theme {
+  --color-comac-blue:        #1B4F9B;
+  --color-comac-blue-mid:    #2E6DB4;
+  --color-comac-blue-light:  #1B6BB5;
+  --color-comac-blue-pale:   #E8F1FB;
+  --color-comac-green:       #6AB030;
+  --color-comac-green-soft:  #5A9E28;
+  --color-comac-green-pale:  #EDF6E3;
+
+  --color-primary:           #1B6BB5;
+  --color-primary-hover:     #1558A0;
+  --color-primary-light:     #E8F1FB;
+
+  --color-accent:            #5A9E28;
+  --color-accent-hover:      #4A8820;
+  --color-accent-light:      #EDF6E3;
+}
+
 /* 开启手动 dark mode，通过 html 标签的 class 控制 */
 @variant dark (&:where(.dark, .dark *));
 
-/* ── 浅色模式：重映射灰色调色板 ─────────────────────────────────────────────
-   Tailwind v4 所有颜色通过 --color-* CSS 变量暴露，
-   此处将深色优先的灰色系整体翻转，使 bg-gray-950/900/800 变为浅色背景，
-   text-gray-200/300/400 变为深色文字，无需修改任何组件类名。
+/* ── 浅色模式：重映射调色板 ──────────────────────────────────────────────────
+   1. 灰色系翻转，使 bg-gray-950/900/800 变为浅色背景。
+   2. Indigo 系重映射到 COMAC 品牌蓝，所有 bg-indigo-600 按钮自动更新，
+      无需修改任何组件类名；深色模式保留原始紫蓝色。
    ──────────────────────────────────────────────────────────────────────── */
 html:not(.dark) {
   --color-gray-50:  #0f172a;
@@ -21,16 +39,85 @@ html:not(.dark) {
   --color-gray-800: #f1f5f9;
   --color-gray-900: #f8fafc;
   --color-gray-950: #ffffff;
+
+  /* COMAC 蓝替换 indigo（日间模式） */
+  --color-indigo-200: #A8D0F0;
+  --color-indigo-300: #7AB8E0;
+  --color-indigo-400: #4A9DD0;
+  --color-indigo-500: #2278C2;
+  --color-indigo-600: #1B6BB5;
+  --color-indigo-700: #1558A0;
+  --color-indigo-800: #124A87;
+  --color-indigo-900: #0F3D70;
 }
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* COMAC 品牌主色 */
+  --color-primary:         #1B6BB5;
+  --color-primary-hover:   #1558A0;
+  --color-primary-light:   #E8F1FB;
+  --color-primary-text:    #FFFFFF;
+
+  /* COMAC 强调色（绿） */
+  --color-accent:          #5A9E28;
+  --color-accent-hover:    #4A8820;
+  --color-accent-light:    #EDF6E3;
+  --color-accent-text:     #FFFFFF;
+
+  /* 背景层级（日间模式） */
+  --bg-primary:            #FFFFFF;
+  --bg-secondary:          #F4F7FC;
+  --bg-tertiary:           #EBF1F8;
+  --bg-card:               #FFFFFF;
+  --bg-card-hover:         #F4F7FC;
+
+  /* 文字层级 */
+  --text-primary:          #1A2F4A;
+  --text-secondary:        #3D5A7A;
+  --text-tertiary:         #6B8BAE;
+  --text-muted:            #9BB3CC;
+
+  /* 边框 */
+  --border-default:        #D4E2F0;
+  --border-focus:          #1B6BB5;
+  --border-subtle:         #EBF1F8;
+
+  /* 导航栏 */
+  --nav-bg:                #1B4F9B;
+  --nav-text:              #FFFFFF;
+  --nav-text-muted:        #A8C4E8;
+  --nav-active-bg:         #2E6DB4;
+  --nav-hover-bg:          rgba(255,255,255,0.10);
+  --nav-border:            rgba(255,255,255,0.08);
+
+  /* 状态色 */
+  --color-success:         #5A9E28;
+  --color-success-light:   #EDF6E3;
+  --color-warning:         #D4820A;
+  --color-warning-light:   #FEF3E2;
+  --color-error:           #C0392B;
+  --color-error-light:     #FDECEA;
+  --color-info:            #1B6BB5;
+  --color-info-light:      #E8F1FB;
 }
 
 .dark {
   --background: #0a0a0a;
   --foreground: #ededed;
+
+  --bg-primary:    #0D1117;
+  --bg-secondary:  #161B22;
+  --bg-card:       #1C2128;
+  --bg-card-hover: #21262D;
+  --text-primary:  #E6EDF3;
+  --nav-bg:        #1A2744;
+  --border-default: #30363D;
+  --border-subtle:  #21262D;
+  --color-primary-light: #1B3A5C;
+  --color-accent-light:  #1B2E10;
 }
 
 body {

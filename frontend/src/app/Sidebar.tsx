@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   BarChart2,
   BookOpen,
   Bot,
@@ -8,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FlaskConical,
+  Gauge,
   GitBranch,
   GitCompare,
   LogOut,
@@ -30,6 +32,7 @@ const navItems = [
   { href: "/library", label: "文档库", shortcut: "⌘B", Icon: BookOpen },
   { href: "/search", label: "全局搜索", shortcut: "⌘K", Icon: Search },
   { href: "/query", label: "智能问答", shortcut: "⌘/", Icon: MessageSquare },
+  { href: "/pipeline", label: "检索链路", shortcut: "", Icon: Gauge },
   { href: "/graph", label: "图谱可视化", shortcut: "", Icon: Network },
   {
     href: "/graph/builder",
@@ -62,6 +65,12 @@ const navItems = [
     shortcut: "",
     Icon: FlaskConical,
   },
+  {
+    href: "/admin/conflicts",
+    label: "规范冲突检测",
+    shortcut: "",
+    Icon: AlertTriangle,
+  },
   { href: "/settings", label: "设置", shortcut: "", Icon: Settings },
 ];
 
@@ -69,6 +78,7 @@ interface UserInfo {
   username: string;
   full_name: string;
   department: string;
+  is_admin?: boolean;
 }
 
 const STORAGE_KEY = "sidebar_collapsed";
@@ -124,32 +134,34 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex-shrink-0 bg-gray-950 border-r border-gray-800 flex flex-col
-                           transition-all duration-200 ${collapsed ? "w-14" : "w-44"}`}
+      className={`flex-shrink-0 border-r flex flex-col transition-all duration-200 ${collapsed ? "w-14" : "w-44"}`}
+      style={{ background: "var(--nav-bg)", borderColor: "var(--nav-border)" }}
     >
       {/* Logo + 折叠按钮 */}
-      <div className="flex items-center justify-between px-3 py-4 border-b border-gray-800 min-h-[60px]">
+      <div className="flex items-center justify-between px-3 py-4 min-h-[60px]"
+           style={{ borderBottom: "1px solid var(--nav-border)" }}>
         {!collapsed && (
           <div>
-            <div className="text-sm font-bold text-white leading-tight">
+            <div className="text-sm font-bold leading-tight" style={{ color: "var(--nav-text)" }}>
               CPS 知识库
             </div>
-            <div className="text-xs text-gray-500 mt-0.5">航空工艺规范</div>
+            <div className="text-xs mt-0.5" style={{ color: "var(--nav-text-muted)" }}>航空工艺规范</div>
           </div>
         )}
         <button
           type="button"
           onClick={toggle}
-          className={`p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-800
+          className={`p-1.5 rounded-lg hover:bg-white/10
                                 transition-colors flex-shrink-0 ${collapsed ? "mx-auto" : "ml-auto"}`}
+          style={{ color: "var(--nav-text-muted)" }}
           title={collapsed ? "展开菜单" : "折叠菜单"}
         >
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
       </div>
 
-      {/* 导航 */}
-      <nav className="flex-1 px-2 py-3 space-y-0.5">
+      {/* 导航（可滚动，flex-1 撑满剩余空间） */}
+      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
         {navItems.map(({ href, label, shortcut, Icon }) => {
           const active = isActive(href);
           const badge =
@@ -170,8 +182,8 @@ export default function Sidebar() {
                                         ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
                                         ${
                                           active
-                                            ? "bg-indigo-600 text-white"
-                                            : "text-gray-400 hover:text-white hover:bg-gray-800"
+                                            ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
+                                            : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
                                         }`}
             >
               <div className="relative flex-shrink-0">
@@ -198,7 +210,8 @@ export default function Sidebar() {
                   )}
                   {shortcut && badge === 0 && (
                     <span
-                      className={`text-xs font-mono ${active ? "text-indigo-200" : "text-gray-600"}`}
+                      className="text-xs font-mono"
+                      style={{ color: active ? "rgba(255,255,255,0.6)" : "var(--nav-text-muted)" }}
                     >
                       {shortcut}
                     </span>
@@ -210,10 +223,32 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* 快捷键提示（展开时显示） */}
+      {/* 管理员专属：用量监控（固定在可滚动区之外） */}
+      {user?.is_admin && (
+        <div className="flex-shrink-0 px-2 pb-1">
+          {!collapsed && (
+            <div className="text-[10px] uppercase tracking-wider px-3 py-1" style={{ color: "var(--nav-text-muted)" }}>Admin</div>
+          )}
+          <Link
+            href="/admin/usage"
+            title={collapsed ? "用量监控" : undefined}
+            className={`flex items-center gap-2.5 rounded-lg text-sm transition-colors
+              ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
+              ${isActive("/admin/usage")
+                ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
+                : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
+              }`}
+          >
+            <Gauge size={15} />
+            {!collapsed && <span className="flex-1">用量监控</span>}
+          </Link>
+        </div>
+      )}
+
+      {/* 快捷键提示（展开时显示，固定底部） */}
       {!collapsed && (
-        <div className="px-4 py-2 border-t border-gray-800/50">
-          <div className="text-xs text-gray-700 space-y-0.5">
+        <div className="flex-shrink-0 px-4 py-2" style={{ borderTop: "1px solid var(--nav-border)" }}>
+          <div className="text-xs space-y-0.5" style={{ color: "var(--nav-text-muted)" }}>
             <div className="flex justify-between">
               <span>搜索</span>
               <span className="font-mono">⌘K</span>
@@ -226,14 +261,14 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* 底部用户 + 操作 */}
-      <div className="border-t border-gray-800">
+      {/* 底部用户 + 操作（固定底部，不被导航列表挤出） */}
+      <div className="flex-shrink-0" style={{ borderTop: "1px solid var(--nav-border)" }}>
         {!collapsed && user && (
-          <div className="px-4 py-3 border-b border-gray-800">
-            <div className="text-xs text-white font-medium truncate">
+          <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--nav-border)" }}>
+            <div className="text-xs font-medium truncate" style={{ color: "var(--nav-text)" }}>
               {user.full_name || user.username}
             </div>
-            <div className="text-xs text-gray-500 mt-0.5 truncate">
+            <div className="text-xs mt-0.5 truncate" style={{ color: "var(--nav-text-muted)" }}>
               {user.department}
             </div>
           </div>
@@ -242,13 +277,13 @@ export default function Sidebar() {
           className={`py-3 flex items-center gap-2
                                  ${collapsed ? "flex-col justify-center px-0" : "px-4 justify-between"}`}
         >
-          {!collapsed && <div className="text-xs text-gray-600">v1.0.0</div>}
+          {!collapsed && <div className="text-xs" style={{ color: "var(--nav-text-muted)" }}>v1.0.0</div>}
           <ThemeToggle />
           <button
             type="button"
             onClick={handleLogout}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-red-400
-                                   hover:bg-gray-800 transition-colors"
+            className="p-1.5 rounded-lg hover:text-red-400 hover:bg-white/10 transition-colors"
+            style={{ color: "var(--nav-text-muted)" }}
             title="退出登录"
           >
             <LogOut size={15} />

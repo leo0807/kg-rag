@@ -62,13 +62,13 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#050813] relative overflow-hidden flex items-center justify-center px-4">
+        <div className="min-h-screen bg-gradient-to-br from-[#F4F7FC] to-[#EBF1F8] dark:bg-[#050813] dark:bg-none relative overflow-hidden flex items-center justify-center px-4">
 
-            {/* 背景光晕 */}
+            {/* 背景光晕（日间：淡蓝，深色：原有深蓝紫） */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                <div className="absolute -top-72 -left-72 w-[600px] h-[600px] bg-indigo-700/20 rounded-full blur-[140px]" />
-                <div className="absolute -bottom-72 -right-48 w-[600px] h-[600px] bg-violet-700/15 rounded-full blur-[140px]" />
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-600/8 rounded-full blur-[100px]" />
+                <div className="absolute -top-72 -left-72 w-[600px] h-[600px] bg-[#1B6BB5]/8 dark:bg-indigo-700/20 rounded-full blur-[140px]" />
+                <div className="absolute -bottom-72 -right-48 w-[600px] h-[600px] bg-[#1B4F9B]/6 dark:bg-violet-700/15 rounded-full blur-[140px]" />
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[#1B6BB5]/5 dark:bg-blue-600/8 rounded-full blur-[100px]" />
             </div>
 
             {/* 网格背景 */}
@@ -76,7 +76,7 @@ export default function LoginPage() {
                 className="absolute inset-0 pointer-events-none"
                 style={{
                     backgroundImage:
-                        "linear-gradient(rgba(99,102,241,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.07) 1px, transparent 1px)",
+                        "linear-gradient(rgba(27,107,181,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(27,107,181,0.06) 1px, transparent 1px)",
                     backgroundSize: "48px 48px",
                 }}
             />
@@ -117,12 +117,13 @@ export default function LoginPage() {
                 {/* Logo 区域 */}
                 <div className="text-center mb-8">
                     <div className="inline-flex items-center justify-center w-16 h-16
-                                    bg-indigo-600/20 border border-indigo-500/30 rounded-2xl mb-5
-                                    shadow-lg shadow-indigo-500/10">
-                        <BrainCircuit size={30} className="text-indigo-400" />
+                                    bg-[#1B6BB5]/15 border border-[#1B6BB5]/30 rounded-2xl mb-5
+                                    shadow-lg shadow-[#1B6BB5]/10">
+                        <BrainCircuit size={30} className="text-[#1B6BB5]" />
                     </div>
-                    <h1 className="text-2xl font-bold text-white tracking-tight">CPS 知识库</h1>
-                    <p className="text-sm text-gray-500 mt-1.5 tracking-wide">航空工艺规范智能问答系统</p>
+                    <div className="text-xs font-semibold tracking-widest uppercase text-[#1B6BB5] mb-1">COMAC</div>
+                    <h1 className="text-2xl font-bold text-[#1A2F4A] dark:text-white tracking-tight">航空工艺知识库系统</h1>
+                    <p className="text-sm text-[#6B8BAE] dark:text-gray-500 mt-1.5 tracking-wide">CPS 规范智能检索与问答平台</p>
                     <div className="inline-flex items-center gap-1.5 mt-3 px-2.5 py-1
                                     bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -154,10 +155,10 @@ export default function LoginPage() {
                 )}
 
                 {/* 登录卡片 */}
-                <div className="bg-gray-900/60 backdrop-blur-md border border-gray-700/40
-                                rounded-2xl p-7 shadow-2xl shadow-black/60">
+                <div className="bg-white/90 dark:bg-gray-900/60 backdrop-blur-md border border-[#D4E2F0] dark:border-gray-700/40
+                                rounded-2xl p-7 shadow-xl shadow-[#1B6BB5]/8 dark:shadow-black/60">
 
-                    <h2 className="text-sm font-semibold text-gray-300 mb-5 tracking-wide uppercase">
+                    <h2 className="text-sm font-semibold text-[#3D5A7A] dark:text-gray-300 mb-5 tracking-wide uppercase">
                         账号登录
                     </h2>
 
@@ -181,26 +182,26 @@ export default function LoginPage() {
                     <div className="space-y-4">
                         {/* 工号 */}
                         <div>
-                            <label className="text-xs text-gray-500 mb-1.5 block">工号</label>
+                            <label className="text-xs text-[#6B8BAE] dark:text-gray-500 mb-1.5 block">工号</label>
                             <input
                                 value={form.username}
                                 onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
                                 placeholder="请输入6位工号"
                                 maxLength={6}
-                                className="w-full px-3 py-2.5 bg-gray-800/60 border border-gray-700/60
-                                           rounded-lg text-sm text-gray-200 outline-none transition-colors
-                                           focus:border-indigo-500 focus:bg-gray-800 placeholder-gray-600"
+                                className="w-full px-3 py-2.5 bg-[#F4F7FC] dark:bg-gray-800/60 border border-[#D4E2F0] dark:border-gray-700/60
+                                           rounded-lg text-sm text-[#1A2F4A] dark:text-gray-200 outline-none transition-colors
+                                           focus:border-[#1B6BB5] dark:focus:bg-gray-800 placeholder-[#9BB3CC]"
                             />
                         </div>
 
                         {/* 密码 */}
                         <div>
                             <div className="flex items-center justify-between mb-1.5">
-                                <label className="text-xs text-gray-500">密码</label>
+                                <label className="text-xs text-[#6B8BAE] dark:text-gray-500">密码</label>
                                 <button
                                     type="button"
                                     onClick={() => setShowForgot(v => !v)}
-                                    className="text-xs text-indigo-500 hover:text-indigo-400 transition-colors"
+                                    className="text-xs text-[#1B6BB5] hover:text-[#1558A0] transition-colors"
                                 >
                                     忘记密码？
                                 </button>
@@ -212,9 +213,9 @@ export default function LoginPage() {
                                     onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
                                     placeholder="请输入密码"
                                     onKeyDown={e => e.key === "Enter" && handleLogin()}
-                                    className="w-full pl-3 pr-10 py-2.5 bg-gray-800/60 border border-gray-700/60
-                                               rounded-lg text-sm text-gray-200 outline-none transition-colors
-                                               focus:border-indigo-500 focus:bg-gray-800 placeholder-gray-600"
+                                    className="w-full pl-3 pr-10 py-2.5 bg-[#F4F7FC] dark:bg-gray-800/60 border border-[#D4E2F0] dark:border-gray-700/60
+                                               rounded-lg text-sm text-[#1A2F4A] dark:text-gray-200 outline-none transition-colors
+                                               focus:border-[#1B6BB5] dark:focus:bg-gray-800 placeholder-[#9BB3CC]"
                                 />
                                 <button
                                     type="button"
@@ -256,9 +257,9 @@ export default function LoginPage() {
                         <button
                             onClick={handleLogin}
                             disabled={loading || !form.username || !form.password}
-                            className="w-full py-2.5 bg-indigo-600 text-white text-sm rounded-lg font-medium
-                                       hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed
-                                       transition-colors shadow-lg shadow-indigo-600/20 mt-2"
+                            className="w-full py-2.5 bg-[#1B6BB5] text-white text-sm rounded-lg font-medium
+                                       hover:bg-[#1558A0] disabled:opacity-40 disabled:cursor-not-allowed
+                                       transition-colors shadow-lg shadow-[#1B6BB5]/25 mt-2"
                         >
                             {loading ? (
                                 <span className="flex items-center justify-center gap-2">
