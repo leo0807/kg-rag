@@ -17,6 +17,7 @@ export function RetrievalResultsTable({ rows }: { rows: RetrievalRow[] }) {
             <th className="px-4 py-3 text-left">命中位置</th>
             <th className="px-4 py-3 text-left">Recall</th>
             <th className="px-4 py-3 text-left">RR</th>
+            <th className="px-4 py-3 text-left">NDCG</th>
             <th className="px-4 py-3 text-left">检索结果</th>
           </tr>
         </thead>
@@ -40,6 +41,7 @@ export function RetrievalResultsTable({ rows }: { rows: RetrievalRow[] }) {
               <td className="px-4 py-3 text-gray-400">{row.hit_rank ?? "—"}</td>
               <td className="px-4 py-3 text-gray-400">{row.recall.toFixed(4)}</td>
               <td className="px-4 py-3 text-gray-400">{row.reciprocal_rank.toFixed(4)}</td>
+              <td className="px-4 py-3 text-gray-400">{(row.ndcg ?? 0).toFixed(4)}</td>
               <td className="px-4 py-3 text-gray-500">
                 {row.retrieved_chunk_ids.join(", ") || row.source_refs.join(", ") || "—"}
               </td>
@@ -47,7 +49,7 @@ export function RetrievalResultsTable({ rows }: { rows: RetrievalRow[] }) {
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={10} className="px-4 py-10 text-center text-gray-500">
+              <td colSpan={11} className="px-4 py-10 text-center text-gray-500">
                 暂无结果
               </td>
             </tr>

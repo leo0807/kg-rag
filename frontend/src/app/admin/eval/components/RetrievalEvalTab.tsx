@@ -179,6 +179,7 @@ export function RetrievalEvalTab({
                   <div>Hit Rate：{pct(task.summary.hit_rate)}</div>
                   <div>Avg Recall：{task.summary.avg_recall.toFixed(4)}</div>
                   <div>MRR：{task.summary.mrr.toFixed(4)}</div>
+                  <div>Avg NDCG：{task.summary.avg_ndcg?.toFixed(4) ?? "—"}</div>
                   <div>Chunk 标注：{task.summary.chunk_target_count}</div>
                   <div>Doc 标注：{task.summary.doc_target_count}</div>
                 </div>

@@ -1,7 +1,9 @@
 "use client";
 
+import { AbTestTab } from "./components/AbTestTab";
 import { DatasetEvalTab } from "./components/DatasetEvalTab";
 import { EvalTabHeader } from "./components/EvalTabHeader";
+import { FaithfulnessTab } from "./components/FaithfulnessTab";
 import { ObjectiveEvalTab } from "./components/ObjectiveEvalTab";
 import { RetrievalEvalTab } from "./components/RetrievalEvalTab";
 import { useEvalTasks } from "./useEvalTasks";
@@ -22,19 +24,31 @@ export default function AdminEvalPage() {
     retrievalStarting,
     retrievalStrategy,
     setRetrievalStrategy,
+    faithfulnessTask,
+    faithfulnessStarting,
+    abTask,
+    abStarting,
     error,
     setDatasetFile,
     setObjectiveFile,
     setRetrievalFile,
+    setFaithfulnessFile,
+    setAbFile,
     loadDatasetTask,
     loadObjectiveTask,
     loadRetrievalTask,
+    loadFaithfulnessTask,
+    loadAbTask,
     startDatasetEval,
     startObjectiveEval,
     startRetrievalEval,
+    startFaithfulnessEval,
+    startAbTest,
     downloadDatasetCsv,
     downloadObjectiveCsv,
     downloadRetrievalCsv,
+    downloadFaithfulnessCsv,
+    downloadAbCsv,
   } = useEvalTasks();
 
   return (
@@ -84,6 +98,32 @@ export default function AdminEvalPage() {
           onStart={startRetrievalEval}
           onRefresh={loadRetrievalTask}
           onDownloadCsv={downloadRetrievalCsv}
+        />
+      )}
+
+      {activeTab === "faithfulness" && (
+        <FaithfulnessTab
+          task={faithfulnessTask}
+          starting={faithfulnessStarting}
+          error={error}
+          onFileChange={setFaithfulnessFile}
+          onStart={startFaithfulnessEval}
+          onRefresh={loadFaithfulnessTask}
+          onDownloadCsv={downloadFaithfulnessCsv}
+        />
+      )}
+
+      {activeTab === "ab_test" && (
+        <AbTestTab
+          task={abTask}
+          starting={abStarting}
+          topK={topK}
+          error={error}
+          onFileChange={setAbFile}
+          onTopKChange={setTopK}
+          onStart={startAbTest}
+          onRefresh={loadAbTask}
+          onDownloadCsv={downloadAbCsv}
         />
       )}
     </div>

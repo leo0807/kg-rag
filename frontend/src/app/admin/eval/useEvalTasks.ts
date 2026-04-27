@@ -6,8 +6,10 @@ import type { MutableRefObject } from "react";
 import { fetchApi, getAuthHeaders } from "@/lib/api";
 
 import type {
+  AbTestTask,
   EvalTabKey,
   EvalTask,
+  FaithfulnessTask,
   ObjectiveTask,
   RetrievalStrategy,
   RetrievalTask,
@@ -62,11 +64,21 @@ export function useEvalTasks() {
   const [retrievalTask, setRetrievalTask] = useState<RetrievalTask | null>(null);
   const [retrievalStarting, setRetrievalStarting] = useState(false);
 
+  const [faithfulnessFile, setFaithfulnessFile] = useState<File | null>(null);
+  const [faithfulnessTask, setFaithfulnessTask] = useState<FaithfulnessTask | null>(null);
+  const [faithfulnessStarting, setFaithfulnessStarting] = useState(false);
+
+  const [abFile, setAbFile] = useState<File | null>(null);
+  const [abTask, setAbTask] = useState<AbTestTask | null>(null);
+  const [abStarting, setAbStarting] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
 
   const datasetTimerRef = useRef<number | null>(null);
   const objectiveTimerRef = useRef<number | null>(null);
   const retrievalTimerRef = useRef<number | null>(null);
+  const faithfulnessTimerRef = useRef<number | null>(null);
+  const abTimerRef = useRef<number | null>(null);
 
   function clearTimer(timerRef: MutableRefObject<number | null>) {
     if (timerRef.current) {
@@ -93,11 +105,25 @@ export function useEvalTasks() {
     if (data.status === "completed" || data.status === "failed") clearTimer(retrievalTimerRef);
   }
 
+  async function loadFaithfulnessTask(taskId: string) {
+    const data = await fetchApi<FaithfulnessTask>(`${API}/api/admin/eval/faithfulness/${taskId}`);
+    setFaithfulnessTask(data);
+    if (data.status === "completed" || data.status === "failed") clearTimer(faithfulnessTimerRef);
+  }
+
+  async function loadAbTask(taskId: string) {
+    const data = await fetchApi<AbTestTask>(`${API}/api/admin/eval/ab-test/${taskId}`);
+    setAbTask(data);
+    if (data.status === "completed" || data.status === "failed") clearTimer(abTimerRef);
+  }
+
   useEffect(() => {
     return () => {
       clearTimer(datasetTimerRef);
       clearTimer(objectiveTimerRef);
       clearTimer(retrievalTimerRef);
+      clearTimer(faithfulnessTimerRef);
+      clearTimer(abTimerRef);
     };
   }, []);
 
@@ -185,6 +211,46 @@ export function useEvalTasks() {
     }
   }
 
+  async function startFaithfulnessEval() {
+    if (!faithfulnessFile) { setError("请先选择忠实度评测文件"); return; }
+    setFaithfulnessStarting(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", faithfulnessFile);
+      const data = await postForm<FaithfulnessTask>(`${API}/api/admin/eval/faithfulness`, formData);
+      setFaithfulnessTask(data);
+      setActiveTab("faithfulness");
+      clearTimer(faithfulnessTimerRef);
+      faithfulnessTimerRef.current = window.setInterval(() => loadFaithfulnessTask(data.task_id), 1500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "启动忠实度评测失败");
+    } finally {
+      setFaithfulnessStarting(false);
+    }
+  }
+
+  async function startAbTest(strategies: string[]) {
+    if (!abFile) { setError("请先选择 A/B 测试文件"); return; }
+    setAbStarting(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", abFile);
+      formData.append("strategies", strategies.join(","));
+      formData.append("top_k", String(topK));
+      const data = await postForm<AbTestTask>(`${API}/api/admin/eval/ab-test`, formData);
+      setAbTask(data);
+      setActiveTab("ab_test");
+      clearTimer(abTimerRef);
+      abTimerRef.current = window.setInterval(() => loadAbTask(data.task_id), 1500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "启动 A/B 测试失败");
+    } finally {
+      setAbStarting(false);
+    }
+  }
+
   return {
     activeTab,
     setActiveTab,
@@ -200,16 +266,26 @@ export function useEvalTasks() {
     retrievalStarting,
     retrievalStrategy,
     setRetrievalStrategy,
+    faithfulnessTask,
+    faithfulnessStarting,
+    abTask,
+    abStarting,
     error,
     setDatasetFile,
     setObjectiveFile,
     setRetrievalFile,
+    setFaithfulnessFile,
+    setAbFile,
     loadDatasetTask,
     loadObjectiveTask,
     loadRetrievalTask,
+    loadFaithfulnessTask,
+    loadAbTask,
     startDatasetEval,
     startObjectiveEval,
     startRetrievalEval,
+    startFaithfulnessEval,
+    startAbTest,
     downloadDatasetCsv() {
       if (!datasetTask) return;
       downloadWithAuth(
@@ -231,6 +307,22 @@ export function useEvalTasks() {
       downloadWithAuth(
         `${API}/api/admin/eval/retrieval/${retrievalTask.task_id}/csv`,
         `${retrievalTask.filename.replace(/\.(jsonl|csv)$/i, "")}_retrieval.csv`,
+        setError,
+      );
+    },
+    downloadFaithfulnessCsv() {
+      if (!faithfulnessTask) return;
+      downloadWithAuth(
+        `${API}/api/admin/eval/faithfulness/${faithfulnessTask.task_id}/csv`,
+        `${faithfulnessTask.filename.replace(/\.(jsonl|csv)$/i, "")}_faithfulness.csv`,
+        setError,
+      );
+    },
+    downloadAbCsv() {
+      if (!abTask) return;
+      downloadWithAuth(
+        `${API}/api/admin/eval/ab-test/${abTask.task_id}/csv`,
+        `${abTask.filename.replace(/\.(jsonl|csv)$/i, "")}_ab_test.csv`,
         setError,
       );
     },

@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenText, FileQuestion, SearchCheck } from "lucide-react";
+import { BookOpenText, FileQuestion, FlaskConical, GitCompareArrows, SearchCheck } from "lucide-react";
 
 import type { EvalTabKey } from "../types";
 
@@ -25,8 +25,20 @@ const TABS: Array<{
   {
     key: "retrieval",
     label: "检索 Harness",
-    description: "只评检索命中与召回",
+    description: "Recall / MRR / NDCG 量化",
     icon: SearchCheck,
+  },
+  {
+    key: "faithfulness",
+    label: "忠实度检测",
+    description: "LLM 判断幻觉内容",
+    icon: FlaskConical,
+  },
+  {
+    key: "ab_test",
+    label: "A/B 策略对比",
+    description: "多策略横向指标对比",
+    icon: GitCompareArrows,
   },
 ];
 
@@ -42,8 +54,8 @@ export function EvalTabHeader({
       <div className="max-w-3xl">
         <h1 className="text-2xl font-semibold text-white">测试集评测</h1>
         <p className="mt-2 text-sm leading-6 text-gray-400">
-          三类评测已内置到同一页签中。问答标准集和检索 Harness
-          都提供可直接上传的模板，用户只要保留字段名不变，在模板上替换内容即可。
+          五类评测一体化：问答标准集、客观题、检索 Harness（Recall/MRR/NDCG）、
+          忠实度幻觉检测、A/B 策略横向对比，全面量化系统效果。
         </p>
       </div>
 
