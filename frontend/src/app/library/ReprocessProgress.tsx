@@ -17,17 +17,7 @@ export function ReprocessProgress({ batch }: Props) {
     ? Math.round((stepIdx / activePipelines.length) * 100)
     : 0;
 
-  if (batch.status === "idle") {
-    return (
-      <div className="bg-gray-950 border border-gray-800 rounded-xl p-5">
-        <div className="text-sm font-medium text-white mb-2">任务进度</div>
-        <div className="text-xs text-gray-500 leading-relaxed">
-          从左侧选择需要处理的文档（不选则处理全部），勾选管道后点击"批量处理"启动任务。
-          运行期间可在此查看实时进度和错误详情，完成后点击"清除"重置状态。
-        </div>
-      </div>
-    );
-  }
+  if (batch.status === "idle") return null;
 
   const statusLabel: Record<string, string> = {
     running: "运行中", completed: "已完成", cancelled: "已中止",

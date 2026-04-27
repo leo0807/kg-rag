@@ -1,9 +1,21 @@
 "use client";
 
 import {
-  CheckSquare, Loader2, RefreshCw, RotateCcw, Search, Square, Trash2, Square as StopIcon,
+  AlertTriangle, BookOpen, Check, CheckSquare, FileSearch, Image, Loader2,
+  RefreshCw, RotateCcw, Search, Sliders, Square, Table, Trash2, Square as StopIcon,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { PIPELINES, type Doc, type PK } from "./useReprocess";
+
+const PIPELINE_ICONS: Record<string, ReactNode> = {
+  reparse:     <BookOpen size={13} />,
+  images:      <Image size={13} />,
+  entities:    <FileSearch size={13} />,
+  constraints: <Sliders size={13} />,
+  tables:      <Table size={13} />,
+  drawings:    <Search size={13} />,
+  defects:     <AlertTriangle size={13} />,
+};
 
 interface Props {
   sel: Set<PK>;
@@ -73,27 +85,27 @@ export function ReprocessOptions({
           </button>
         </div>
 
-        <div className="max-h-56 overflow-y-auto space-y-0.5 pr-1">
+        <div className="max-h-[300px] overflow-y-auto">
           {docsLoading ? (
             <div className="flex items-center gap-2 py-4 justify-center text-xs text-gray-500">
               <Loader2 size={12} className="animate-spin" />加载中...
             </div>
           ) : filteredDocs.length === 0 ? (
             <div className="py-4 text-center text-xs text-gray-600">无匹配文档</div>
-          ) : filteredDocs.map(doc => (
+          ) : filteredDocs.map((doc, idx) => (
             <label key={doc.doc_id}
-              className={`flex items-center gap-2.5 px-2 py-1.5 rounded cursor-pointer transition-colors
+              className={`flex items-center gap-2.5 px-2 py-1.5 cursor-pointer transition-colors
                 ${selectedDocs.has(doc.doc_id)
-                  ? "bg-indigo-900/20 border border-indigo-800/40"
-                  : "hover:bg-gray-900 border border-transparent"}
-                ${isRunning ? "pointer-events-none opacity-50" : ""}`}>
+                  ? "bg-indigo-900/20 border-l-2 border-indigo-500"
+                  : idx % 2 === 0 ? "bg-gray-900/40 border-l-2 border-transparent" : "border-l-2 border-transparent"}
+                ${isRunning ? "pointer-events-none opacity-50" : "hover:bg-indigo-900/10"}`}>
               <input type="checkbox" className="accent-indigo-500 shrink-0"
                 checked={selectedDocs.has(doc.doc_id)} disabled={isRunning}
                 onChange={() => toggleDoc(doc.doc_id)} />
               <span className="font-mono text-xs text-indigo-400 shrink-0 w-20">{doc.doc_id}</span>
-              <span className="text-xs text-gray-300 flex-1 truncate">{doc.title ?? "—"}</span>
-              <span className={`text-xs shrink-0 tabular-nums ${doc.section_count === 0 ? "text-red-500" : "text-gray-600"}`}>
-                {doc.section_count}章
+              <span className="text-xs text-gray-300 flex-1 truncate min-w-0">{doc.title ?? "—"}</span>
+              <span className={`text-xs shrink-0 tabular-nums ml-2 ${doc.section_count === 0 ? "text-red-500" : "text-gray-500"}`}>
+                {doc.section_count} 章
               </span>
             </label>
           ))}
@@ -103,52 +115,79 @@ export function ReprocessOptions({
       {/* 管道选择 */}
       <div className="bg-gray-950 border border-gray-800 rounded-xl p-4">
         <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">处理管道</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
-          {PIPELINES.map(({ key, label, desc }) => (
-            <label key={key}
-              className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
-                sel.has(key) ? "border-indigo-600/60 bg-indigo-900/20" : "border-gray-800 hover:border-gray-700"
-              } ${isRunning ? "opacity-50 pointer-events-none" : ""}`}>
-              <input type="checkbox" className="mt-0.5 accent-indigo-500"
-                checked={sel.has(key)} disabled={isRunning}
-                onChange={() => setSel(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; })} />
-              <div>
-                <div className="text-sm text-gray-200 font-medium">{label}</div>
-                <div className="text-xs text-gray-500">{desc}</div>
-              </div>
-            </label>
-          ))}
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {PIPELINES.map(({ key, label, desc }) => {
+            const checked = sel.has(key);
+            return (
+              <label key={key}
+                className={`relative flex items-start gap-2.5 px-3 py-2.5 rounded-lg border cursor-pointer transition-all select-none
+                  ${checked ? "border-indigo-500 bg-indigo-900/20" : "border-gray-700 bg-gray-900/60 hover:border-gray-500"}
+                  ${isRunning ? "opacity-50 pointer-events-none" : ""}`}>
+                <input type="checkbox" className="hidden"
+                  checked={checked} disabled={isRunning}
+                  onChange={() => setSel(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; })} />
+                <span className={`mt-0.5 shrink-0 ${checked ? "text-indigo-400" : "text-gray-500"}`}>
+                  {PIPELINE_ICONS[key]}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className={`text-xs font-medium ${checked ? "text-indigo-200" : "text-gray-300"}`}>{label}</div>
+                  <div className="text-[11px] text-gray-500 truncate">{desc}</div>
+                </div>
+                {checked && (
+                  <span className="absolute top-1.5 right-1.5 text-indigo-400">
+                    <Check size={10} strokeWidth={3} />
+                  </span>
+                )}
+              </label>
+            );
+          })}
         </div>
 
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setConfirm(true)} disabled={isRunning || busy || sel.size === 0}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium
-                       bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            {someSelected ? `批量处理 (${selectedDocs.size} 个)` : "批量处理全部文档"}
+        {/* 选择摘要 */}
+        <p className="text-xs text-gray-500 mb-3">
+          将对&nbsp;<span className="text-indigo-400 font-medium">
+            {someSelected ? `${selectedDocs.size} 份` : `全部 ${docs.length} 份`}
+          </span>&nbsp;文档执行&nbsp;<span className="text-indigo-400 font-medium">{sel.size} 个</span>&nbsp;处理管道
+        </p>
+
+        {/* 主操作按钮 */}
+        <button onClick={() => setConfirm(true)} disabled={isRunning || busy || sel.size === 0}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium
+                     bg-[#005bac] text-white hover:bg-[#004d93] disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+          {isRunning
+            ? <><Loader2 size={14} className="animate-spin" />处理中...</>
+            : busy
+              ? <><Loader2 size={14} className="animate-spin" />启动中...</>
+              : <><RefreshCw size={14} />批量处理</>
+          }
+        </button>
+
+        {/* 次级操作 */}
+        {(canResume || isDone) && (
+          <div className="flex gap-2 mt-2">
+            {canResume && (
+              <button onClick={resume} disabled={busy}
+                className="flex-1 py-2 rounded-lg text-xs font-medium border border-indigo-600 text-indigo-300
+                           hover:bg-indigo-900/30 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+                <RotateCcw size={12} />续跑
+              </button>
+            )}
+            {isDone && (
+              <button onClick={clearBatch}
+                className="flex-1 py-2 rounded-lg text-xs font-medium border border-gray-700 text-gray-400
+                           hover:bg-gray-800 transition-colors flex items-center justify-center gap-1.5">
+                <Trash2 size={12} />清除记录
+              </button>
+            )}
+          </div>
+        )}
+        {isRunning && (
+          <button onClick={cancel}
+            className="w-full mt-2 py-2 rounded-lg text-xs font-medium border border-red-700/60 text-red-400
+                       hover:bg-red-900/20 transition-colors flex items-center justify-center gap-1.5">
+            <StopIcon size={12} />中止任务
           </button>
-          {canResume && (
-            <button onClick={resume} disabled={busy}
-              className="px-4 py-2.5 rounded-lg text-sm font-medium border border-indigo-600 text-indigo-300
-                         hover:bg-indigo-900/30 disabled:opacity-50 transition-colors flex items-center gap-1.5">
-              <RotateCcw size={13} />续跑
-            </button>
-          )}
-          {isRunning && (
-            <button onClick={cancel}
-              className="px-4 py-2.5 rounded-lg text-sm font-medium border border-red-700 text-red-400
-                         hover:bg-red-900/20 transition-colors flex items-center gap-1.5">
-              <StopIcon size={13} />中止
-            </button>
-          )}
-          {isDone && (
-            <button onClick={clearBatch}
-              className="px-4 py-2.5 rounded-lg text-sm font-medium border border-gray-700 text-gray-400
-                         hover:bg-gray-800 transition-colors flex items-center gap-1.5">
-              <Trash2 size={13} />清除
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* 确认弹窗 */}

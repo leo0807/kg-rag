@@ -178,20 +178,21 @@ export function LibraryReprocessTab({ isAdmin = true }: { isAdmin?: boolean }) {
 
   return (
     <div className="space-y-5 w-full">
-      <BackfillCard isAdmin={isAdmin} token={token} />
-      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-5">
-        <ReprocessOptions
-          sel={sel} setSel={setSel} docs={docs} docsLoading={docsLoading}
-          docSearch={docSearch} setDocSearch={setDocSearch}
-          selectedDocs={selectedDocs} filteredDocs={filteredDocs}
-          allSelected={allSelected} someSelected={someSelected}
-          isRunning={isRunning} isDone={isDone} canResume={canResume}
-          busy={busy} confirm={confirm} setConfirm={setConfirm}
-          toggleDoc={toggleDoc} toggleAll={toggleAll} clearSelection={clearSelection}
-          start={start} cancel={cancel} resume={resume} clearBatch={clearBatch}
-        />
-        <ReprocessProgress batch={batch} />
+      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+        选择待处理文档（不选则处理全部），勾选管道后点击"批量处理"启动任务。运行期间可在此查看进度和错误详情。
       </div>
+      <BackfillCard isAdmin={isAdmin} token={token} />
+      <ReprocessOptions
+        sel={sel} setSel={setSel} docs={docs} docsLoading={docsLoading}
+        docSearch={docSearch} setDocSearch={setDocSearch}
+        selectedDocs={selectedDocs} filteredDocs={filteredDocs}
+        allSelected={allSelected} someSelected={someSelected}
+        isRunning={isRunning} isDone={isDone} canResume={canResume}
+        busy={busy} confirm={confirm} setConfirm={setConfirm}
+        toggleDoc={toggleDoc} toggleAll={toggleAll} clearSelection={clearSelection}
+        start={start} cancel={cancel} resume={resume} clearBatch={clearBatch}
+      />
+      <ReprocessProgress batch={batch} />
     </div>
   );
 }
