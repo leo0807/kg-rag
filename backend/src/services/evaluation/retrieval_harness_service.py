@@ -7,6 +7,7 @@ from typing import Any
 from neo4j import Driver
 from .retrieval_harness_support import (
     _ALLOWED_STRATEGIES,
+    compute_ndcg,
     export_rows_to_csv,
     normalize_text,
     now as _now,
@@ -91,6 +92,11 @@ async def _run_task(
             hit_rank = chunk_rank if target_type == "chunk" else doc_rank
             recall = chunk_recall if target_type == "chunk" else doc_recall
             reciprocal_rank = chunk_rr if target_type == "chunk" else doc_rr
+            ndcg = compute_ndcg(
+                retrieved_chunk_ids if target_type == "chunk" else retrieved_doc_ids,
+                row["gold_chunk_ids"] if target_type == "chunk" else row["gold_doc_ids"],
+                k=top_k,
+            )
 
             result_row = {
                 "row_no": row["row_no"],
@@ -106,6 +112,7 @@ async def _run_task(
                 "hit_rank": hit_rank,
                 "recall": recall,
                 "reciprocal_rank": reciprocal_rank,
+                "ndcg": ndcg,
                 "chunk_hit": chunk_hit,
                 "chunk_hit_rank": chunk_rank,
                 "chunk_recall": chunk_recall,
@@ -142,6 +149,10 @@ async def _run_task(
             ),
             "mrr": round(
                 sum(float(row["reciprocal_rank"]) for row in results) / max(total, 1),
+                4,
+            ),
+            "avg_ndcg": round(
+                sum(float(row.get("ndcg", 0)) for row in results) / max(total, 1),
                 4,
             ),
             "chunk_target_count": chunk_target_count,

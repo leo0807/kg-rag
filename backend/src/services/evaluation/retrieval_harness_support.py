@@ -140,6 +140,28 @@ def unique_doc_ids(sections: list[dict[str, Any]]) -> list[str]:
     return result
 
 
+def compute_ndcg(retrieved: list[str], gold: list[str], k: int | None = None) -> float:
+    """计算 NDCG@K。gold 列表中靠前的元素视为相关性更高（按位置赋权）。"""
+    import math
+    if not gold:
+        return 0.0
+    gold_rank: dict[str, float] = {
+        item: max(len(gold) - idx, 1) for idx, item in enumerate(gold)
+    }
+    cut = retrieved[:k] if k else retrieved
+
+    dcg = sum(
+        gold_rank[item] / math.log2(rank + 2)
+        for rank, item in enumerate(cut)
+        if item in gold_rank
+    )
+    ideal_rels = sorted(gold_rank.values(), reverse=True)[:len(cut) if k else len(gold)]
+    idcg = sum(
+        rel / math.log2(rank + 2) for rank, rel in enumerate(ideal_rels)
+    )
+    return round(dcg / idcg, 4) if idcg > 0 else 0.0
+
+
 def score_against_gold(retrieved: list[str], gold: list[str]) -> tuple[bool, int | None, float, float]:
     if not gold:
         return False, None, 0.0, 0.0
@@ -164,34 +186,22 @@ def export_rows_to_csv(rows: list[dict[str, Any]]) -> str:
     writer = csv.writer(buf)
     writer.writerow(
         [
-            "row_no",
-            "domain",
-            "strategy",
-            "target_type",
-            "question",
-            "matched",
-            "hit_rank",
-            "recall",
-            "reciprocal_rank",
-            "gold_chunk_ids",
-            "gold_doc_ids",
-            "retrieved_chunk_ids",
-            "retrieved_doc_ids",
-            "source_refs",
+            "row_no", "domain", "strategy", "target_type", "question",
+            "matched", "hit_rank", "recall", "reciprocal_rank", "ndcg",
+            "gold_chunk_ids", "gold_doc_ids",
+            "retrieved_chunk_ids", "retrieved_doc_ids", "source_refs",
         ]
     )
     for row in rows:
         writer.writerow(
             [
-                row["row_no"],
-                row["domain"],
-                row["strategy"],
-                row["target_type"],
+                row["row_no"], row["domain"], row["strategy"], row["target_type"],
                 row["question"],
                 "PASS" if row["matched"] else "FAIL",
                 row["hit_rank"] or "",
                 row["recall"],
                 row["reciprocal_rank"],
+                row.get("ndcg", ""),
                 " | ".join(row["gold_chunk_ids"]),
                 " | ".join(row["gold_doc_ids"]),
                 " | ".join(row["retrieved_chunk_ids"]),
