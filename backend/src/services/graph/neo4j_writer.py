@@ -3,7 +3,7 @@ import logging
 from ...core.database import get_driver
 from ...models.schemas import DocumentSchema
 from ..retrieval.embedder import embed_texts
-from ..storage.es_store import index_sections
+from ..storage.es_store import delete_doc, index_sections
 from ..storage.milvus_store import upsert_sections
 from .document_persistence import (
     attach_embeddings,
@@ -52,8 +52,14 @@ def write_document(doc: DocumentSchema) -> None:
         write_section_nodes(session, doc.doc_id, sections_data)
         write_reference_nodes(session, doc.doc_id, doc.refs)
         write_section_edges(session, parent_pairs, next_pairs)
-        index_sections(build_es_rows(doc.doc_id, doc.sections))
-        logger.info("写入 ES doc_id=%s sections=%d", doc.doc_id, len(doc.sections))
+        es_rows = build_es_rows(doc.doc_id, doc.sections)
+        # 补充 doc_title 字段供 hybrid_search 检索
+        for row in es_rows:
+            row["doc_title"] = doc.title or ""
+        # embeddings 与 sections 等长（build_section_payloads 保证顺序一致）
+        index_sections(es_rows, embeddings if embeddings else None)
+        logger.info("写入 ES doc_id=%s sections=%d has_vec=%s",
+                    doc.doc_id, len(doc.sections), bool(embeddings))
         link_version_lineage(session, doc.doc_id, doc.version or "")
 
     try:
@@ -106,7 +112,11 @@ def rewrite_sections(driver, doc) -> int:
         write_section_edges(session, parent_pairs, next_pairs)
 
     try:
-        index_sections(build_es_rows(doc_id, doc.sections))
+        delete_doc(doc_id)
+        es_rows = build_es_rows(doc_id, doc.sections)
+        for row in es_rows:
+            row["doc_title"] = doc.title or ""
+        index_sections(es_rows)
     except Exception as exc:
         logger.warning("ES 更新失败（不影响主流程）: %s", exc)
 
