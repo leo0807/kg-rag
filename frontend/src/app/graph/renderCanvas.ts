@@ -121,7 +121,6 @@ export function drawGraphCanvas(
         for (const n of nodes) {
             if (n.x == null) continue;
             const heatNorm  = heatMap.get(n.id) ?? 0;
-            const r         = nodeRadius(n, heatNorm);
             const color     = NODE_COLOR[n.type || n.label] ?? "#6b7280";
             const isCurrent = n.id === tourCurrentId;
             const inPath    = tourNodeIds?.has(n.id) ?? false;
@@ -171,13 +170,22 @@ export function drawGraphCanvas(
                 ctx.stroke();
             }
             ctx.restore();
-            ctx.globalAlpha    = (tourMode && !inPath && !isCurrent) ? 0.3 : 1;
-            ctx.fillStyle      = labelFill;
-            ctx.font           = `${(n.type || n.label) === "Document" ? 12 : 10}px Arial`;
-            ctx.textAlign      = "center";
-            ctx.textBaseline   = "middle";
-            const nm = n.name || n.label || "";
-            ctx.fillText(nm.length > 6 ? nm.slice(0, 6) + "…" : nm, n.x!, n.y!);
+            const nodeType = n.type || n.label;
+            let labelText: string | null = null;
+            if (nodeType === "Document") {
+                const raw = n.doc_id || n.name || "";
+                labelText = raw.length > 7 ? raw.slice(0, 7) + "…" : raw;
+            } else if (nodeType === "Section" && (n.level ?? 1) === 1) {
+                labelText = n.number || "";
+            }
+            if (labelText) {
+                ctx.globalAlpha  = (tourMode && !inPath && !isCurrent) ? 0.3 : 1;
+                ctx.fillStyle    = labelFill;
+                ctx.font         = `${nodeType === "Document" ? 12 : 10}px Arial`;
+                ctx.textAlign    = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(labelText, n.x!, n.y!);
+            }
         }
         ctx.globalAlpha = 1;
         ctx.restore();
@@ -192,6 +200,7 @@ export function drawGraphCanvas(
 
     const zoom = d3.zoom<HTMLCanvasElement, unknown>()
         .scaleExtent([MIN_SCALE, MAX_SCALE])
+        .filter(event => event.type !== "dblclick") // dblclick handled separately for node navigation
         .on("zoom", event => { transform = event.transform; onScaleChange(event.transform.k); render(); });
 
     const sel = d3.select(canvasEl);
@@ -236,5 +245,23 @@ export function drawGraphCanvas(
     });
 
     sel.on("mouseleave.nodes", () => tooltipEl.classList.add("hidden"));
+
+    sel.on("dblclick.nodes", (event: MouseEvent) => {
+        event.preventDefault();
+        const rect = canvasEl.getBoundingClientRect();
+        const n = getNodeAt(event.clientX - rect.left, event.clientY - rect.top);
+        if (!n) return;
+        const nodeType = (n.type || n.label) as string;
+        const docId = (n as GraphNode).doc_id;
+        if (nodeType === "Document") {
+            window.open(`/library/${docId || n.id}`, "_blank");
+        } else if (nodeType === "Section" && docId) {
+            window.open(`/library/${docId}?section=${n.id}`, "_blank");
+        } else if (nodeType === "Image" && docId) {
+            const pageNum = n.page_num ?? undefined;
+            window.open(`/library/${docId}${pageNum ? `?page=${pageNum}` : ""}`, "_blank");
+        }
+    });
+
     return zoom;
 }

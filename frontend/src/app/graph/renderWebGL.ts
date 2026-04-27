@@ -79,15 +79,14 @@ export async function drawGraphWebGL(
     const containers = new Map<string, any>();
 
     nodes.forEach(n => {
-        const type  = n.type || n.label;
-        const color = NODE_COLOR[type] ?? "#6b7280";
-        const heat  = heatMap.get(n.id) ?? 0;
-        const { height: nodeHeight } = nodeDimensions(n, heat);
-        
+        const nodeType = n.type || n.label;
+        const color    = NODE_COLOR[nodeType] ?? "#6b7280";
+        const heat     = heatMap.get(n.id) ?? 0;
+
         const container = new PIXI.Container();
         container.x = n.x!;
         container.y = n.y!;
-        
+
         const sp = new PIXI.Sprite(getTex(n, color, heat));
         sp.anchor.set(0.5);
         sp.alpha     = highlightedIds.size === 0 || highlightedIds.has(n.id) ? 1 : 0.25;
@@ -95,17 +94,24 @@ export async function drawGraphWebGL(
         sp.cursor    = "pointer";
         sp.on("pointerdown", () => onNodeClick(n));
         container.addChild(sp);
-        
-        // Add Label
-        const txt = new PIXI.Text(n.name || n.label || n.id, {
-            fontSize:   12,
+
+        // Labels: Document shows doc_id (12px), Section level=1 shows number (10px)
+        let labelStr = "";
+        if (nodeType === "Document") {
+            const raw = n.doc_id || n.name || "";
+            labelStr = raw.length > 7 ? raw.slice(0, 7) + "…" : raw;
+        } else if (nodeType === "Section" && (n.level ?? 1) === 1) {
+            labelStr = n.number || "";
+        }
+        const txt = new PIXI.Text(labelStr, {
+            fontSize:   nodeType === "Document" ? 12 : 10,
             fill:       isDarkTheme ? 0xffffff : 0x0f172a,
             align:      "center",
             fontWeight: "normal",
         });
-        txt.anchor.set(0.5, 0);
-        txt.y = nodeHeight / 2 + 4;
-        txt.visible = false; // Hidden by default, shown on zoom
+        txt.anchor.set(0.5, 0.5);
+        txt.y = 0;
+        txt.visible = false; // Shown when zoomed in and labelStr non-empty
         container.addChild(txt);
 
         nodeLayer.addChild(container);
@@ -140,6 +146,7 @@ export async function drawGraphWebGL(
 
     const zoom = d3.zoom<HTMLCanvasElement, unknown>()
         .scaleExtent([MIN_SCALE, MAX_SCALE])
+        .filter(event => event.type !== "dblclick") // dblclick handled separately for node navigation
         .on("zoom", event => {
             const t = event.transform;
             if (app.stage) {
@@ -148,9 +155,9 @@ export async function drawGraphWebGL(
             }
             onScaleChange(t.k);
             
-            // Toggle label visibility based on zoom
+            // Show labels only when zoomed in, and only for nodes that have label text
             const showLabels = t.k > 0.8;
-            labels.forEach(l => { l.visible = showLabels; });
+            labels.forEach(l => { l.visible = showLabels && l.text !== ""; });
         });
     d3.select(canvasEl).call(zoom);
     d3.select(canvasEl).call(zoom.transform, d3.zoomIdentity);
@@ -189,6 +196,29 @@ export async function drawGraphWebGL(
         }
     });
     d3.select(canvasEl).on("mouseleave.wtooltip", () => tooltipEl.classList.add("hidden"));
+
+    d3.select(canvasEl).on("dblclick.nodes", (event: MouseEvent) => {
+        event.preventDefault();
+        const tr = d3.zoomTransform(canvasEl);
+        const mx = (event.offsetX - tr.x) / tr.k;
+        const my = (event.offsetY - tr.y) / tr.k;
+        for (const n of nodes) {
+            const dx = mx - (n.x ?? 0);
+            const dy = my - (n.y ?? 0);
+            if (!nodeContainsPoint(n, dx, dy, heatMap.get(n.id) ?? 0)) continue;
+            const nodeType = (n.type || n.label) as string;
+            const docId = (n as GraphNode).doc_id;
+            if (nodeType === "Document") {
+                window.open(`/library/${docId || n.id}`, "_blank");
+            } else if (nodeType === "Section" && docId) {
+                window.open(`/library/${docId}?section=${n.id}`, "_blank");
+            } else if (nodeType === "Image" && docId) {
+                const pageNum = n.page_num ?? undefined;
+                window.open(`/library/${docId}${pageNum ? `?page=${pageNum}` : ""}`, "_blank");
+            }
+            break;
+        }
+    });
 
     function destroy() {
         simulation.stop();

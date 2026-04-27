@@ -27,6 +27,7 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
   const [visibleSectionIds, setVisibleSectionIds] = useState<string[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const sectionRowRefs = useRef(new Map<string, HTMLDivElement>());
+  const highlightedRef = useRef(false);
   const visibleSectionIdsRef = useRef(new Set<string>());
   const idlePrefetchHandleRef = useRef<number | null>(null);
   const prefetchingChunkRef = useRef<string | null>(null);
@@ -110,6 +111,27 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
       }
     };
   }, [activeTab, ensureSectionContent, expandedChunk, visibleSectionIds, visibleSections, doc, sectionContentRef, sectionRequestsRef]);
+
+  // Scroll to and highlight a section when navigated from graph (?section=chunk_id)
+  useEffect(() => {
+    if (!doc || !visibleSections.length || highlightedRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const targetId = params.get("section");
+    if (!targetId) return;
+    const found = visibleSections.find(s => s.chunk_id === targetId);
+    if (!found) return;
+    highlightedRef.current = true;
+    setActiveTab("sections");
+    const timer = setTimeout(() => {
+      const el = sectionRowRefs.current.get(targetId);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.style.transition = "background-color 0.4s";
+      el.style.backgroundColor = "rgba(234,179,8,0.18)";
+      setTimeout(() => { el.style.backgroundColor = ""; }, 3000);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [doc, visibleSections]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!doc) {
     return (

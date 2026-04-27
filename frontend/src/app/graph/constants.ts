@@ -9,6 +9,7 @@ export interface GraphNode {
     path?:        string;
     url?:         string;
     is_drawing?:  boolean;
+    page_num?:    number | null;
     row_count?:   number;
     level?:       number;
     number?:      string;
@@ -118,34 +119,29 @@ export type EdgeFilter  = typeof EDGE_TYPES[number];
 export type RenderMode  = "svg" | "canvas" | "webgl" | "heatmap";
 export type NodeShape = "circle" | "roundedRect" | "pill" | "square" | "diamond" | "hexagon";
 
-export function nodeRadius(d: SimNode, heatNorm = 0): number {
+export function nodeRadius(d: SimNode, _heatNorm = 0): number {
     const t = d.type || d.label;
-    if (t === "Document")   return 36;
-    if (t === "Image")      return 18;
-    if (t === "Constraint") return 14;
-    if (t === "Tool" || t === "Material" || t === "Process") return 16;
-    if (t === "Table")      return Math.round(12 + Math.min((d.row_count ?? 2), 20) * 0.8);
-    return Math.round(22 + heatNorm * 16);
+    if (t === "Document") return 30;
+    if (t === "Section") {
+        const lv = d.level ?? 1;
+        if (lv <= 1) return 18;
+        if (lv === 2) return 14;
+        if (lv === 3) return 11;
+        return 9;
+    }
+    if (t === "Image") return 10;
+    if (t === "Table") return 9;
+    if (t === "Tool" || t === "Material" || t === "Process" || t === "Constraint") return 8;
+    return 10;
 }
 
-export function nodeShape(d: Pick<GraphNode, "type" | "label">): NodeShape {
-    const t = d.type || d.label;
-    if (t === "Document") return "roundedRect";
-    if (t === "Section") return "pill";
-    if (t === "Image") return "square";
-    if (t === "Constraint") return "diamond";
-    if (t === "Process") return "hexagon";
+// All nodes are rendered as circles.
+export function nodeShape(_d: Pick<GraphNode, "type" | "label">): NodeShape {
     return "circle";
 }
 
 export function nodeDimensions(d: SimNode, heatNorm = 0, expand = 0): { r: number; width: number; height: number } {
     const r = nodeRadius(d, heatNorm) + expand;
-    const shape = nodeShape(d);
-    if (shape === "roundedRect") return { r, width: r * 2.5, height: r * 1.55 };
-    if (shape === "pill") return { r, width: Math.max(76, r * 3.15), height: r * 1.45 };
-    if (shape === "square") return { r, width: r * 2.1, height: r * 2.1 };
-    if (shape === "diamond") return { r, width: r * 2.3, height: r * 2.3 };
-    if (shape === "hexagon") return { r, width: r * 2.55, height: r * 1.95 };
     return { r, width: r * 2, height: r * 2 };
 }
 

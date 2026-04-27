@@ -98,7 +98,8 @@ async def get_graph(
                   )
                 RETURN i.image_id AS id, i.caption AS name, i.doc_id AS doc_id,
                        i.description AS description, i.path AS path,
-                       i.minio_path AS minio_path, i.is_drawing AS is_drawing
+                       i.minio_path AS minio_path, i.is_drawing AS is_drawing,
+                       coalesce(i.page_num, i.page) AS page_num
                 ORDER BY coalesce(i.page_num, i.page, 0), i.image_id
                 {img_limit_clause}
             """, doc_id=doc_id, limit=limit_img, hide_logos=hide_logos)
@@ -109,6 +110,7 @@ async def get_graph(
                     "id": image_id, "name": r["name"] or image_id, "type": "Image",
                     "doc_id": r["doc_id"] or "", "description": r["description"] or "",
                     "path": r["path"] or "", "url": url, "is_drawing": bool(r["is_drawing"]),
+                    "page_num": r["page_num"],
                 })
 
         if show_entities:
