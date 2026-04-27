@@ -7,6 +7,7 @@ import { PasswordTab } from "./PasswordTab";
 import { ModelTab }    from "./ModelTab";
 import { AdminTab }    from "./AdminTab";
 import { AuditTab }    from "./AuditTab";
+import { SearchTab }   from "./SearchTab";
 
 export default function SettingsPage() {
     const [tab, setTab]       = useState<Tab>("profile");
@@ -37,8 +38,9 @@ export default function SettingsPage() {
         { key: "password", label: "修改密码", desc: "更新你的登录凭证" },
         { key: "model",    label: "模型设置", desc: "配置默认模型与参数" },
         ...(isAdmin ? [
-            { key: "admin" as Tab, label: "用户管理", desc: "创建与管理系统用户" },
-            { key: "audit" as Tab, label: "审计日志", desc: "查看关键操作记录" },
+            { key: "admin"  as Tab, label: "用户管理",  desc: "创建与管理系统用户" },
+            { key: "audit"  as Tab, label: "审计日志",  desc: "查看关键操作记录" },
+            { key: "search" as Tab, label: "检索配置",  desc: "混合检索 alpha 权重" },
         ] : []),
     ];
 
@@ -85,6 +87,7 @@ export default function SettingsPage() {
                     {tab === "model"    && <ModelTab    showMsg={showMsg} showError={showError} />}
                     {tab === "admin"    && <AdminTab    showMsg={showMsg} showError={showError} />}
                     {tab === "audit"    && <AuditTab />}
+                    {tab === "search"   && <SearchTab   showMsg={showMsg} showError={showError} />}
                 </section>
             </div>
         </div>

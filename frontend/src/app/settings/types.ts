@@ -1,4 +1,4 @@
-export type Tab = "profile" | "password" | "model" | "admin" | "audit";
+export type Tab = "profile" | "password" | "model" | "admin" | "audit" | "search";
 
 export interface UserInfo {
     username:   string;

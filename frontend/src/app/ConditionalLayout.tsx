@@ -43,7 +43,8 @@ export default function ConditionalLayout({
             return original.apply(window, args).then(res => {
                 if (res.status === 401
                     && !url.includes("/api/auth/login")
-                    && !url.includes("/api/auth/refresh")) {
+                    && !url.includes("/api/auth/refresh")
+                    && !url.includes("/api/pipeline/")) {
                     localStorage.removeItem("token");
                     localStorage.removeItem("user");
                     window.location.href = "/login";
