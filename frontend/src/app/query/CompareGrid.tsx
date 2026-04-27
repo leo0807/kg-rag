@@ -10,6 +10,7 @@ const STRATEGY_RING: Record<string, string> = {
     sequential:      "border-emerald-700/50 text-emerald-400",
     graph_augmented: "border-amber-700/50   text-amber-400",
     multi_hop:       "border-purple-700/50  text-purple-400",
+    hybrid_es:       "border-orange-700/50  text-orange-400",
 };
 
 const STRATEGY_BG: Record<string, string> = {
@@ -17,6 +18,7 @@ const STRATEGY_BG: Record<string, string> = {
     sequential:      "bg-emerald-950/20",
     graph_augmented: "bg-amber-950/20",
     multi_hop:       "bg-purple-950/20",
+    hybrid_es:       "bg-orange-950/20",
 };
 
 const ERROR_LABELS: Record<string, string> = {
@@ -32,6 +34,7 @@ const SKELETON_STRATEGIES = [
     { strategy: "sequential",      label: "顺序检索" },
     { strategy: "graph_augmented", label: "图谱增强" },
     { strategy: "multi_hop",       label: "多跳推理" },
+    { strategy: "hybrid_es",       label: "ES 混合检索" },
 ];
 
 interface Props {
@@ -59,7 +62,7 @@ export default function CompareGrid({
             <div className="text-xs text-gray-500 px-1">
                 对比问题：<span className="text-gray-300">{question}</span>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
                 {items.map(r => {
                     const ringCls = STRATEGY_RING[r.strategy] ?? "border-gray-700 text-gray-400";
                     const bgCls   = STRATEGY_BG[r.strategy]   ?? "bg-gray-900/20";
