@@ -17,13 +17,14 @@ from .core import do_retrieval
 
 logger = logging.getLogger(__name__)
 
-COMPARE_STRATEGIES = ["parallel", "sequential", "graph_augmented", "multi_hop"]
+COMPARE_STRATEGIES = ["parallel", "sequential", "graph_augmented", "multi_hop", "hybrid_es"]
 
 STRATEGY_LABELS = {
     "parallel":        "并行检索",
     "sequential":      "顺序检索",
     "graph_augmented": "图谱增强",
     "multi_hop":       "多跳推理",
+    "hybrid_es":       "ES 混合检索",
 }
 
 

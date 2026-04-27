@@ -5,6 +5,7 @@ import logging
 import time
 from fastapi import Depends, HTTPException, Request
 from neo4j import Driver
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_driver
 from ...core.config import settings
@@ -12,11 +13,61 @@ from ...core.observability import send_generation
 from ...services.ai.llm_service import get_llm_service
 from ...services.infra.cache import get_cached_result, set_cached_result
 from ...services.runtime.model_settings import load_effective_settings, use_runtime_settings
-from ...db.models import User
+from ...db.models import User, PipelineConfig
 from .models import QueryRequest, QueryResponse, SourceSection
 from .core   import do_retrieval
 
 logger = logging.getLogger(__name__)
+
+
+def _sections_to_sources(sections: list[dict], score_map: dict) -> list[SourceSection]:
+    return [
+        SourceSection(
+            chunk_id=s["chunk_id"], doc_id=s["doc_id"],
+            number=s.get("number") or "", title=s.get("title") or "",
+            score=round(s.get("rerank_score") or score_map.get(s["chunk_id"], 0.0), 4),
+            page_idx=s.get("page_idx"),
+            bbox=s.get("bbox"),
+            source_type=s.get("source_type", []),
+            retrieval_trace=s.get("retrieval_trace", []),
+            is_graph_expanded=bool(s.get("is_graph_expanded")),
+            is_vector_hit=bool(s.get("is_vector_hit")),
+            is_fulltext_hit=bool(s.get("is_fulltext_hit")),
+            is_gnn_hit=bool(s.get("is_gnn_hit")),
+        )
+        for s in sections
+    ]
+
+
+async def _get_default_pipeline(user_id: str, db: AsyncSession) -> dict | None:
+    """取用户默认链路配置，无则返回 None。"""
+    try:
+        result = await db.execute(
+            select(PipelineConfig).where(
+                PipelineConfig.user_id == user_id,
+                PipelineConfig.is_default.is_(True),
+                PipelineConfig.is_active.is_(True),
+            )
+        )
+        cfg = result.scalar_one_or_none()
+        if cfg and cfg.nodes:
+            return {"nodes": cfg.nodes, "edges": cfg.edges, "params": cfg.params}
+    except Exception as e:
+        logger.warning("获取默认链路配置失败: %s", e)
+    return None
+
+
+async def _run_pipeline(
+    pipeline_cfg: dict,
+    question: str,
+    driver: Driver,
+    user_id: str,
+) -> tuple[str, list[dict]]:
+    """执行自定义链路，返回 (answer, sections)。"""
+    from ...services.pipeline_executor import PipelineExecutor
+    executor = PipelineExecutor(pipeline_cfg, driver)
+    result = await executor.execute(question, user_id=user_id)
+    return result.get("answer", ""), result.get("candidates", [])
 
 
 async def query_sync(
@@ -31,36 +82,42 @@ async def query_sync(
 
     effective_settings = await load_effective_settings(db, current_user.id if current_user else None)
     with use_runtime_settings(effective_settings):
-        top_k  = req.top_k or 5
+        top_k      = req.top_k or 5
+        user_id    = current_user.id         if current_user else ""
+        department = current_user.department if current_user else ""
+
         cached = get_cached_result(req.question, req.strategy, top_k)
         if cached:
             return QueryResponse(**cached)
 
         start = time.time()
 
-        user_id    = current_user.id         if current_user else ""
-        department = current_user.department if current_user else ""
+        # ── 自定义链路（用户有默认 pipeline 配置时走此路径）────────────────
+        if db and user_id and req.strategy not in ("multi_hop",):
+            pipeline_cfg = await _get_default_pipeline(user_id, db)
+            if pipeline_cfg:
+                try:
+                    answer, sections = await _run_pipeline(pipeline_cfg, req.question, driver, user_id)
+                    sources = _sections_to_sources(sections, {})
+                    latency_ms = int((time.time() - start) * 1000)
+                    send_generation(
+                        name="graphrag-query", model=get_llm_service().model_name,
+                        input_messages=[{"role": "user", "content": req.question}],
+                        output=answer, latency_ms=latency_ms, strategy="pipeline",
+                        user_id=user_id, department=department, question_preview=req.question,
+                    )
+                    set_cached_result(req.question, "pipeline", top_k,
+                                      {"answer": answer, "sources": [s.model_dump() for s in sources]})
+                    return QueryResponse(answer=answer, sources=sources)
+                except Exception as e:
+                    logger.warning("自定义链路执行失败，降级到标准策略: %s", e)
 
+        # ── 标准四策略路径（fallback）────────────────────────────────────────
         if req.strategy == "multi_hop":
             try:
                 from ...services.retrieval.multi_hop import multi_hop_query
                 answer, mh_sections, _steps = multi_hop_query(req.question, driver, top_k=top_k)
-                sources = [
-                    SourceSection(
-                        chunk_id=s["chunk_id"], doc_id=s["doc_id"],
-                        number=s.get("number") or "", title=s.get("title") or "",
-                        score=round(float(s.get("score", 0)), 4),
-                        page_idx=s.get("page_idx"),
-                        bbox=s.get("bbox"),
-                        source_type=s.get("source_type", []),
-                        retrieval_trace=s.get("retrieval_trace", []),
-                        is_graph_expanded=bool(s.get("is_graph_expanded")),
-                        is_vector_hit=bool(s.get("is_vector_hit")),
-                        is_fulltext_hit=bool(s.get("is_fulltext_hit")),
-                        is_gnn_hit=bool(s.get("is_gnn_hit")),
-                    )
-                    for s in mh_sections
-                ]
+                sources = _sections_to_sources(mh_sections, {})
                 latency_ms = int((time.time() - start) * 1000)
                 send_generation(
                     name="graphrag-query", model=get_llm_service().model_name,
@@ -96,22 +153,7 @@ async def query_sync(
                 logger.warning("LLM 失败: %s", e)
                 answer = f"检索到 {len(sections)} 个相关章节：\n\n{context[:2000]}"
 
-        sources = [
-            SourceSection(
-                chunk_id=s["chunk_id"], doc_id=s["doc_id"],
-                number=s["number"] or "", title=s["title"] or "",
-                score=round(s.get("rerank_score") or ft_score_map.get(s["chunk_id"], 0.0), 4),
-                page_idx=s.get("page_idx"),
-                bbox=s.get("bbox"),
-                source_type=s.get("source_type", []),
-                retrieval_trace=s.get("retrieval_trace", []),
-                is_graph_expanded=bool(s.get("is_graph_expanded")),
-                is_vector_hit=bool(s.get("is_vector_hit")),
-                is_fulltext_hit=bool(s.get("is_fulltext_hit")),
-                is_gnn_hit=bool(s.get("is_gnn_hit")),
-            )
-            for s in sections
-        ]
+        sources = _sections_to_sources(sections, ft_score_map)
 
         send_generation(
             name="graphrag-query", model=get_llm_service().model_name,
