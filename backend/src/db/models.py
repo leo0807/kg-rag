@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Any
-from sqlalchemy import String, Text, DateTime, Boolean, ForeignKey, func, Index, Integer, Float, JSON
+from sqlalchemy import String, Text, DateTime, Boolean, ForeignKey, func, Index, Integer, Float, JSON, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
@@ -164,6 +164,63 @@ class NodeAnnotation(Base):
 
     user: Mapped["User"] = relationship()
 
+
+
+class PipelineConfig(Base):
+    """用户自定义检索链路配置（React Flow 节点图）"""
+    __tablename__ = "pipeline_configs"
+    __table_args__ = (
+        Index("ix_pipeline_configs_user_id", "user_id"),
+        Index(
+            "uq_pipeline_configs_user_default",
+            "user_id",
+            unique=True,
+            postgresql_where=text("is_default = TRUE"),
+        ),
+    )
+
+    id:          Mapped[str]      = mapped_column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id:     Mapped[str]      = mapped_column(String(36),  ForeignKey("users.id"), nullable=False)
+    name:        Mapped[str]      = mapped_column(String(100), nullable=False)
+    description: Mapped[str]      = mapped_column(Text,        default="")
+    is_default:  Mapped[bool]     = mapped_column(Boolean,     default=False)
+    is_active:   Mapped[bool]     = mapped_column(Boolean,     default=True)
+    nodes:       Mapped[Any]      = mapped_column(JSON,        nullable=False, default=list)
+    edges:       Mapped[Any]      = mapped_column(JSON,        nullable=False, default=list)
+    params:      Mapped[Any]      = mapped_column(JSON,        default=dict)
+    created_at:  Mapped[datetime] = mapped_column(DateTime,    server_default=func.now())
+    updated_at:  Mapped[datetime] = mapped_column(DateTime,    server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship()
+
+
+class ConflictRecord(Base):
+    """规范冲突记录 — 跨文档同实体/约束的矛盾定义"""
+    __tablename__ = "conflict_records"
+    __table_args__ = (
+        Index("ix_conflict_records_scan_id",    "scan_id"),
+        Index("ix_conflict_records_status",     "status"),
+        Index("ix_conflict_records_created_at", "created_at"),
+    )
+
+    id:                  Mapped[int]      = mapped_column(Integer,     primary_key=True, autoincrement=True)
+    scan_id:             Mapped[str]      = mapped_column(String(36),  nullable=False)
+    conflict_type:       Mapped[str]      = mapped_column(String(32),  default="semantic")   # constraint | semantic
+    severity:            Mapped[str]      = mapped_column(String(16),  default="medium")     # high | medium | low
+    entity_name:         Mapped[str]      = mapped_column(String(256), default="")
+    entity_type:         Mapped[str]      = mapped_column(String(64),  default="")
+    section_a_chunk_id:  Mapped[str]      = mapped_column(String(256), default="")
+    section_a_doc_id:    Mapped[str]      = mapped_column(String(128), default="")
+    section_a_title:     Mapped[str]      = mapped_column(String(512), default="")
+    section_a_snippet:   Mapped[str]      = mapped_column(Text,        default="")
+    section_b_chunk_id:  Mapped[str]      = mapped_column(String(256), default="")
+    section_b_doc_id:    Mapped[str]      = mapped_column(String(128), default="")
+    section_b_title:     Mapped[str]      = mapped_column(String(512), default="")
+    section_b_snippet:   Mapped[str]      = mapped_column(Text,        default="")
+    description:         Mapped[str]      = mapped_column(Text,        default="")
+    status:              Mapped[str]      = mapped_column(String(32),  default="pending")    # pending | confirmed | dismissed | resolved
+    created_at:          Mapped[datetime] = mapped_column(DateTime,    server_default=func.now())
+    updated_at:          Mapped[datetime] = mapped_column(DateTime,    server_default=func.now(), onupdate=func.now())
 
 
 class Favorite(Base):

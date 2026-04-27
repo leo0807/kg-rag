@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 from pathlib import Path
@@ -108,11 +108,15 @@ class Settings(BaseSettings):
 
     @field_validator("JWT_SECRET", mode="before")
     @classmethod
-    def check_jwt_secret(cls, v: str) -> str:
+    def check_jwt_secret(cls, v: str, info: ValidationInfo) -> str:
         import os
         _DEFAULT = "aviation-jwt-secret-change-in-production"
+        debug_value = info.data.get("DEBUG")
+        app_env = str(info.data.get("APP_ENV") or "").lower()
+        env_debug = os.getenv("DEBUG", "").lower() in ("1", "true", "yes")
+        is_dev_mode = bool(debug_value) or app_env in ("development", "dev", "local") or env_debug
         if v == _DEFAULT:
-            if os.getenv("DEBUG", "").lower() in ("1", "true", "yes"):
+            if is_dev_mode:
                 import logging
                 logging.getLogger(__name__).warning("⚠️  JWT_SECRET 使用默认值，仅限开发环境！")
             else:
