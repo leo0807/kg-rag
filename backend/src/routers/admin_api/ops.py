@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from neo4j import Driver
 from pydantic import BaseModel, Field
+from ...core.config import settings as _cfg
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...auth.deps import get_admin_user
@@ -117,3 +118,42 @@ async def get_retrieval_baseline_task(
         return get_retrieval_task(task_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="检索基线任务不存在") from exc
+
+
+# ── 混合检索 alpha 配置 ───────────────────────────────────────────────────────
+
+HYBRID_ALPHA_KEY = "search:hybrid_alpha"
+_DEFAULT_ALPHA = 0.5
+
+
+class HybridAlphaRequest(BaseModel):
+    alpha: float = Field(ge=0.0, le=1.0)
+
+
+def _get_redis():
+    import redis
+    return redis.from_url(_cfg.REDIS_URL)
+
+
+@router.get("/hybrid-alpha")
+async def get_hybrid_alpha(_: User = Depends(get_admin_user)):
+    try:
+        r = _get_redis()
+        v = r.get(HYBRID_ALPHA_KEY)
+        alpha = float(v) if v else _DEFAULT_ALPHA
+    except Exception:
+        alpha = _DEFAULT_ALPHA
+    return {"alpha": alpha}
+
+
+@router.put("/hybrid-alpha")
+async def set_hybrid_alpha(
+    req: HybridAlphaRequest,
+    _: User = Depends(get_admin_user),
+):
+    try:
+        r = _get_redis()
+        r.set(HYBRID_ALPHA_KEY, str(req.alpha))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Redis 写入失败: {exc}") from exc
+    return {"alpha": req.alpha, "saved": True}

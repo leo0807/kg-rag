@@ -1,50 +1,34 @@
-from src.services.ops import runtime_service as svc
+from src.services.ops.runtime_service import summarize_system_pressure
 
 
-def test_list_runtime_tasks_normalizes_and_sorts(monkeypatch):
-    monkeypatch.setattr(
-        svc,
-        "_load_runtime_sources",
-        lambda: {
-            "ingest": [
-                {
-                    "task_id": "ing-1",
-                    "status": "running",
-                    "created_at": "2026-04-22T10:00:00",
-                    "step": "writing",
-                    "doc_id": "CPS0200",
-                }
-            ],
-            "reprocess": [
-                {
-                    "doc_id": "CPS1000",
-                    "status": "completed",
-                    "started_at": 1713770000,
-                    "finished_at": 1713770300,
-                    "message": "完成",
-                }
-            ],
-            "dataset_eval": [],
-            "objective_eval": [],
-            "retrieval_eval": [
-                {
-                    "task_id": "ret-1",
-                    "filename": "retrieval_cases.jsonl",
-                    "status": "running",
-                    "total": 10,
-                    "completed": 4,
-                    "created_at": "2026-04-22T11:00:00",
-                    "current_question": "CPS0200 第一章范围讲的是什么？",
-                }
-            ],
-            "batch_reprocess": [],
+def test_summarize_system_pressure_low_load():
+    result = summarize_system_pressure(
+        services={
+            "neo4j": {"state": "ok", "latency_ms": 42},
+            "milvus": {"state": "ok", "latency_ms": 58},
+            "elasticsearch": {"state": "ok", "latency_ms": 61},
         },
+        runtime={"running": 1, "queued": 0, "failed": 0},
+        active_users=2,
+        requests_1m=18,
     )
 
-    items = svc.list_runtime_tasks(limit=10)
+    assert result["level"] == "low"
+    assert "平稳" in result["summary"]
 
-    assert items[0]["task_id"] == "ret-1"
-    assert items[0]["progress"] == 0.4
-    assert items[1]["task_id"] == "ing-1"
-    assert items[2]["task_id"] == "CPS1000"
-    assert items[2]["status"] == "completed"
+
+def test_summarize_system_pressure_high_load_when_services_degraded():
+    result = summarize_system_pressure(
+        services={
+            "neo4j": {"state": "down", "latency_ms": 1600},
+            "milvus": {"state": "ok", "latency_ms": 210},
+            "elasticsearch": {"state": "down", "latency_ms": 980},
+        },
+        runtime={"running": 7, "queued": 6, "failed": 2},
+        active_users=14,
+        requests_1m=260,
+    )
+
+    assert result["level"] == "high"
+    assert result["score"] >= 55
+    assert any("依赖异常" in factor for factor in result["factors"])

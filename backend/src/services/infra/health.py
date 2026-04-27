@@ -78,8 +78,9 @@ class ServiceHealthMonitor:
     def ping_milvus(self) -> bool:
         start = time.time()
         try:
-            from pymilvus import utility
-            utility.list_collections()
+            from ..storage.milvus_store import ensure_milvus_connected
+
+            ensure_milvus_connected()
             self.milvus.state = ServiceState.OK
             self.milvus.error = ""
         except Exception as exc:
