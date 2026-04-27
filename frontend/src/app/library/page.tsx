@@ -155,11 +155,11 @@ export default function LibraryPage() {
               onChange={(e) => setQ(e.target.value)}
               placeholder="搜索规范编号或标题..."
               className="px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm
-                                       text-gray-200 outline-none focus:border-indigo-500 placeholder-gray-600 w-56"
+                                       text-gray-200 outline-none focus:border-[#1B6BB5] placeholder-gray-600 w-56"
             />
             <button
               type="submit"
-              className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-500"
+              className="px-3 py-1.5 bg-[#1B6BB5] text-white text-sm rounded-lg hover:bg-[#1558A0]"
             >
               搜索
             </button>
@@ -184,21 +184,21 @@ export default function LibraryPage() {
       <div className="flex items-center gap-1 border-b border-gray-800 mb-5">
         <button
           onClick={() => switchTab("list")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === "list" ? "border-indigo-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === "list" ? "border-[#1B6BB5] text-[#1B6BB5] dark:text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}
         >
           文档列表
         </button>
         {isAdmin && (
           <button
             onClick={() => switchTab("ingest")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === "ingest" ? "border-indigo-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === "ingest" ? "border-[#1B6BB5] text-[#1B6BB5] dark:text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}
           >
             导入文件
           </button>
         )}
         <button
           onClick={() => switchTab("reprocess")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === "reprocess" ? "border-indigo-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${activeTab === "reprocess" ? "border-[#1B6BB5] text-[#1B6BB5] dark:text-white" : "border-transparent text-gray-500 hover:text-gray-300"}`}
         >
           重新处理
         </button>
@@ -260,7 +260,7 @@ export default function LibraryPage() {
                         key={doc.doc_id}
                         className="border-b border-gray-800/50"
                       >
-                        <td className="py-3 pr-6 font-mono text-indigo-400">
+                        <td className="py-3 pr-6 font-mono text-[#1B6BB5] dark:text-[#5BA3E0]">
                           <Link
                             href={`/library/${doc.doc_id}`}
                             className="hover:underline"
