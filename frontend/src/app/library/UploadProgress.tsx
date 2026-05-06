@@ -1,8 +1,19 @@
 "use client";
 
 import { CheckCircle2, AlertCircle, Clock, Loader2, FileText, RotateCcw, X } from "lucide-react";
-import type { FileItem, ItemStatus } from "./useIngest";
+import type { FileItem, IngestStats, ItemStatus } from "./useIngest";
 import { fmtSize } from "./useIngest";
+
+function IngestStatsBadges({ s }: { s: IngestStats }) {
+    return (
+        <span className="flex gap-1 flex-wrap">
+            {s.added   > 0 && <span className="px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-400 text-[10px]">+{s.added} 新增</span>}
+            {s.updated > 0 && <span className="px-1.5 py-0.5 rounded bg-indigo-900/40 text-indigo-300 text-[10px]">~{s.updated} 更新</span>}
+            {s.skipped > 0 && <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-500 text-[10px]">={s.skipped} 跳过</span>}
+            {s.removed > 0 && <span className="px-1.5 py-0.5 rounded bg-red-900/40 text-red-400 text-[10px]">-{s.removed} 删除</span>}
+        </span>
+    );
+}
 
 const STATUS_ICON: Record<ItemStatus, React.ReactNode> = {
     done:        <CheckCircle2 size={14} className="text-emerald-400" />,
@@ -110,7 +121,11 @@ export function UploadProgress({
                                     </div>
                                     <div className="text-xs text-gray-500 mt-0.5">
                                         {item.status === "uploading"   && (item.progress || "上传中...")}
-                                        {item.status === "done"        && `${item.docId || "—"} · ${item.sections ?? "?"} 个章节`}
+                                        {item.status === "done" && (
+                                            item.ingestStats
+                                                ? <span className="flex items-center gap-1.5 flex-wrap">{item.docId || "—"} · <IngestStatsBadges s={item.ingestStats} /></span>
+                                                : `${item.docId || "—"} · ${item.sections ?? "?"} 个章节`
+                                        )}
                                         {item.status === "skipped"     && `${item.docId || "—"} · 已入库，跳过`}
                                         {item.status === "error"       && <span className="text-red-400">{item.error}</span>}
                                         {item.status === "interrupted" && <span className="text-amber-400">已中断，可重新上传</span>}

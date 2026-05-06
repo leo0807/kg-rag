@@ -41,11 +41,12 @@ interface ImagesResponse {
 
 interface Props {
   docId: string;
+  targetImageId?: string;
 }
 
 const PAGE_SIZE = 36;
 
-export function DrawingsTab({ docId }: Props) {
+export function DrawingsTab({ docId, targetImageId }: Props) {
   const [images, setImages] = useState<DrawingImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -173,6 +174,29 @@ export function DrawingsTab({ docId }: Props) {
     return () => observer.disconnect();
   }, [fetchImages, filter, hasMore, loadedPages, loading, loadingMore]);
 
+  // Scroll to and highlight a specific image when navigated from graph (?image_id=xxx)
+  useEffect(() => {
+    if (!targetImageId || loading || images.length === 0) return;
+    const found = images.find(img => img.image_id === targetImageId);
+    if (!found) return;
+    let attempt = 0;
+    let timerId: ReturnType<typeof setTimeout>;
+    const tryScroll = () => {
+      const el = document.getElementById(`image-${targetImageId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.style.transition = "outline 0.1s";
+        el.style.outline = "3px solid #6366f1";
+        setTimeout(() => { el.style.outline = ""; }, 3000);
+      } else if (attempt < 5) {
+        attempt++;
+        timerId = setTimeout(tryScroll, 150);
+      }
+    };
+    timerId = setTimeout(tryScroll, 300);
+    return () => clearTimeout(timerId);
+  }, [targetImageId, images, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function refreshLoadedImages() {
     await fetchImages(1, {
       replace: true,
@@ -256,6 +280,7 @@ export function DrawingsTab({ docId }: Props) {
               return (
                 <button
                   key={img.image_id}
+                  id={`image-${img.image_id}`}
                   type="button"
                   onClick={() => setSelected(img)}
                   className="group relative bg-gray-900 border border-gray-800 rounded-xl

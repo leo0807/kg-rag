@@ -24,6 +24,11 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
     handleSectionNavigate, toggleSectionFavorite, clearActiveSectionSelection, getFavoriteId,
   } = useDocDetail(docId);
 
+  const [targetImageId] = useState(() =>
+    typeof window !== "undefined"
+      ? (new URLSearchParams(window.location.search).get("image_id") ?? undefined)
+      : undefined,
+  );
   const [visibleSectionIds, setVisibleSectionIds] = useState<string[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const sectionRowRefs = useRef(new Map<string, HTMLDivElement>());
@@ -120,18 +125,27 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
     if (!targetId) return;
     const found = visibleSections.find(s => s.chunk_id === targetId);
     if (!found) return;
+    // When PDF is set to open, wait for pdfUrl so the layout is stable before scrolling
+    if (params.get("preview") === "true" && !pdfUrl) return;
     highlightedRef.current = true;
     setActiveTab("sections");
-    const timer = setTimeout(() => {
-      const el = sectionRowRefs.current.get(targetId);
-      if (!el) return;
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.style.transition = "background-color 0.4s";
-      el.style.backgroundColor = "rgba(234,179,8,0.18)";
-      setTimeout(() => { el.style.backgroundColor = ""; }, 3000);
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [doc, visibleSections]); // eslint-disable-line react-hooks/exhaustive-deps
+    let attempt = 0;
+    let timerId: ReturnType<typeof setTimeout>;
+    const tryScroll = () => {
+      const el = document.getElementById(`section-${targetId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.style.transition = "background-color 0.4s";
+        el.style.backgroundColor = "rgba(234,179,8,0.18)";
+        setTimeout(() => { el.style.backgroundColor = ""; }, 3000);
+      } else if (attempt < 20) {
+        attempt++;
+        timerId = setTimeout(tryScroll, 300);
+      }
+    };
+    timerId = setTimeout(tryScroll, 300);
+    return () => clearTimeout(timerId);
+  }, [doc, visibleSections, pdfUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!doc) {
     return (
@@ -221,7 +235,7 @@ export default function DocumentDetailClient({ docId }: { docId: string }) {
             getFavoriteId={getFavoriteId}
           />
         )}
-        {activeTab === "drawings" && <DrawingsTab docId={docId} />}
+        {activeTab === "drawings" && <DrawingsTab docId={docId} targetImageId={targetImageId} />}
         {activeTab === "reprocess" && <ReprocessPanel docId={docId} onComplete={refresh} />}
       </div>
     </div>

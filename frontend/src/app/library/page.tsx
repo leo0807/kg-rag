@@ -7,6 +7,7 @@ import SkeletonTable from "@/components/ui/SkeletonTable";
 import { LibraryIngestTab } from "./LibraryIngestTab";
 import { LibraryReprocessTab } from "./LibraryReprocessTab";
 import BackfillProgressBar from "@/components/BackfillProgressBar";
+import { ExportMenu } from "./ExportMenu";
 
 interface Document {
   doc_id: string;
@@ -149,7 +150,7 @@ export default function LibraryPage() {
           )}
         </h1>
         {activeTab === "list" && (
-          <form onSubmit={handleSearch} className="flex gap-2">
+          <form onSubmit={handleSearch} className="flex gap-2 items-center">
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -176,6 +177,7 @@ export default function LibraryPage() {
                 清除
               </button>
             )}
+            <ExportMenu />
           </form>
         )}
       </div>

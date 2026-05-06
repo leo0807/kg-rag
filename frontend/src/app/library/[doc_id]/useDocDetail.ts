@@ -83,12 +83,15 @@ export function useDocDetail(docId: string) {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>("");
   const [isAdmin, setIsAdmin] = useState(false);
-  const [showPdf, setShowPdf] = useState(initialPage !== null);
+  const [showPdf, setShowPdf] = useState(initialPage !== null || searchParams.get("preview") === "true");
   const [anchorPage, setAnchorPage] = useState<number | undefined>(
     initialPage ? parseInt(initialPage, 10) : undefined,
   );
   const [watermarkUrl, setWatermarkUrl] = useState("");
-  const [activeTab, setActiveTab] = useState<"sections" | "drawings" | "reprocess">("sections");
+  const initialTab = (searchParams.get("tab") as "sections" | "drawings" | "reprocess" | null) ?? "sections";
+  const [activeTab, setActiveTab] = useState<"sections" | "drawings" | "reprocess">(
+    initialTab === "drawings" || initialTab === "reprocess" ? initialTab : "sections",
+  );
 
   const sectionRequestsRef = useRef(new Map<string, Promise<void>>());
   const sectionContentRef = useRef<Record<string, SectionContent>>({});
@@ -125,6 +128,7 @@ export function useDocDetail(docId: string) {
   useEffect(() => {
     const page = searchParams.get("page");
     if (page !== null) { setAnchorPage(parseInt(page, 10)); setShowPdf(true); }
+    if (searchParams.get("preview") === "true") setShowPdf(true);
   }, [searchParams]);
 
   useEffect(() => {

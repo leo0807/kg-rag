@@ -5,15 +5,18 @@ import { ApiError } from "@/lib/api";
 
 export type ItemStatus = "pending" | "uploading" | "done" | "skipped" | "error" | "interrupted";
 
+export interface IngestStats { added: number; updated: number; skipped: number; removed: number; }
+
 export interface FileItem {
     id: string; name: string; size: number; status: ItemStatus;
     file?: File; progress?: string; progressPct?: number;
     uploadedBytes?: number; docId?: string; sections?: number; error?: string;
+    ingestStats?: IngestStats;
 }
 
 interface PersistedItem {
     id: string; name: string; size: number; status: ItemStatus;
-    docId?: string; sections?: number; error?: string;
+    docId?: string; sections?: number; error?: string; ingestStats?: IngestStats;
 }
 
 export interface Stats { total: number; documents: number; sections: number; }
@@ -28,8 +31,8 @@ const STEP_LABEL: Record<string, string> = {
 };
 
 function saveSession(items: FileItem[]) {
-    const persisted: PersistedItem[] = items.map(({ id, name, size, status, docId, sections, error }) => ({
-        id, name, size, status: status === "uploading" ? "interrupted" : status, docId, sections, error,
+    const persisted: PersistedItem[] = items.map(({ id, name, size, status, docId, sections, error, ingestStats }) => ({
+        id, name, size, status: status === "uploading" ? "interrupted" : status, docId, sections, error, ingestStats,
     }));
     localStorage.setItem(SESSION_KEY, JSON.stringify(persisted));
 }
@@ -39,7 +42,7 @@ function loadSession(): FileItem[] {
         const raw = localStorage.getItem(SESSION_KEY);
         if (!raw) return [];
         const parsed: PersistedItem[] = JSON.parse(raw);
-        return parsed.map(p => ({ ...p, docId: p.docId ?? undefined, sections: p.sections ?? undefined }));
+        return parsed.map(p => ({ ...p, docId: p.docId ?? undefined, sections: p.sections ?? undefined, ingestStats: p.ingestStats ?? undefined }));
     } catch { return []; }
 }
 
@@ -149,14 +152,16 @@ export function useIngest(onDone?: () => void) {
                 if (signal.aborted) return false;
                 const sr = await fetch(`/api/ingest/status/${task_id}`, { headers, signal });
                 if (!sr.ok) throw new ApiError(sr.status, await sr.text());
-                const s = await sr.json() as { status: string; step: string; doc_id: string | null; sections: number; error: string | null };
+                const s = await sr.json() as { status: string; step: string; doc_id: string | null; sections: number; error: string | null; incremental_stats?: IngestStats };
                 setItems(prev => prev.map(it => it.id === item.id
                     ? { ...it, progress: STEP_LABEL[s.step] ?? s.step, progressPct: undefined, uploadedBytes: undefined }
                     : it));
                 if (s.status === "done" || s.status === "skipped") {
                     const st: ItemStatus = s.status === "skipped" ? "skipped" : "done";
                     setItems(prev => prev.map(it => it.id === item.id
-                        ? { ...it, status: st, docId: s.doc_id ?? "", sections: s.sections, progress: "", progressPct: undefined, uploadedBytes: undefined }
+                        ? { ...it, status: st, docId: s.doc_id ?? "", sections: s.sections,
+                            ingestStats: s.incremental_stats ?? undefined,
+                            progress: "", progressPct: undefined, uploadedBytes: undefined }
                         : it));
                     return st === "done";
                 }

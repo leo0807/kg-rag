@@ -2,6 +2,7 @@
 
 import { ChevronDown, ChevronUp, Loader2, Star } from "lucide-react";
 import type { MouseEvent } from "react";
+import { LatexContent } from "@/components/LatexContent";
 import type { Section, SectionContent } from "./useDocDetail";
 
 function highlight(text: string, keyword: string) {
@@ -64,6 +65,7 @@ export function DocSectionList({
           return (
             <div
               key={section.chunk_id}
+              id={`section-${section.chunk_id}`}
               ref={(node) => {
                 if (node) sectionRowRefs.current.set(section.chunk_id, node);
                 else sectionRowRefs.current.delete(section.chunk_id);
@@ -124,7 +126,7 @@ export function DocSectionList({
               {isExpanded && (
                 <div className="mx-3 mb-2 px-4 py-3 bg-gray-900 rounded-lg border border-gray-800 text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">
                   {content ? (
-                    content.content
+                    <LatexContent content={content.content} />
                   ) : (
                     <div className="flex items-center gap-2 text-gray-500">
                       <Loader2 size={14} className="animate-spin" />
