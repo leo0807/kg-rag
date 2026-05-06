@@ -33,8 +33,9 @@ async def init_tables():
     from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # 增量迁移：多维评分字段（若表已存在则补全缺失列）
+        # 增量迁移：若表已存在则补全缺失列
         for col, ctype in [
+            ("detail",             "TEXT NOT NULL DEFAULT ''"),
             ("retrieval_score",    "INTEGER"),
             ("completeness_score", "INTEGER"),
             ("clarity_score",      "INTEGER"),
