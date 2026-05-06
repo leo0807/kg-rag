@@ -11,6 +11,7 @@ engine = create_async_engine(
     max_overflow=40,
     pool_timeout=10,       # fail fast instead of waiting 30 s
     pool_recycle=3600,     # recycle idle connections hourly
+    pool_pre_ping=True,    # detect stale connections after container restarts
 )
 
 AsyncSessionLocal = async_sessionmaker(
