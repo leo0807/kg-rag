@@ -1,7 +1,9 @@
 "use client";
 
-import { ExternalLink, Reply, Star } from "lucide-react";
+import { useState } from "react";
+import { Eye, ExternalLink, Reply, Star, Table2 } from "lucide-react";
 import Link from "next/link";
+import { SourcePdfModal } from "./SourcePdfModal";
 import type { SourceSection } from "./types";
 
 const RANK_COLORS = ["#fbbf24", "#34d399", "#60a5fa", "#f472b6", "#a78bfa"];
@@ -19,17 +21,45 @@ interface Props {
   onToggleTrace: (trace: string) => void;
 }
 
+function TableRowPreview({ headers, row_data }: { headers?: string[]; row_data?: Record<string, string> }) {
+  if (!row_data || !headers?.length) return null;
+  return (
+    <div className="mt-1.5 overflow-x-auto rounded-lg border border-gray-700 bg-gray-900/60">
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="border-b border-gray-700">
+            {headers.map((h) => (
+              <th key={h} className="px-2 py-1 text-left font-medium text-gray-400 whitespace-nowrap">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            {headers.map((h) => (
+              <td key={h} className="px-2 py-1 text-gray-200 whitespace-nowrap">{row_data[h] ?? ""}</td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function SourceCard({
   source: s, index: idx, onSourceClick, onQuoteSource,
   onFavoriteSection, favoritedChunkIds, onToggleTrace,
 }: Props) {
+  const [showPdf, setShowPdf] = useState(false);
+  const isTableRow = s.content_type === "table_row";
+  const hasPdf = s.page_idx !== undefined || !!s.bbox;
   return (
     <div className="h-full rounded-xl border border-gray-800 bg-gray-950/55 px-2.5 py-2">
+      {showPdf && <SourcePdfModal source={s} onClose={() => setShowPdf(false)} />}
       <div className="flex items-start gap-2">
         <button
           type="button"
           onClick={() => { onSourceClick?.(s.chunk_id); onQuoteSource?.(s); }}
-          title="点击追问此章节"
+          title={isTableRow ? "点击追问此表格行" : "点击追问此章节"}
           className="group flex min-w-0 flex-1 items-start gap-2 rounded-lg border border-gray-700 bg-gray-800/70 px-2 py-1.5 text-left transition-colors hover:border-[#1B6BB5] hover:bg-[#1B6BB5]/10"
         >
           <span
@@ -41,6 +71,11 @@ export function SourceCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-mono text-[#1B6BB5] dark:text-[#5BA3E0]">{s.doc_id} §{s.number}</span>
+              {isTableRow && (
+                <span className="flex items-center gap-0.5 rounded bg-violet-950/60 border border-violet-800/60 px-1 py-0.5 text-[10px] text-violet-300">
+                  <Table2 size={9} />行{s.row_index}
+                </span>
+              )}
               {s.page_idx !== undefined && (
                 <span className="rounded bg-gray-900 px-1 py-0.5 text-[10px] text-gray-500">P{s.page_idx + 1}</span>
               )}
@@ -51,6 +86,16 @@ export function SourceCard({
         </button>
 
         <div className="flex flex-shrink-0 items-center gap-1">
+          {hasPdf && (
+            <button
+              type="button"
+              onClick={() => setShowPdf(true)}
+              title="在侧边栏预览 PDF（带高亮定位）"
+              className="rounded-lg border border-gray-700 p-1.5 text-gray-500 transition-colors hover:border-indigo-500 hover:text-indigo-400"
+            >
+              <Eye size={10} />
+            </button>
+          )}
           <Link
             href={`/library/${s.doc_id}${s.page_idx !== undefined ? `?page=${s.page_idx}` : ""}`}
             title="查看原文并跳转锚点"
@@ -107,6 +152,7 @@ export function SourceCard({
           </button>
         )}
       </div>
+      {isTableRow && <TableRowPreview headers={s.headers} row_data={s.row_data} />}
     </div>
   );
 }

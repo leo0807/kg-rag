@@ -13,6 +13,12 @@ export interface SourceSection {
   is_vector_hit?: boolean;
   is_fulltext_hit?: boolean;
   is_gnn_hit?: boolean;
+  // table row
+  content_type?: string;
+  table_id?: string;
+  row_index?: number;
+  headers?: string[];
+  row_data?: Record<string, string>;
 }
 
 export type SourceFilterType = "fulltext" | "vector" | "graph" | "gnn";
@@ -30,6 +36,15 @@ export interface LLMErrorInfo {
   endpoint: string;
 }
 
+export interface QueryMetrics {
+  total_ms: number;
+  stages: Record<string, number>;
+  tokens: Record<string, number>;
+  cost_usd: number;
+  candidates_retrieved: number;
+  candidates_after_rerank: number;
+}
+
 export interface Message {
   id: string;
   role: "user" | "assistant";
@@ -39,6 +54,8 @@ export interface Message {
   causalChain?: CausalChainData;
   followUpQuestions?: string[];
   errorInfo?: LLMErrorInfo;
+  expansionInfo?: string[];
+  metrics?: QueryMetrics;
   timestamp: number;
 }
 

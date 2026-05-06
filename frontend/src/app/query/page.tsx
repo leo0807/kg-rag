@@ -23,6 +23,11 @@ export default function QueryPage() {
 
   const historyLen = activeConv?.messages.length ?? 0;
 
+  function handleLowScoreRetry(q: string) {
+    setStrategy("graph_augmented");
+    setInput(q);
+  }
+
   return (
     <div className="flex h-full bg-gray-950">
       {netToast && (
@@ -62,6 +67,7 @@ export default function QueryPage() {
           favoritedChunkIds={favoritedChunkIds}
           activeSourceFilters={activeSourceFilters}
           bottomRef={bottomRef}
+          strategy={strategy}
           setInput={setInput}
           setStrategy={setStrategy}
           toggleCompareMode={toggleCompareMode}
@@ -71,6 +77,7 @@ export default function QueryPage() {
           onBranch={handleBranch}
           onSourceFiltersChange={handleSourceFiltersChange}
           onFavoriteSection={handleFavoriteSection}
+          onLowScoreRetry={handleLowScoreRetry}
         />
 
         <ConversationInput

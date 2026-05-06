@@ -8,7 +8,10 @@ import { MessageError } from "./MessageError";
 import { FollowUpSuggestions } from "./FollowUpSuggestions";
 import { SourceCard } from "./SourceCard";
 import { SourceFilterBar } from "./SourceFilterBar";
-import type { LLMErrorInfo, SourceFilterType, SourcePanelFilters, SourceSection } from "./types";
+import DetailedFeedbackPanel from "./DetailedFeedbackPanel";
+import { KnowledgeCapturePanel } from "./KnowledgeCapturePanel";
+import type { LLMErrorInfo, QueryMetrics, SourceFilterType, SourcePanelFilters, SourceSection } from "./types";
+import { MetricsPanel } from "./MetricsPanel";
 
 const SOURCE_FILTER_ORDER = ["fulltext", "vector", "graph", "gnn"] as const;
 const DEFAULT_SOURCE_PANEL_FILTERS: SourcePanelFilters = { sourceTypes: [], expandedOnly: false, traceFilters: [] };
@@ -21,6 +24,8 @@ interface Props {
   streaming?: boolean;
   followUpQuestions?: string[];
   errorInfo?: LLMErrorInfo;
+  expansionInfo?: string[];
+  metrics?: QueryMetrics;
   isAdmin?: boolean;
   onSourceClick?: (chunkId: string) => void;
   onQuoteSource?: (source: SourceSection) => void;
@@ -31,14 +36,26 @@ interface Props {
   favoritedChunkIds?: Set<string>;
   sourcePanelFilters?: SourcePanelFilters;
   onSourcePanelFiltersChange?: (filters: SourcePanelFilters) => void;
+  question?: string;
+  strategy?: string;
+  onLowScoreRetry?: (q: string) => void;
 }
 
 export default function MessageBubble({
-  role, content, sources, images, streaming, followUpQuestions, errorInfo, isAdmin,
+  role, content, sources, images, streaming, followUpQuestions, errorInfo, expansionInfo, metrics, isAdmin,
   onSourceClick, onQuoteSource, onBranch, onFollowUp, onRetry, onFavoriteSection,
   favoritedChunkIds, sourcePanelFilters, onSourcePanelFiltersChange,
+  question, strategy, onLowScoreRetry,
 }: Props) {
   const [localFilters, setLocalFilters] = useState<SourcePanelFilters>(DEFAULT_SOURCE_PANEL_FILTERS);
+  const [feedback, setFeedback] = useState<{ rating: number; id: number | null; showDetail: boolean } | null>(null);
+
+  async function rate(r: number) {
+    if (!question) return;
+    const t = localStorage.getItem("token") ?? "";
+    const res = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` }, body: JSON.stringify({ question, answer: content, sources: sources ?? [], rating: r, strategy: strategy ?? "parallel" }) });
+    if (res.ok) { const d = await res.json(); setFeedback({ rating: r, id: d.id ?? null, showDetail: true }); }
+  }
   const effectiveFilters = sourcePanelFilters ?? localFilters;
   const { sourceTypes: activeSourceFilters, expandedOnly, traceFilters: activeTraceFilters } = effectiveFilters;
 
@@ -169,6 +186,16 @@ export default function MessageBubble({
               )}
             </div>
 
+            {!streaming && expansionInfo && expansionInfo.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {expansionInfo.map((info) => (
+                  <span key={info} className="inline-flex items-center gap-1 rounded-md border border-violet-800/50 bg-violet-950/40 px-1.5 py-0.5 text-[10px] text-violet-300">
+                    <span className="text-violet-500">扩展</span>{info}
+                  </span>
+                ))}
+              </div>
+            )}
+
             {!streaming && followUpQuestions && followUpQuestions.length > 0 && (
               <FollowUpSuggestions questions={followUpQuestions} onFollowUp={onFollowUp} />
             )}
@@ -199,6 +226,25 @@ export default function MessageBubble({
                   </div>
                 )}
                 <SourceGraph sources={filteredSources} />
+              </div>
+            )}
+
+            {!streaming && <MetricsPanel metrics={metrics} />}
+            {!streaming && content && <KnowledgeCapturePanel answerText={content} />}
+            {!streaming && question && (
+              <div className="mt-3 pt-2 border-t border-gray-800">
+                {!feedback ? (
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => rate(1)} className="text-lg hover:scale-110 transition-transform">👍</button>
+                    <button onClick={() => rate(-1)} className="text-lg hover:scale-110 transition-transform">👎</button>
+                    <span className="text-xs text-gray-700">对这个回答有帮助吗？</span>
+                  </div>
+                ) : <span className="text-xs text-gray-600">{feedback.rating === 1 ? "👍" : "👎"} 感谢反馈</span>}
+                {feedback?.showDetail && feedback.id !== null && (
+                  <DetailedFeedbackPanel feedbackId={feedback.id}
+                    onDone={avg => { setFeedback(s => s ? {...s, showDetail: false} : null); if (avg < 2 && onLowScoreRetry) onLowScoreRetry(question); }}
+                    onSkip={() => setFeedback(s => s ? {...s, showDetail: false} : null)} />
+                )}
               </div>
             )}
           </div>

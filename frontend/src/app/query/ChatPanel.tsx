@@ -22,7 +22,7 @@ const COUNTERFACTUAL_EXAMPLES = [
 ];
 
 interface Conversation {
-  messages: { id: string; role: "user" | "assistant"; content: string; sources?: SourceSection[]; images?: string[]; followUpQuestions?: string[]; errorInfo?: unknown; causalChain?: unknown }[];
+  messages: { id: string; role: "user" | "assistant"; content: string; sources?: SourceSection[]; images?: string[]; followUpQuestions?: string[]; expansionInfo?: string[]; errorInfo?: unknown; causalChain?: unknown; metrics?: import("./types").QueryMetrics }[];
 }
 
 interface Props {
@@ -41,8 +41,10 @@ interface Props {
   favoritedChunkIds: Set<string>;
   activeSourceFilters: SourcePanelFilters;
   bottomRef: RefObject<HTMLDivElement | null>;
+  strategy: Strategy;
   setInput: (v: string) => void;
   setStrategy: (v: Strategy) => void;
+  onLowScoreRetry?: (q: string) => void;
   toggleCompareMode: () => void;
   onRetryStrategy: (s: string) => void;
   onSourceClick: (chunkId: string) => void;
@@ -56,8 +58,9 @@ export function ChatPanel({
   activeConv, loading, streaming, streamingMsgId, reasoningSteps, causalChain,
   compareMode, compareLoading, compareQuestion, compareResults, retryingStrategy,
   isAdmin, favoritedChunkIds, activeSourceFilters, bottomRef,
-  setInput, setStrategy, toggleCompareMode, onRetryStrategy,
+  strategy, setInput, setStrategy, toggleCompareMode, onRetryStrategy,
   onSourceClick, onQuoteSource, onBranch, onSourceFiltersChange, onFavoriteSection,
+  onLowScoreRetry,
 }: Props) {
   const historyLen = activeConv?.messages.length ?? 0;
 
@@ -129,6 +132,8 @@ export function ChatPanel({
                   images={msg.images}
                   streaming={streaming && msg.id === streamingMsgId}
                   followUpQuestions={msg.role === "assistant" ? msg.followUpQuestions : undefined}
+                  expansionInfo={msg.role === "assistant" ? msg.expansionInfo : undefined}
+                  metrics={msg.role === "assistant" ? msg.metrics : undefined}
                   errorInfo={msg.role === "assistant" ? msg.errorInfo as Parameters<typeof MessageBubble>[0]["errorInfo"] : undefined}
                   isAdmin={isAdmin}
                   onSourceClick={onSourceClick}
@@ -142,6 +147,9 @@ export function ChatPanel({
                   sourcePanelFilters={msg.role === "assistant" ? activeSourceFilters : undefined}
                   onSourcePanelFiltersChange={msg.role === "assistant" ? onSourceFiltersChange : undefined}
                   onFavoriteSection={onFavoriteSection}
+                  question={msg.role === "assistant" ? activeConv.messages[i - 1]?.content : undefined}
+                  strategy={msg.role === "assistant" ? strategy : undefined}
+                  onLowScoreRetry={msg.role === "assistant" ? onLowScoreRetry : undefined}
                 />
               </div>
             ))}

@@ -7,6 +7,7 @@ import type {
   CausalChainData,
   LLMErrorInfo,
   Message,
+  QueryMetrics,
   SourceSection,
   Strategy,
 } from "./types";
@@ -107,6 +108,8 @@ export function useStreamQuery({
     let streamCausalChain: CausalChainData | null = null;
     let streamFollowUps: string[] = [];
     let streamError: LLMErrorInfo | null = null;
+    let streamExpansionInfo: string[] = [];
+    let streamMetrics: QueryMetrics | null = null;
 
     const MAX_RETRIES = 3;
     let retryDelay = 1000;
@@ -130,6 +133,7 @@ export function useStreamQuery({
           streamCausalChain = null;
           streamFollowUps = [];
           streamError = null;
+          streamExpansionInfo = [];
           const headers = await getAuthHeaders({
             "Content-Type": "application/json",
           });
@@ -188,6 +192,10 @@ export function useStreamQuery({
                       setCausalChain(event.content);
                     } else if (event.type === "follow_up")
                       streamFollowUps = event.content || [];
+                    else if (event.type === "expansion")
+                      streamExpansionInfo = event.content || [];
+                    else if (event.type === "metrics")
+                      streamMetrics = event.content;
                     else if (event.type === "error")
                       streamError = {
                         code: event.code ?? "unknown_error",
@@ -228,6 +236,10 @@ export function useStreamQuery({
                   setCausalChain(event.content);
                 } else if (event.type === "follow_up")
                   streamFollowUps = event.content || [];
+                else if (event.type === "expansion")
+                  streamExpansionInfo = event.content || [];
+                else if (event.type === "metrics")
+                  streamMetrics = event.content;
                 else if (event.type === "error")
                   streamError = {
                     code: event.code ?? "unknown_error",
@@ -259,6 +271,9 @@ export function useStreamQuery({
               followUpQuestions:
                 streamFollowUps.length > 0 ? streamFollowUps : undefined,
               errorInfo: streamError ?? undefined,
+              expansionInfo:
+                streamExpansionInfo.length > 0 ? streamExpansionInfo : undefined,
+              metrics: streamMetrics ?? undefined,
             }
           : m,
       );
