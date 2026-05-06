@@ -207,11 +207,15 @@ async def query_stream(
 
                 if req.use_hyde:
                     yield f"data: {json.dumps({'type': 'status', 'content': '增强模式：生成假设答案...'}, ensure_ascii=False)}\n\n"
-                sections, ft_score_map = await asyncio.to_thread(
+                _t_retrieval = time.time()
+                sections, ft_score_map, expansion_info = await asyncio.to_thread(
                     do_retrieval,
                     driver, req.question, req.strategy, top_k,
                     req.use_hyde, req.hyde_alpha,
                 )
+                _retrieval_ms = int((time.time() - _t_retrieval) * 1000)
+                if expansion_info:
+                    yield f"data: {json.dumps({'type': 'expansion', 'content': expansion_info}, ensure_ascii=False)}\n\n"
 
                 sources = [
                     {
@@ -266,6 +270,7 @@ async def query_stream(
                     messages.append({"role": "user", "content": user_text})
 
                 full_answer = ""
+                _t_llm = time.time()
                 try:
                     async for delta in get_llm_service().stream_chat(messages, timeout=60):
                         full_answer += delta
@@ -276,6 +281,7 @@ async def query_stream(
                     yield "data: [DONE]\n\n"
                     return
 
+                _llm_ms    = int((time.time() - _t_llm) * 1000)
                 latency_ms = int((time.time() - t_start) * 1000)
                 send_generation(
                     name="graphrag-stream", model=get_llm_service().model_name,
@@ -294,6 +300,14 @@ async def query_stream(
                         )
                     except Exception as _se:
                         logger.debug("语义缓存写入失败（跳过）: %s", _se)
+                _metrics = {
+                    "total_ms": latency_ms,
+                    "stages": {"检索": _retrieval_ms, "LLM生成": _llm_ms},
+                    "tokens": {}, "cost_usd": 0.0,
+                    "candidates_retrieved": len(sections),
+                    "candidates_after_rerank": len(sources),
+                }
+                yield f"data: {json.dumps({'type': 'metrics', 'content': _metrics}, ensure_ascii=False)}\n\n"
                 fu = await _emit_follow_ups(req.question, full_answer)
                 if fu:
                     yield f"data: {fu}\n\n"

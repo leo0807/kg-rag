@@ -27,8 +27,25 @@ class SourceSection(BaseModel):
     is_vector_hit: bool = False
     is_fulltext_hit: bool = False
     is_gnn_hit: bool = False
+    # table row fields
+    content_type: str = "section"
+    table_id:  str | None = None
+    row_index: int | None = None
+    headers:   list[str] = []
+    row_data:  dict | None = None
+
+
+class QueryMetrics(BaseModel):
+    total_ms:               int = 0
+    stages:                 dict[str, int] = {}   # stage_name -> ms
+    tokens:                 dict[str, int] = {}   # prompt/completion/total
+    cost_usd:               float = 0.0
+    candidates_retrieved:   int = 0
+    candidates_after_rerank:int = 0
 
 
 class QueryResponse(BaseModel):
-    answer:  str
-    sources: list[SourceSection]
+    answer:         str
+    sources:        list[SourceSection]
+    expansion_info: list[str] = []
+    metrics:        QueryMetrics | None = None

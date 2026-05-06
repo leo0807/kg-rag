@@ -36,13 +36,26 @@ def get_reranker(model_path: str | None = None) -> CrossEncoder:
     logger.info("加载 Reranker 模型: %s (device=%s)", path, device)
     model = CrossEncoder(path, device=device)
     logger.info("Reranker 模型加载完成")
+    # 向 ModelManager 注册
+    try:
+        from ..model_manager import model_manager
+        model_manager.register("reranker", model)
+    except Exception:
+        pass
     return model
 
 
 def _get_reranker() -> CrossEncoder:
-    """向后兼容旧测试和调用方的私有入口。"""
+    """向后兼容旧测试和调用方的私有入口。
+    优先级：运行时设置 > RERANKER_MODEL 环境变量 > 默认本地路径。
+    """
     runtime_settings = get_runtime_settings_namespace()
-    model_path = runtime_settings.RERANKER_MODEL or str(RERANKER_PATH)
+    # 运行时覆盖 > settings（含 .env）> 默认路径
+    model_path = (
+        runtime_settings.RERANKER_MODEL
+        or settings.RERANKER_MODEL
+        or str(RERANKER_PATH)
+    )
     return get_reranker(model_path)
 
 

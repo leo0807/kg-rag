@@ -3,8 +3,12 @@ from __future__ import annotations
 """
 检索核心：RRF融合、章节获取、多策略检索
 """
+import json
 import logging
+import re
 from neo4j import Driver
+
+_ROW_RE = re.compile(r'^(.+)_row_(\d+)$')
 from ...services.infra.health import health_monitor
 from .source_meta import _ensure_source_meta, _mark_sources, _finalize_source_meta
 from .graph_expansion import apply_entity_aware, apply_graph_augmented
@@ -24,20 +28,71 @@ def rrf_fusion(ft_ids: list[str], vec_ids: list[str], k: int = 60) -> list[str]:
 def get_section_details(driver: Driver, chunk_ids: list[str]) -> list[dict]:
     if not chunk_ids:
         return []
-    with driver.session() as session:
-        result = session.run("""
-            UNWIND $chunk_ids AS cid
-            MATCH (s:Section {chunk_id: cid})
-            RETURN s.chunk_id AS chunk_id,
-                   s.doc_id   AS doc_id,
-                   s.number   AS number,
-                   s.title    AS title,
-                   s.content  AS content,
-                   s.page_idx AS page_idx,
-                   s.bbox     AS bbox
-        """, chunk_ids=chunk_ids)
-        records = {r["chunk_id"]: dict(r) for r in result}
-    return [records[cid] for cid in chunk_ids if cid in records]
+
+    section_ids: list[str] = []
+    row_id_info: dict[str, tuple[str, int]] = {}
+    for cid in chunk_ids:
+        m = _ROW_RE.match(cid)
+        if m:
+            row_id_info[cid] = (m.group(1), int(m.group(2)))
+        else:
+            section_ids.append(cid)
+
+    results: dict[str, dict] = {}
+
+    if section_ids:
+        with driver.session() as session:
+            r = session.run("""
+                UNWIND $chunk_ids AS cid
+                MATCH (s:Section {chunk_id: cid})
+                RETURN s.chunk_id AS chunk_id, s.doc_id AS doc_id,
+                       s.number AS number, s.title AS title,
+                       s.content AS content, s.page_idx AS page_idx, s.bbox AS bbox
+            """, chunk_ids=section_ids)
+            for row in r:
+                results[row["chunk_id"]] = dict(row)
+
+    if row_id_info:
+        table_ids = list({info[0] for info in row_id_info.values()})
+        with driver.session() as session:
+            r = session.run("""
+                UNWIND $table_ids AS tid
+                MATCH (t:Table {table_id: tid})
+                OPTIONAL MATCH (sec:Section)-[:HAS_TABLE]->(t)
+                RETURN t.table_id AS table_id, t.doc_id AS doc_id,
+                       t.headers AS headers, t.structured_data AS structured_data,
+                       t.page_index AS page_index,
+                       sec.number AS number, sec.title AS title
+            """, table_ids=table_ids)
+            table_info = {row["table_id"]: dict(row) for row in r}
+
+        for cid, (table_id, row_idx) in row_id_info.items():
+            tinfo = table_info.get(table_id)
+            if not tinfo:
+                continue
+            headers: list[str] = tinfo.get("headers") or []
+            struct: list[dict] = []
+            try:
+                struct = json.loads(tinfo.get("structured_data") or "[]")
+            except Exception:
+                pass
+            row_data = struct[row_idx - 1] if 0 < row_idx <= len(struct) else {}
+            results[cid] = {
+                "chunk_id":     cid,
+                "doc_id":       tinfo.get("doc_id") or "",
+                "number":       tinfo.get("number") or "",
+                "title":        tinfo.get("title") or "",
+                "content":      " | ".join(f"{k}: {v}" for k, v in row_data.items()),
+                "page_idx":     tinfo.get("page_index"),
+                "bbox":         None,
+                "content_type": "table_row",
+                "table_id":     table_id,
+                "row_index":    row_idx,
+                "headers":      headers,
+                "row_data":     row_data,
+            }
+
+    return [results[cid] for cid in chunk_ids if cid in results]
 
 
 def do_retrieval(
@@ -53,7 +108,7 @@ def do_retrieval(
     source_meta: dict[str, dict] = {}
 
     from ...services.retrieval.query_expander import expand_query
-    search_query = expand_query(driver, question)
+    search_query, expansion_info = expand_query(driver, question)
 
     # ES 全文检索
     ft_ids, ft_score_map = [], {}
@@ -220,4 +275,19 @@ def do_retrieval(
     for section in sections:
         section.update(_finalize_source_meta(source_meta, section.get("chunk_id", "")))
 
-    return sections, ft_score_map
+    # entity blacklist downweighting
+    try:
+        import redis as _r_mod, json as _json
+        from ...core.config import settings as _cfg
+        _r = _r_mod.from_url(_cfg.REDIS_URL, decode_responses=True, socket_connect_timeout=1)
+        _bl = set(_json.loads(_r.get("entity:blacklist") or "[]"))
+        if _bl:
+            for s in sections:
+                hits = sum(1 for t in _bl if t in (s.get("content") or ""))
+                if hits:
+                    s["score"] = round((s.get("score") or 1.0) * 0.3, 4)
+            sections.sort(key=lambda x: x.get("score") or 0, reverse=True)
+    except Exception:
+        pass
+
+    return sections, ft_score_map, expansion_info
