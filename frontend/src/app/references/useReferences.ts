@@ -2,6 +2,13 @@
 
 import { useState, useCallback, useEffect } from "react";
 
+export interface ImplicitEdge {
+    doc_a: string;
+    doc_b: string;
+    common_entities: string[];
+    confidence: number;
+}
+
 export interface RefNode {
     id: string; title: string;
     ref_out_count: number; ref_in_count: number;
@@ -30,14 +37,16 @@ export function nodeColor(n: RefNode) {
 }
 
 export function useReferences() {
-    const [nodes,    setNodes]    = useState<RefNode[]>([]);
-    const [edges,    setEdges]    = useState<RefEdge[]>([]);
-    const [stats,    setStats]    = useState<RefStats | null>(null);
-    const [focusId,  setFocusId]  = useState("");
-    const [depth,    setDepth]    = useState(1);
-    const [search,   setSearch]   = useState("");
-    const [selected, setSelected] = useState<RefNode | null>(null);
-    const [loading,  setLoading]  = useState(true);
+    const [nodes,          setNodes]          = useState<RefNode[]>([]);
+    const [edges,          setEdges]          = useState<RefEdge[]>([]);
+    const [implicitEdges,  setImplicitEdges]  = useState<ImplicitEdge[]>([]);
+    const [showImplicit,   setShowImplicit]   = useState(false);
+    const [stats,          setStats]          = useState<RefStats | null>(null);
+    const [focusId,        setFocusId]        = useState("");
+    const [depth,          setDepth]          = useState(1);
+    const [search,         setSearch]         = useState("");
+    const [selected,       setSelected]       = useState<RefNode | null>(null);
+    const [loading,        setLoading]        = useState(true);
 
     const fetchData = useCallback(async (docId: string, d: number) => {
         setLoading(true);
@@ -58,6 +67,26 @@ export function useReferences() {
     }, []);
 
     useEffect(() => { fetchData(focusId, depth); }, [focusId, depth, fetchData]);
+
+    // 懒加载隐性关联
+    useEffect(() => {
+        if (!showImplicit || implicitEdges.length > 0) return;
+        const token = localStorage.getItem("token") ?? "";
+        fetch("/api/admin/associations", { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => r.json())
+            .then(d => {
+                const implicit: ImplicitEdge[] = (d.associations ?? [])
+                    .filter((a: { is_implicit: boolean }) => a.is_implicit)
+                    .map((a: ImplicitEdge) => ({
+                        doc_a: a.doc_a,
+                        doc_b: a.doc_b,
+                        common_entities: a.common_entities,
+                        confidence: a.confidence,
+                    }));
+                setImplicitEdges(implicit);
+            })
+            .catch(() => {});
+    }, [showImplicit, implicitEdges.length]);
 
     const filtered = search.trim()
         ? nodes.filter(n =>
@@ -85,5 +114,6 @@ export function useReferences() {
         nodes, edges, stats, focusId, setFocusId, depth, setDepth,
         search, setSearch, selected, setSelected, loading,
         filtered, outNeighbors, inNeighbors,
+        implicitEdges, showImplicit, setShowImplicit,
     };
 }

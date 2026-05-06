@@ -1,126 +1,89 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { fetchApi } from "@/lib/api";
 import { renderWordDiff } from "./diff";
-import { Search, ChevronDown, Check } from "lucide-react";
+import { Search, FileDown } from "lucide-react";
+import { DocSelector, type Document } from "./DocSelector";
+import { GraphDiffPanel, type GraphChanges } from "./GraphDiffPanel";
 
-interface Document {
-    doc_id: string;
-    title: string;
-    version: string;
-    sections: number;
-}
-
-interface Section {
-    chunk_id: string;
-    number: string;
-    title: string;
-    content: string;
-}
-
-interface DocDetail {
-    doc_id: string;
-    title: string;
-    version: string;
-    sections: Section[];
-}
-
-function DocSelector({ docs, selectedId, onSelect, label }: { docs: Document[], selectedId: string, onSelect: (id: string) => void, label: string }) {
-    const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState("");
-    const containerRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const handleClick = (e: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
-        };
-        document.addEventListener("mousedown", handleClick);
-        return () => document.removeEventListener("mousedown", handleClick);
-    }, []);
-
-    const filtered = useMemo(() => 
-        docs.filter(d => d.doc_id.toLowerCase().includes(search.toLowerCase()) || d.title.toLowerCase().includes(search.toLowerCase())),
-        [docs, search]
-    );
-
-    const selectedDoc = docs.find(d => d.doc_id === selectedId);
-
-    return (
-        <div className="flex-1 min-w-[200px]" ref={containerRef}>
-            <label className="text-xs text-gray-500 mb-1 block">{label}</label>
-            <div className="relative">
-                <button
-                    onClick={() => setOpen(!open)}
-                    className="w-full flex items-center justify-between px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-200 outline-none focus:border-indigo-500"
-                >
-                    <span className="truncate">{selectedDoc ? `${selectedDoc.doc_id} ${selectedDoc.title}` : "选择文档..."}</span>
-                    <ChevronDown size={14} className="text-gray-500" />
-                </button>
-                {open && (
-                    <div className="absolute z-20 top-full mt-1 w-full bg-gray-900 border border-gray-700 rounded-lg shadow-xl py-1">
-                        <div className="px-2 pb-1">
-                            <input
-                                autoFocus
-                                value={search}
-                                onChange={e => setSearch(e.target.value)}
-                                placeholder="搜索文档..."
-                                className="w-full px-2 py-1.5 bg-gray-950 border border-gray-800 rounded text-xs text-white placeholder-gray-600 outline-none"
-                            />
-                        </div>
-                        <div className="max-h-60 overflow-y-auto">
-                            {filtered.map(d => (
-                                <button key={d.doc_id} onClick={() => { onSelect(d.doc_id); setOpen(false); }}
-                                    className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800 flex items-center gap-2">
-                                    {selectedId === d.doc_id && <Check size={12} className="text-indigo-500" />}
-                                    <span className={selectedId === d.doc_id ? "ml-0" : "ml-5"}>{d.doc_id} - {d.title}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
+interface Section { chunk_id: string; number: string; title: string; content: string; }
+interface DocDetail { doc_id: string; title: string; version: string; sections: Section[]; }
 
 export default function ComparePage() {
-    const [docs, setDocs]             = useState<Document[]>([]);
-    const [leftId, setLeftId]         = useState("");
-    const [rightId, setRightId]       = useState("");
-    const [left, setLeft]             = useState<DocDetail | null>(null);
-    const [right, setRight]           = useState<DocDetail | null>(null);
+    const [docs, setDocs]     = useState<Document[]>([]);
+    const [leftId, setLeftId] = useState("");
+    const [rightId, setRightId] = useState("");
+    const [left, setLeft]     = useState<DocDetail | null>(null);
+    const [right, setRight]   = useState<DocDetail | null>(null);
     const [loading, setLoading]       = useState(false);
+    const [exporting, setExporting]   = useState(false);
     const [search, setSearch]         = useState("");
     const [showWordDiff, setShowWordDiff] = useState(true);
+    const [graphChanges, setGraphChanges] = useState<GraphChanges | null>(null);
 
     useEffect(() => {
-        fetchApi<{ data: Document[] }>("/api/documents?per_page=1000")
-            .then(d => setDocs(d.data));
+        fetchApi<{ data: Document[] }>("/api/documents?per_page=1000").then(d => setDocs(d.data));
     }, []);
+
+    useEffect(() => {
+        if (!leftId || !rightId) { setGraphChanges(null); return; }
+        fetchApi<{ graph_changes: GraphChanges }>("/api/compare/documents", {
+            method: "POST", body: JSON.stringify({ doc_id_a: leftId, doc_id_b: rightId }),
+        }).then(d => setGraphChanges(d.graph_changes)).catch(() => setGraphChanges(null));
+    }, [leftId, rightId]);
 
     async function loadDoc(id: string, side: "left" | "right") {
         if (!id) return;
         setLoading(true);
         try {
             const data = await fetchApi<DocDetail>(`/api/documents/${id}`);
-            if (side === "left") setLeft(data);
-            else setRight(data);
-        } finally {
-            setLoading(false);
-        }
+            if (side === "left") setLeft(data); else setRight(data);
+        } finally { setLoading(false); }
     }
 
+    const diffSummary = useMemo(() => {
+        if (!left || !right) return null;
+        const mapA = new Map(left.sections.map(s => [s.number, s]));
+        const mapB = new Map(right.sections.map(s => [s.number, s]));
+        const added   = right.sections.filter(s => !mapA.has(s.number)).map(s => s.number);
+        const removed = left.sections.filter(s => !mapB.has(s.number)).map(s => s.number);
+        const modified = left.sections
+            .filter(s => mapB.has(s.number) && mapB.get(s.number)!.content !== s.content)
+            .map(s => s.number);
+        return { added: new Set(added), removed: new Set(removed), modified: new Set(modified) };
+    }, [left, right]);
+
     function highlight(text: string) {
-        if (!text) return "";
-        if (!search.trim()) return text;
-        const regex = new RegExp(
-            `(${search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"
-        );
-        return text.replace(
-            regex,
-            '<mark class="bg-indigo-500/30 text-indigo-300 rounded px-0.5">$1</mark>'
-        );
+        if (!text || !search.trim()) return text;
+        const re = new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+        return text.replace(re, '<mark class="bg-indigo-500/30 text-indigo-300 rounded px-0.5">$1</mark>');
+    }
+
+    async function exportDocx() {
+        if (!leftId || !rightId) return;
+        setExporting(true);
+        try {
+            const token = localStorage.getItem("token") ?? "";
+            const res = await fetch("/api/compare/export-docx", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ doc_id_a: leftId, doc_id_b: rightId }),
+            });
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = `compare_${leftId}_vs_${rightId}.docx`; a.click();
+            URL.revokeObjectURL(url);
+        } finally { setExporting(false); }
+    }
+
+    function sectionBorder(number: string, side: "left" | "right") {
+        if (!diffSummary) return "";
+        if (diffSummary.modified.has(number)) return "bg-yellow-500/5 border-l-2 border-yellow-500/40";
+        if (side === "left" && diffSummary.removed.has(number)) return "bg-red-500/5 border-l-2 border-red-500/40";
+        if (side === "right" && diffSummary.added.has(number)) return "bg-green-500/5 border-l-2 border-green-500/40";
+        return "";
     }
 
     const leftSections  = left?.sections  ?? [];
@@ -128,46 +91,44 @@ export default function ComparePage() {
 
     return (
         <div className="flex flex-col h-full bg-gray-950">
-
-            {/* 顶部选择栏 */}
             <div className="flex flex-wrap items-end gap-4 px-6 py-4 border-b border-gray-800">
                 <DocSelector docs={docs} selectedId={leftId} onSelect={(id) => { setLeftId(id); loadDoc(id, "left"); }} label="左侧文档" />
                 <DocSelector docs={docs} selectedId={rightId} onSelect={(id) => { setRightId(id); loadDoc(id, "right"); }} label="右侧文档" />
-
                 <div className="flex-1 min-w-[140px]">
                     <label className="text-xs text-gray-500 mb-1 block">高亮关键词</label>
                     <div className="relative">
                         <Search size={14} className="absolute left-2.5 top-2.5 text-gray-500" />
-                        <input
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="输入关键词..."
-                            className="w-full pl-8 pr-3 py-2 bg-gray-900 border border-gray-700 rounded-lg
-                                       text-sm text-gray-200 outline-none focus:border-indigo-500 placeholder-gray-600"
-                        />
+                        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="输入关键词..."
+                            className="w-full pl-8 pr-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-200 outline-none focus:border-indigo-500 placeholder-gray-600" />
                     </div>
                 </div>
-
-                <button
-                    onClick={() => setShowWordDiff(v => !v)}
-                    className={`px-3 py-2 rounded-lg text-sm border transition-colors whitespace-nowrap ${
-                        showWordDiff
-                            ? "bg-indigo-600 border-indigo-500 text-white"
-                            : "bg-gray-900 border-gray-700 text-gray-400 hover:text-white"
-                    }`}
-                >
+                <button onClick={() => setShowWordDiff(v => !v)}
+                    className={`px-3 py-2 rounded-lg text-sm border transition-colors whitespace-nowrap ${showWordDiff ? "bg-indigo-600 border-indigo-500 text-white" : "bg-gray-900 border-gray-700 text-gray-400 hover:text-white"}`}>
                     {showWordDiff ? "词级差异 ON" : "词级差异 OFF"}
                 </button>
+                {left && right && (
+                    <button onClick={exportDocx} disabled={exporting}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-gray-800 border border-gray-700 text-gray-300 hover:text-white disabled:opacity-40 whitespace-nowrap">
+                        <FileDown size={14} />{exporting ? "导出中..." : "导出对比报告"}
+                    </button>
+                )}
             </div>
 
-            {/* 对比区域 */}
-            {loading && (
-                <div className="flex items-center justify-center flex-1 text-gray-500 text-sm">加载中...</div>
+            {/* Diff summary badges */}
+            {diffSummary && (diffSummary.added.size + diffSummary.removed.size + diffSummary.modified.size > 0) && (
+                <div className="flex items-center gap-3 px-6 py-2 border-b border-gray-800 bg-gray-900/50">
+                    <span className="text-xs text-gray-500">差异摘要：</span>
+                    {diffSummary.added.size > 0   && <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/15 text-green-400 border border-green-500/30">+{diffSummary.added.size} 新增</span>}
+                    {diffSummary.modified.size > 0 && <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-500/15 text-yellow-400 border border-yellow-500/30">~{diffSummary.modified.size} 修改</span>}
+                    {diffSummary.removed.size > 0  && <span className="px-2 py-0.5 rounded-full text-xs bg-red-500/15 text-red-400 border border-red-500/30">-{diffSummary.removed.size} 删除</span>}
+                </div>
             )}
 
+            {loading && <div className="flex items-center justify-center flex-1 text-gray-500 text-sm">加载中...</div>}
+
             {!loading && (left || right) && (
+                <div className="flex flex-col flex-1 overflow-hidden">
                 <div className="flex flex-1 overflow-hidden">
-                    {/* 左侧 */}
                     <div className="flex-1 overflow-auto border-r border-gray-800">
                         {left && (
                             <>
@@ -178,25 +139,17 @@ export default function ComparePage() {
                                 <div className="divide-y divide-gray-800/50">
                                     {leftSections.map(sec => {
                                         const rightSec = right?.sections.find(s => s.number === sec.number);
-                                        const isDiff   = rightSec !== undefined && rightSec.content !== sec.content;
-                                        const aHtml    = isDiff && showWordDiff
-                                            ? renderWordDiff(sec.content, rightSec!.content).aHtml
-                                            : null;
+                                        const isDiff = rightSec !== undefined && rightSec.content !== sec.content;
+                                        const aHtml = isDiff && showWordDiff ? renderWordDiff(sec.content, rightSec!.content).aHtml : null;
                                         return (
-                                            <div key={sec.chunk_id}
-                                                className={`px-4 py-3 ${isDiff ? "bg-yellow-500/5 border-l-2 border-yellow-500/40" : ""}`}>
+                                            <div key={sec.chunk_id} className={`px-4 py-3 ${sectionBorder(sec.number, "left")}`}>
                                                 <div className="text-xs font-mono text-indigo-400 mb-1">
                                                     §{sec.number} {sec.title}
                                                     {isDiff && <span className="ml-2 text-yellow-500/70">≠ 有差异</span>}
+                                                    {diffSummary?.removed.has(sec.number) && <span className="ml-2 text-red-400/70">已删除</span>}
                                                 </div>
-                                                <div
-                                                    className="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap"
-                                                    dangerouslySetInnerHTML={{
-                                                        __html: aHtml !== null
-                                                            ? highlight(aHtml)
-                                                            : highlight(sec.content)
-                                                    }}
-                                                />
+                                                <div className="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap"
+                                                    dangerouslySetInnerHTML={{ __html: aHtml !== null ? highlight(aHtml) : highlight(sec.content) }} />
                                             </div>
                                         );
                                     })}
@@ -204,8 +157,6 @@ export default function ComparePage() {
                             </>
                         )}
                     </div>
-
-                    {/* 右侧 */}
                     <div className="flex-1 overflow-auto">
                         {right && (
                             <>
@@ -216,25 +167,17 @@ export default function ComparePage() {
                                 <div className="divide-y divide-gray-800/50">
                                     {rightSections.map(sec => {
                                         const leftSec = left?.sections.find(s => s.number === sec.number);
-                                        const isDiff  = leftSec !== undefined && leftSec.content !== sec.content;
-                                        const bHtml   = isDiff && showWordDiff
-                                            ? renderWordDiff(leftSec!.content, sec.content).bHtml
-                                            : null;
+                                        const isDiff = leftSec !== undefined && leftSec.content !== sec.content;
+                                        const bHtml = isDiff && showWordDiff ? renderWordDiff(leftSec!.content, sec.content).bHtml : null;
                                         return (
-                                            <div key={sec.chunk_id}
-                                                className={`px-4 py-3 ${isDiff ? "bg-yellow-500/5 border-l-2 border-yellow-500/40" : ""}`}>
+                                            <div key={sec.chunk_id} className={`px-4 py-3 ${sectionBorder(sec.number, "right")}`}>
                                                 <div className="text-xs font-mono text-indigo-400 mb-1">
                                                     §{sec.number} {sec.title}
                                                     {isDiff && <span className="ml-2 text-yellow-500/70">≠ 有差异</span>}
+                                                    {diffSummary?.added.has(sec.number) && <span className="ml-2 text-green-400/70">新增</span>}
                                                 </div>
-                                                <div
-                                                    className="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap"
-                                                    dangerouslySetInnerHTML={{
-                                                        __html: bHtml !== null
-                                                            ? highlight(bHtml)
-                                                            : highlight(sec.content)
-                                                    }}
-                                                />
+                                                <div className="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap"
+                                                    dangerouslySetInnerHTML={{ __html: bHtml !== null ? highlight(bHtml) : highlight(sec.content) }} />
                                             </div>
                                         );
                                     })}
@@ -243,12 +186,12 @@ export default function ComparePage() {
                         )}
                     </div>
                 </div>
+                {graphChanges && <GraphDiffPanel changes={graphChanges} />}
+                </div>
             )}
 
             {!loading && !left && !right && (
-                <div className="flex items-center justify-center flex-1 text-gray-600 text-sm">
-                    请选择两个文档进行对比
-                </div>
+                <div className="flex items-center justify-center flex-1 text-gray-600 text-sm">请选择两个文档进行对比</div>
             )}
         </div>
     );

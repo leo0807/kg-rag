@@ -10,6 +10,7 @@ export default function ReferencesPage() {
         nodes, edges, stats, focusId, setFocusId, depth, setDepth,
         search, setSearch, selected, setSelected, loading,
         filtered, outNeighbors, inNeighbors,
+        implicitEdges, showImplicit, setShowImplicit,
     } = useReferences();
 
     return (
@@ -92,6 +93,24 @@ export default function ReferencesPage() {
                             <span className="text-xs text-gray-400">{label}</span>
                         </div>
                     ))}
+                    {/* 隐性关联图层开关 */}
+                    <div className="pt-2 border-t border-gray-800">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={showImplicit}
+                                onChange={e => setShowImplicit(e.target.checked)}
+                                className="accent-emerald-500"
+                            />
+                            <span className="text-xs text-gray-400">隐性关联图层</span>
+                        </label>
+                        {showImplicit && (
+                            <div className="flex items-center gap-2 mt-1.5 ml-5">
+                                <span className="w-6 border-t-2 border-dashed border-emerald-500 shrink-0" />
+                                <span className="text-[10px] text-emerald-400">{implicitEdges.length} 组</span>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 <div className="mt-auto px-3 py-3 border-t border-gray-800">
@@ -102,7 +121,10 @@ export default function ReferencesPage() {
                 </div>
             </div>
 
-            <ReferenceGraph nodes={nodes} edges={edges} loading={loading} onSelect={setSelected} />
+            <ReferenceGraph
+                nodes={nodes} edges={edges} loading={loading} onSelect={setSelected}
+                implicitEdges={implicitEdges} showImplicit={showImplicit}
+            />
 
             {selected && (
                 <ReferenceDetailPanel

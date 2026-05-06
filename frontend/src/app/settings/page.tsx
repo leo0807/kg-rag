@@ -7,7 +7,9 @@ import { PasswordTab } from "./PasswordTab";
 import { ModelTab }    from "./ModelTab";
 import { AdminTab }    from "./AdminTab";
 import { AuditTab }    from "./AuditTab";
-import { SearchTab }   from "./SearchTab";
+import { SearchTab }        from "./SearchTab";
+import { EntityFilterTab }  from "./EntityFilterTab";
+import { AlertTab }         from "./AlertTab";
 
 export default function SettingsPage() {
     const [tab, setTab]       = useState<Tab>("profile");
@@ -40,7 +42,9 @@ export default function SettingsPage() {
         ...(isAdmin ? [
             { key: "admin"  as Tab, label: "用户管理",  desc: "创建与管理系统用户" },
             { key: "audit"  as Tab, label: "审计日志",  desc: "查看关键操作记录" },
-            { key: "search" as Tab, label: "检索配置",  desc: "混合检索 alpha 权重" },
+            { key: "search"        as Tab, label: "检索配置",  desc: "混合检索 alpha 权重" },
+            { key: "entity_filter" as Tab, label: "实体过滤",  desc: "黑白名单控制检索权重" },
+            { key: "alert"         as Tab, label: "告警推送",  desc: "钉钉/企微 Webhook 配置" },
         ] : []),
     ];
 
@@ -87,7 +91,9 @@ export default function SettingsPage() {
                     {tab === "model"    && <ModelTab    showMsg={showMsg} showError={showError} />}
                     {tab === "admin"    && <AdminTab    showMsg={showMsg} showError={showError} />}
                     {tab === "audit"    && <AuditTab />}
-                    {tab === "search"   && <SearchTab   showMsg={showMsg} showError={showError} />}
+                    {tab === "search"        && <SearchTab   showMsg={showMsg} showError={showError} />}
+                    {tab === "entity_filter" && <EntityFilterTab />}
+                    {tab === "alert"         && <AlertTab showMsg={showMsg} showError={showError} />}
                 </section>
             </div>
         </div>

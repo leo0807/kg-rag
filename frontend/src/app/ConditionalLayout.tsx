@@ -14,8 +14,8 @@ export default function ConditionalLayout({
 }: {
     children: React.ReactNode;
 }) {
-    const pathname    = usePathname();
-    const router      = useRouter();
+    const pathname = usePathname();
+    const router = useRouter();
     const showSidebar = !NO_SIDEBAR_PATHS.includes(pathname);
     const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -78,9 +78,8 @@ export default function ConditionalLayout({
             )}
 
             {/* 移动端侧边栏（抽屉） */}
-            <div className={`fixed inset-y-0 left-0 z-50 md:hidden transition-transform duration-200 ${
-                mobileOpen ? "translate-x-0" : "-translate-x-full"
-            }`}>
+            <div className={`fixed inset-y-0 left-0 z-50 md:hidden transition-transform duration-200 ${mobileOpen ? "translate-x-0" : "-translate-x-full"
+                }`}>
                 <Sidebar />
             </div>
 
@@ -95,7 +94,7 @@ export default function ConditionalLayout({
                     >
                         {mobileOpen ? <X size={18} /> : <Menu size={18} />}
                     </button>
-                    <span className="text-sm font-medium text-white">CPS 知识库</span>
+                    <span className="text-sm font-medium text-white">商飞大模型</span>
                 </div>
 
                 <main className="flex-1 overflow-auto">

@@ -8,8 +8,14 @@ import {
   BrainCircuit,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   FlaskConical,
+  ImagePlay,
   Gauge,
+  Activity,
+  Database,
+  Languages,
+  SlidersHorizontal,
   GitBranch,
   GitCompare,
   LogOut,
@@ -21,6 +27,7 @@ import {
   Share2,
   ShieldCheck,
   Star,
+  Terminal,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -65,11 +72,18 @@ const navItems = [
     shortcut: "",
     Icon: FlaskConical,
   },
+  { href: "/admin/associations", label: "隐性关联挖掘", shortcut: "", Icon: GitBranch },
   {
     href: "/admin/conflicts",
     label: "规范冲突检测",
     shortcut: "",
     Icon: AlertTriangle,
+  },
+  {
+    href: "/admin/cypher",
+    label: "Cypher 执行器",
+    shortcut: "",
+    Icon: Terminal,
   },
   { href: "/settings", label: "设置", shortcut: "", Icon: Settings },
 ];
@@ -99,7 +113,7 @@ export default function Sidebar() {
     if (stored) {
       try {
         setUser(JSON.parse(stored));
-      } catch {}
+      } catch { }
     }
   }, []);
 
@@ -139,11 +153,11 @@ export default function Sidebar() {
     >
       {/* Logo + 折叠按钮 */}
       <div className="flex items-center justify-between px-3 py-4 min-h-[60px]"
-           style={{ borderBottom: "1px solid var(--nav-border)" }}>
+        style={{ borderBottom: "1px solid var(--nav-border)" }}>
         {!collapsed && (
           <div>
             <div className="text-sm font-bold leading-tight" style={{ color: "var(--nav-text)" }}>
-              CPS 知识库
+              商飞大模型
             </div>
             <div className="text-xs mt-0.5" style={{ color: "var(--nav-text-muted)" }}>航空工艺规范</div>
           </div>
@@ -180,11 +194,10 @@ export default function Sidebar() {
               className={`flex items-center gap-2.5 rounded-lg text-sm
                                         transition-colors group
                                         ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
-                                        ${
-                                          active
-                                            ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
-                                            : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
-                                        }`}
+                                        ${active
+                  ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
+                  : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
+                }`}
             >
               <div className="relative flex-shrink-0">
                 <Icon size={15} />
@@ -230,6 +243,19 @@ export default function Sidebar() {
             <div className="text-[10px] uppercase tracking-wider px-3 py-1" style={{ color: "var(--nav-text-muted)" }}>Admin</div>
           )}
           <Link
+            href="/admin/synonyms"
+            title={collapsed ? "同义词词典" : undefined}
+            className={`flex items-center gap-2.5 rounded-lg text-sm transition-colors
+              ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
+              ${isActive("/admin/synonyms")
+                ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
+                : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
+              }`}
+          >
+            <Languages size={15} />
+            {!collapsed && <span className="flex-1">同义词词典</span>}
+          </Link>
+          <Link
             href="/admin/usage"
             title={collapsed ? "用量监控" : undefined}
             className={`flex items-center gap-2.5 rounded-lg text-sm transition-colors
@@ -241,6 +267,84 @@ export default function Sidebar() {
           >
             <Gauge size={15} />
             {!collapsed && <span className="flex-1">用量监控</span>}
+          </Link>
+          <Link
+            href="/admin/annotation"
+            title={collapsed ? "手动补全" : undefined}
+            className={`flex items-center gap-2.5 rounded-lg text-sm transition-colors
+              ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
+              ${isActive("/admin/annotation")
+                ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
+                : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
+              }`}
+          >
+            <ImagePlay size={15} />
+            {!collapsed && <span className="flex-1">手动补全</span>}
+          </Link>
+          <Link
+            href="/admin/audit"
+            title={collapsed ? "审计日志" : undefined}
+            className={`flex items-center gap-2.5 rounded-lg text-sm transition-colors
+              ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
+              ${isActive("/admin/audit")
+                ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
+                : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
+              }`}
+          >
+            <ClipboardList size={15} />
+            {!collapsed && <span className="flex-1">审计日志</span>}
+          </Link>
+          <Link
+            href="/admin/lab"
+            title={collapsed ? "权重实验室" : undefined}
+            className={`flex items-center gap-2.5 rounded-lg text-sm transition-colors
+              ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
+              ${isActive("/admin/lab")
+                ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
+                : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
+              }`}
+          >
+            <SlidersHorizontal size={15} />
+            {!collapsed && <span className="flex-1">权重实验室</span>}
+          </Link>
+          <Link
+            href="/admin/dashboard"
+            title={collapsed ? "系统健康看板" : undefined}
+            className={`flex items-center gap-2.5 rounded-lg text-sm transition-colors
+              ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
+              ${isActive("/admin/dashboard")
+                ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
+                : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
+              }`}
+          >
+            <Gauge size={15} />
+            {!collapsed && <span className="flex-1">健康看板</span>}
+          </Link>
+          <Link
+            href="/admin/processing"
+            title={collapsed ? "数据处理看板" : undefined}
+            className={`flex items-center gap-2.5 rounded-lg text-sm transition-colors
+              ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
+              ${isActive("/admin/processing")
+                ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
+                : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
+              }`}
+          >
+            <Activity size={15} />
+            {!collapsed && <span className="flex-1">处理看板</span>}
+          </Link>
+          <Link
+            href="/admin/schema"
+            title={collapsed ? "Schema 导航器" : undefined}
+            className={`flex items-center gap-2.5 rounded-lg text-sm transition-colors
+              ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
+              ${isActive("/admin/schema")
+                ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
+                : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
+              }`}
+          >
+            <Database size={15} />
+            {!collapsed && <span className="flex-1">Schema</span>}
           </Link>
         </div>
       )}

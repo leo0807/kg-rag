@@ -3,19 +3,23 @@
 import { useEffect, useRef } from "react";
 import * as d3 from "d3";
 import { useRouter } from "next/navigation";
-import type { RefNode, RefEdge } from "./useReferences";
+import type { RefNode, RefEdge, ImplicitEdge } from "./useReferences";
 import { nodeRadius, nodeColor } from "./useReferences";
 
 const ARROW_ID = "ref-arrow";
+
+const IMPLICIT_ARROW_ID = "implicit-arrow";
 
 interface Props {
     nodes: RefNode[];
     edges: RefEdge[];
     loading: boolean;
     onSelect: (node: RefNode | null) => void;
+    implicitEdges?: ImplicitEdge[];
+    showImplicit?: boolean;
 }
 
-export function ReferenceGraph({ nodes, edges, loading, onSelect }: Props) {
+export function ReferenceGraph({ nodes, edges, loading, onSelect, implicitEdges = [], showImplicit = false }: Props) {
     const svgRef     = useRef<SVGSVGElement>(null);
     const tooltipRef = useRef<HTMLDivElement>(null);
     const router     = useRouter();
@@ -29,7 +33,8 @@ export function ReferenceGraph({ nodes, edges, loading, onSelect }: Props) {
         const W = svgRef.current.clientWidth  || 900;
         const H = svgRef.current.clientHeight || 600;
 
-        svg.append("defs").append("marker")
+        const defs = svg.append("defs");
+        defs.append("marker")
             .attr("id",           ARROW_ID)
             .attr("viewBox",      "0 -5 10 10")
             .attr("refX",         20)
@@ -40,6 +45,18 @@ export function ReferenceGraph({ nodes, edges, loading, onSelect }: Props) {
             .append("path")
             .attr("d",    "M0,-5L10,0L0,5")
             .attr("fill", "#4b5563");
+        // 隐性关联箭头（绿色）
+        defs.append("marker")
+            .attr("id",           IMPLICIT_ARROW_ID)
+            .attr("viewBox",      "0 -5 10 10")
+            .attr("refX",         20)
+            .attr("refY",         0)
+            .attr("markerWidth",  6)
+            .attr("markerHeight", 6)
+            .attr("orient",       "auto")
+            .append("path")
+            .attr("d",    "M0,-5L10,0L0,5")
+            .attr("fill", "#22c55e");
 
         const g    = svg.append("g");
         const zoom = d3.zoom<SVGSVGElement, unknown>()
@@ -123,6 +140,35 @@ export function ReferenceGraph({ nodes, edges, loading, onSelect }: Props) {
             })
             .on("dblclick", (ev, d) => { ev.stopPropagation(); router.push(`/library/${d.id}`); });
 
+        // 隐性关联虚线覆盖层（在节点之前，避免遮挡）
+        const implicitFiltered = showImplicit
+            ? implicitEdges.filter(ie =>
+                nodeById.has(ie.doc_a) && nodeById.has(ie.doc_b))
+            : [];
+
+        const implicitLayer = g.insert("g", "g + g").selectAll("line")
+            .data(implicitFiltered).join("line")
+            .attr("stroke",           "#22c55e")
+            .attr("stroke-width",     1.5)
+            .attr("stroke-dasharray", "5,4")
+            .attr("stroke-opacity",   0.65)
+            .attr("marker-end",       `url(#${IMPLICIT_ARROW_ID})`);
+
+        const implicitTooltip = d3.select(tooltipRef.current!);
+        implicitLayer
+            .on("mouseover", (ev, d: ImplicitEdge) => {
+                implicitTooltip.classed("hidden", false)
+                    .style("left", (ev.clientX + 14) + "px")
+                    .style("top",  (ev.clientY - 10) + "px")
+                    .html(`<div class="text-emerald-400 font-semibold text-xs mb-1">隐性关联</div>
+                           <div class="text-xs text-gray-300">共同涉及：${d.common_entities.slice(0, 4).join("、")}</div>
+                           <div class="text-xs text-gray-500 mt-0.5">置信度 ${(d.confidence * 100).toFixed(0)}%</div>`);
+            })
+            .on("mousemove", ev => {
+                implicitTooltip.style("left", (ev.clientX + 14) + "px").style("top", (ev.clientY - 10) + "px");
+            })
+            .on("mouseout", () => implicitTooltip.classed("hidden", true));
+
         sim.on("tick", () => {
             link
                 .attr("x1", d => (d.source as RefNode).x ?? 0)
@@ -130,11 +176,16 @@ export function ReferenceGraph({ nodes, edges, loading, onSelect }: Props) {
                 .attr("x2", d => (d.target as RefNode).x ?? 0)
                 .attr("y2", d => (d.target as RefNode).y ?? 0);
             nodeG.attr("transform", d => `translate(${d.x ?? 0},${d.y ?? 0})`);
+            implicitLayer
+                .attr("x1", d => (nodeById.get(d.doc_a)?.x) ?? 0)
+                .attr("y1", d => (nodeById.get(d.doc_a)?.y) ?? 0)
+                .attr("x2", d => (nodeById.get(d.doc_b)?.x) ?? 0)
+                .attr("y2", d => (nodeById.get(d.doc_b)?.y) ?? 0);
         });
 
         return () => { sim.stop(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [nodes, edges, loading]);
+    }, [nodes, edges, loading, implicitEdges, showImplicit]);
 
     return (
         <div className="flex-1 relative overflow-hidden">

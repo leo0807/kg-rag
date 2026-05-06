@@ -1,4 +1,4 @@
-export type Tab = "profile" | "password" | "model" | "admin" | "audit" | "search";
+export type Tab = "profile" | "password" | "model" | "admin" | "audit" | "search" | "entity_filter" | "alert";
 
 export interface UserInfo {
     username:   string;
