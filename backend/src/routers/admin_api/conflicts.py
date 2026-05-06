@@ -28,6 +28,11 @@ class StatusUpdate(BaseModel):
     status: str
 
 
+class ArbitrationRequest(BaseModel):
+    decision: str   # use_a | use_b | both_applicable | expert_review
+    note: str = ""
+
+
 # ── Scan management ───────────────────────────────────────────────────────────
 
 @router.post("/scan")
@@ -120,6 +125,21 @@ async def get_stats(
     return await get_conflict_stats(db)
 
 
+@router.get("/summary")
+async def conflict_summary(
+    _: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    stats = await get_conflict_stats(db)
+    return {
+        "total_conflicts": stats["total"],
+        "by_type":         stats.get("by_type", {}),
+        "high_severity":   stats.get("by_severity", {}).get("high", 0),
+        "resolved":        stats.get("by_status",  {}).get("resolved", 0),
+        "pending":         stats.get("by_status",  {}).get("pending",  0),
+    }
+
+
 @router.patch("/{conflict_id}/status")
 async def patch_conflict_status(
     conflict_id: int,
@@ -134,3 +154,25 @@ async def patch_conflict_status(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"id": record.id, "status": record.status}
+
+
+@router.post("/{conflict_id}/arbitrate")
+async def arbitrate_conflict(
+    conflict_id: int,
+    body: ArbitrationRequest,
+    _: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    valid = {"use_a", "use_b", "both_applicable", "expert_review"}
+    if body.decision not in valid:
+        raise HTTPException(status_code=400, detail="无效的仲裁决定")
+
+    from ...services.quality.conflict_arbiter import store_arbitration
+    store_arbitration(conflict_id, body.decision, body.note)
+
+    new_status = "resolved" if body.decision != "expert_review" else "confirmed"
+    try:
+        record = await update_conflict_status(db, conflict_id, new_status)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="冲突记录不存在")
+    return {"ok": True, "decision": body.decision, "status": record.status}

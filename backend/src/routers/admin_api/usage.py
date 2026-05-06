@@ -132,6 +132,7 @@ async def _pg_daily_trend(db: AsyncSession, days: int = 7) -> list[dict[str, Any
             func.count(LLMUsage.id).label("requests"),
             func.coalesce(func.sum(LLMUsage.prompt_tokens + LLMUsage.completion_tokens), 0).label("tokens"),
             func.coalesce(func.sum(LLMUsage.cost_usd), 0.0).label("cost_usd"),
+            func.coalesce(func.avg(LLMUsage.latency_ms), 0).label("avg_latency_ms"),
         )
         .where(LLMUsage.created_at >= since)
         .group_by(func.date(LLMUsage.created_at))
@@ -139,10 +140,11 @@ async def _pg_daily_trend(db: AsyncSession, days: int = 7) -> list[dict[str, Any
     )
     return [
         {
-            "date":     str(r.date),
-            "requests": int(r.requests or 0),
-            "tokens":   int(r.tokens or 0),
-            "cost_usd": round(float(r.cost_usd or 0), 4),
+            "date":          str(r.date),
+            "requests":      int(r.requests or 0),
+            "tokens":        int(r.tokens or 0),
+            "cost_usd":      round(float(r.cost_usd or 0), 4),
+            "avg_latency_ms": round(float(r.avg_latency_ms or 0)),
         }
         for r in result.all()
     ]
@@ -185,6 +187,68 @@ def _parse_langfuse_models(daily_data: list[dict]) -> list[dict[str, Any]]:
     for m in agg.values():
         m["cost_usd"] = round(m["cost_usd"], 4)
     return sorted(agg.values(), key=lambda x: x["requests"], reverse=True)
+
+
+async def _pg_user_dist(db: AsyncSession, since: datetime) -> list[dict[str, Any]]:
+    result = await db.execute(
+        select(
+            LLMUsage.user_id,
+            User.username,
+            User.department,
+            func.count(LLMUsage.id).label("requests"),
+            func.coalesce(func.sum(LLMUsage.prompt_tokens + LLMUsage.completion_tokens), 0).label("tokens"),
+            func.coalesce(func.sum(LLMUsage.cost_usd), 0.0).label("cost_usd"),
+            func.max(LLMUsage.created_at).label("last_active"),
+        )
+        .outerjoin(User, LLMUsage.user_id == User.id)
+        .where(LLMUsage.created_at >= since)
+        .where(LLMUsage.user_id.isnot(None))
+        .group_by(LLMUsage.user_id, User.username, User.department)
+        .order_by(func.count(LLMUsage.id).desc())
+    )
+    return [
+        {
+            "user_id":    r.user_id,
+            "username":   r.username or r.user_id,
+            "department": r.department or "",
+            "requests":   int(r.requests or 0),
+            "tokens":     int(r.tokens or 0),
+            "cost_usd":   round(float(r.cost_usd or 0), 4),
+            "last_active": r.last_active.strftime("%H:%M") if r.last_active else None,
+        }
+        for r in result.all()
+    ]
+
+
+@router.get("/usage/users")
+async def usage_users(
+    _: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start  = today_start - timedelta(days=7)
+    today_rows, week_rows = await _pg_user_dist(db, today_start), await _pg_user_dist(db, week_start)
+    today_map = {r["user_id"]: r for r in today_rows}
+    week_map  = {r["user_id"]: r for r in week_rows}
+    all_ids = sorted(set(today_map) | set(week_map),
+                     key=lambda uid: week_map.get(uid, {}).get("requests", 0), reverse=True)
+    users = []
+    for uid in all_ids:
+        t, w = today_map.get(uid, {}), week_map.get(uid, {})
+        users.append({
+            "user_id":       uid,
+            "username":      t.get("username") or w.get("username") or uid,
+            "department":    t.get("department") or w.get("department") or "",
+            "today_requests": t.get("requests", 0),
+            "today_tokens":   t.get("tokens", 0),
+            "today_cost_usd": round(t.get("cost_usd", 0), 4),
+            "week_requests":  w.get("requests", 0),
+            "week_tokens":    w.get("tokens", 0),
+            "week_cost_usd":  round(w.get("cost_usd", 0), 4),
+            "last_active":    t.get("last_active") or w.get("last_active"),
+        })
+    return {"users": users, "total_users": len(users), "active_today": len(today_map)}
 
 
 # ── 主接口 ────────────────────────────────────────────────────────────────────
