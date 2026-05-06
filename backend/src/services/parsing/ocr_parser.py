@@ -16,6 +16,7 @@ from .parser import (
     is_likely_section_title,
     _trim_front_matter_headings,
 )
+from .parser_meta import clean_ocr_artifacts
 from .ocr_engine import render_page_to_image, ocr_page, is_available
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ def extract_sections_with_ocr(pdf_path: Path, doc_id: str) -> list[dict]:
         sections.append({
             "chunk_id": f"{doc_id}_{number}",
             "number":   number,
-            "title":    title,
+            "title":    clean_ocr_artifacts(title),
             "content":  content,
         })
 

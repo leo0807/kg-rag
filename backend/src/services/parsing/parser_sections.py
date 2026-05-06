@@ -15,7 +15,7 @@ from .parser_heading import (
     is_likely_section_title,
 )
 from .parser_toc import _collect_toc_numbers_from_all_lines, _postprocess_headings
-from .parser_meta import clean_content
+from .parser_meta import clean_content, clean_ocr_artifacts
 from .parser_patterns import SECTION_PATTERNS
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
                 sections.append({
                     "chunk_id": f"{doc_id}_{safe_num}",
                     "number":   h["number"],
-                    "title":    h["title"],
+                    "title":    clean_ocr_artifacts(h["title"]),
                     "content":  clean_content(raw_content),
                     "level":    len(h["number"].split(".")),
                     "seq_index": i,
@@ -205,7 +205,7 @@ def _extract_sections_legacy(pdf_path: Path, doc_id: str) -> list[dict]:
         sections.append({
             "chunk_id": f"{doc_id}_{safe_num}",
             "number":   number,
-            "title":    title,
+            "title":    clean_ocr_artifacts(title),
             "content":  content,
             "level":    len(number.split(".")),
             "seq_index": i,

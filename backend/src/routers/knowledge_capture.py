@@ -1,6 +1,7 @@
 """对话上下文知识捕获 — LLM 三元组抽取 + Neo4j 写入"""
 from __future__ import annotations
 import json, asyncio, logging
+import re
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from neo4j import Driver
@@ -15,6 +16,37 @@ router = APIRouter(prefix="/api/knowledge", tags=["knowledge-capture"])
 _EXTRACT_PROMPT = """你是知识图谱专家。从给定文本中抽取三元组（主体-谓词-客体），返回 JSON 数组：
 [{"subject": "...", "predicate": "...", "object": "..."}, ...]
 只返回 JSON，不要其他内容。最多返回 10 个最重要的三元组。若无可抽取内容，返回空数组 []。"""
+
+
+def _parse_triples_payload(raw: str) -> list[dict]:
+    text = (raw or "").strip()
+    candidates = [text]
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+    if fence:
+        candidates.insert(0, fence.group(1).strip())
+    array_match = re.search(r"\[[\s\S]*\]", text)
+    if array_match:
+        candidates.insert(0, array_match.group(0).strip())
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            payload = json.loads(candidate)
+            if isinstance(payload, list):
+                triples = []
+                for item in payload:
+                    if not isinstance(item, dict):
+                        continue
+                    subject = str(item.get("subject", "")).strip()
+                    predicate = str(item.get("predicate", "")).strip()
+                    obj = str(item.get("object", "")).strip()
+                    if subject and predicate and obj:
+                        triples.append({"subject": subject, "predicate": predicate, "object": obj})
+                return triples[:10]
+        except Exception:
+            continue
+    return []
 
 
 class Triple(BaseModel):
@@ -40,14 +72,8 @@ async def extract_triples(req: ExtractRequest, _: User = Depends(get_current_use
 
     try:
         raw = await asyncio.to_thread(_call)
-        # Strip markdown code fences if present
-        text = raw.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        triples = json.loads(text.strip())
-        return {"triples": triples[:10]}
+        triples = _parse_triples_payload(raw)
+        return {"triples": triples}
     except Exception as e:
         logger.warning("Triple extraction failed: %s", e)
         return {"triples": []}

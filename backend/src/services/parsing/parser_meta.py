@@ -17,6 +17,27 @@ def clean_content(text: str) -> str:
     )
     text = re.sub(r'CPS\d+版\s*本:\s*[A-Z]\s*第\d+页\s*共\d+页', '', text)
     text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    return clean_ocr_artifacts(text)
+
+
+def clean_ocr_artifacts(text: str) -> str:
+    if not text:
+        return text
+
+    # 修复常见 OCR 错误
+    # 'D' 被误识别为小数点（如 0D6 → 0.6）
+    text = re.sub(r'(\d)D(\d)', r'\1.\2', text)
+
+    # 'is' 被误识别为 '0'
+    text = re.sub(r'\bis\b(?=\d)', '0', text)
+    text = re.sub(r'(?<=\d)\bis\b', '0', text)
+
+    # 连续的 'is' 替换为对应数字
+    text = re.sub(r'isis', '00', text)
+
+    # 修复单位前的空格
+    text = re.sub(r'(\d)\s*(MPa|kPa|℃|mm|min|kg)\b', r'\1 \2', text)
+
     return text
 
 

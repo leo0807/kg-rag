@@ -193,11 +193,19 @@ async def run_eval_task(
     results: list[dict[str, Any]] = []
     try:
         for idx, item in enumerate(questions, start=1):
-            result = await asyncio.to_thread(
-                answer_objective_question,
-                item["question"], item["options"], item["question_type"],
-                item.get("answer_key", ""), strategy, top_k, driver,
-            )
+            try:
+                result = await asyncio.to_thread(
+                    answer_objective_question,
+                    item["question"], item["options"], item["question_type"],
+                    item.get("answer_key", ""), strategy, top_k, driver,
+                )
+            except Exception as exc:
+                logger.exception("客观题单题评测失败，继续后续题目: %s", exc)
+                result = {
+                    "predicted_answer": "",
+                    "reason": f"评测失败：{exc}",
+                    "source_refs": [],
+                }
             results.append({
                 "display_no": item["display_no"], "question": item["question"],
                 "options": item["options"], "question_type": item["question_type"],

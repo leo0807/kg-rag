@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 
 from ...models.schemas import DocumentSchema, SectionSchema
-from .parser_meta import extract_meta, extract_refs, clean_content
+from .parser_meta import extract_meta, extract_refs, clean_ocr_artifacts
 from .parser_sections import extract_sections
 from .parser_office import _convert_office_to_pdf, _extract_doc_id_from_filename, _find_soffice
 
@@ -67,6 +67,9 @@ def _parse_pdf(pdf_path: Path, fallback_doc_id: str = "") -> DocumentSchema:
 
     sections = extract_sections(pdf_path, meta["doc_id"])
     refs = extract_refs(sections)
+    for section in sections:
+        section["content"] = clean_ocr_artifacts(str(section.get("content", "")))
+        section["title"] = clean_ocr_artifacts(str(section.get("title", "")))
 
     return DocumentSchema(
         doc_id=meta["doc_id"],
