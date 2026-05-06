@@ -187,6 +187,21 @@ def delete_section(chunk_id: str) -> None:
         logger.warning("ES delete 失败 chunk_id=%s: %s", chunk_id, exc)
 
 
+def delete_chunks(chunk_ids: list[str]) -> None:
+    """批量删除指定 chunk（用于增量更新）。"""
+    if not chunk_ids:
+        return
+    try:
+        get_es().delete_by_query(
+            index=INDEX_NAME,
+            body={"query": {"terms": {"chunk_id": chunk_ids}}},
+            refresh=True,
+        )
+        logger.info("ES 增量删除 %d 条", len(chunk_ids))
+    except Exception as exc:
+        logger.warning("ES 增量删除失败: %s", exc)
+
+
 def delete_doc(doc_id: str) -> None:
     """删除某文档的所有章节。"""
     try:

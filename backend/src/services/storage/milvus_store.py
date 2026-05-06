@@ -125,6 +125,19 @@ def delete_by_doc_id(doc_id: str) -> None:
         logger.warning("Milvus 删除向量失败 doc_id=%s: %s", doc_id, e)
 
 
+def delete_by_chunk_ids(chunk_ids: list[str]) -> None:
+    """删除指定 chunk 的向量（用于增量更新）。"""
+    if not chunk_ids:
+        return
+    try:
+        col = get_or_create_collection()
+        ids_expr = ", ".join(f'"{cid}"' for cid in chunk_ids)
+        col.delete(expr=f"id in [{ids_expr}]")
+        logger.info("Milvus 增量删除 %d 条向量", len(chunk_ids))
+    except Exception as e:
+        logger.warning("Milvus 增量删除失败: %s", e)
+
+
 def delete_image_vectors(doc_id: str) -> None:
     """删除指定文档的图片向量，不影响章节向量。"""
     try:
