@@ -16,6 +16,7 @@ from ...services.graph.graph_helpers import (
     _filter_zero_degree_document_nodes,
     _load_connected_entity_nodes,
     build_edges,
+    load_reference_target_stubs,
 )
 
 logger = logging.getLogger(__name__)
@@ -162,10 +163,11 @@ async def get_graph(
             ]
 
         node_ids = {n["id"] for n in nodes}
+        selected_doc_ids = _selected_ids(nodes, "Document")
         edges = build_edges(
             session,
             node_ids,
-            selected_doc_ids=_selected_ids(nodes, "Document"),
+            selected_doc_ids=selected_doc_ids,
             selected_section_ids=_selected_ids(nodes, "Section"),
             selected_image_ids=_selected_ids(nodes, "Image"),
             selected_tool_ids=_selected_ids(nodes, "Tool"),
@@ -175,6 +177,9 @@ async def get_graph(
             selected_table_ids=_selected_ids(nodes, "Table"),
             limit_tbl=limit_tbl,
         )
+        ref_stubs, ref_edges = load_reference_target_stubs(session, selected_doc_ids, node_ids)
+        nodes = _extend_unique_nodes(nodes, ref_stubs)
+        edges += ref_edges
         nodes = _filter_zero_degree_document_nodes(
             nodes, edges, keep_doc_ids={doc_id} if doc_id else set()
         )

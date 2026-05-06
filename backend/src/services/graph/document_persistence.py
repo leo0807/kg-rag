@@ -2,13 +2,30 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
+def section_content_hash(number: str, title: str, content: str) -> str:
+    raw = f"{number or ''}|{title or ''}|{content or ''}"
+    return hashlib.md5(raw.encode()).hexdigest()
+
+
+def fetch_existing_hashes(session, doc_id: str) -> dict[str, str]:
+    result = session.run(
+        "MATCH (d:Document {name: $doc_id})-[:HAS_SECTION]->(s:Section) "
+        "RETURN s.chunk_id AS chunk_id, s.content_hash AS content_hash",
+        doc_id=doc_id,
+    )
+    return {r["chunk_id"]: (r["content_hash"] or "") for r in result}
+
+
 def build_section_payloads(doc_id: str, sections) -> tuple[list[dict], list[dict], list[str]]:
+    now = datetime.utcnow().isoformat()
     texts = [f"{section.title}\n{section.content}" for section in sections]
     milvus_data = [
         {
@@ -29,6 +46,8 @@ def build_section_payloads(doc_id: str, sections) -> tuple[list[dict], list[dict
             "seq_index": section.seq_index,
             "page_idx": section.page_idx,
             "bbox": section.bbox,
+            "content_hash": section_content_hash(section.number, section.title, section.content),
+            "last_updated": now,
         }
         for section in sections
     ]
@@ -83,14 +102,16 @@ def write_section_nodes(session, doc_id: str, sections_data: list[dict]) -> None
         MATCH (d:Document {name: $doc_id})
         UNWIND $sections AS s
         MERGE (sec:Section {chunk_id: s.chunk_id})
-        SET sec.doc_id    = $doc_id,
-            sec.number    = s.number,
-            sec.title     = s.title,
-            sec.content   = s.content,
-            sec.level     = s.level,
-            sec.seq_index = s.seq_index,
-            sec.page_idx  = s.page_idx,
-            sec.bbox      = s.bbox
+        SET sec.doc_id       = $doc_id,
+            sec.number       = s.number,
+            sec.title        = s.title,
+            sec.content      = s.content,
+            sec.level        = s.level,
+            sec.seq_index    = s.seq_index,
+            sec.page_idx     = s.page_idx,
+            sec.bbox         = s.bbox,
+            sec.content_hash = s.content_hash,
+            sec.last_updated = s.last_updated
         MERGE (d)-[:HAS_SECTION]->(sec)
         """,
         doc_id=doc_id,
@@ -160,20 +181,54 @@ def extract_table_data(doc) -> list[dict]:
     return table_data
 
 
+def _table_row_text(headers: list[str], row: list[str]) -> str:
+    return " | ".join(f"{h}: {v}" for h, v in zip(headers, row) if h and (v or "").strip())
+
+
 def write_table_vectors(doc_id: str, table_data: list[dict], embed_texts, upsert_sections) -> None:
-    table_texts = [table["markdown"] for table in table_data]
-    embeddings = embed_texts(table_texts)
-    milvus_rows = [
-        {
-            "chunk_id": table["table_id"],
-            "doc_id": doc_id,
-            "text": table["markdown"],
-            "embedding": embeddings[index] if index < len(embeddings) else None,
-        }
-        for index, table in enumerate(table_data)
-    ]
-    milvus_rows = [row for row in milvus_rows if row.get("embedding")]
+    import json
+
+    # ── Build row-level records ──────────────────────────────────────────────
+    row_records: list[dict] = []
+    for table in table_data:
+        raw: list[list[str]] = []
+        try:
+            raw = json.loads(table.get("rows_json") or "[]")
+        except Exception:
+            pass
+        headers = raw[0] if raw else []
+        for i, row in enumerate(raw[1:], start=1):
+            text = _table_row_text(headers, row)
+            if text.strip():
+                row_records.append({
+                    "chunk_id": f"{table['table_id']}_row_{i}",
+                    "doc_id": doc_id,
+                    "text": text,
+                })
+
+    # ── Embed full-table texts + row texts in one call ───────────────────────
+    table_texts = [t["markdown"] for t in table_data]
+    row_texts   = [r["text"] for r in row_records]
+    all_texts   = table_texts + row_texts
+    if not all_texts:
+        return
+
+    embeddings = embed_texts(all_texts)
+
+    milvus_rows: list[dict] = []
+    for i, table in enumerate(table_data):
+        emb = embeddings[i] if i < len(embeddings) else None
+        if emb:
+            milvus_rows.append({"chunk_id": table["table_id"], "doc_id": doc_id, "text": table["markdown"], "embedding": emb})
+
+    offset = len(table_data)
+    for j, rec in enumerate(row_records):
+        emb = embeddings[offset + j] if (offset + j) < len(embeddings) else None
+        if emb:
+            milvus_rows.append({"chunk_id": rec["chunk_id"], "doc_id": doc_id, "text": rec["text"], "embedding": emb})
+
     if milvus_rows:
         upsert_sections(milvus_rows)
-        logger.info("表格向量写入 Milvus doc_id=%s tables=%d", doc_id, len(milvus_rows))
+        logger.info("表格向量写入 Milvus doc_id=%s tables=%d row_vecs=%d",
+                    doc_id, len(table_data), len(row_records))
 

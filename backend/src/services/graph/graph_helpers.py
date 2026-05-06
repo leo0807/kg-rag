@@ -258,3 +258,40 @@ def build_edges(session, node_ids: set[str], *, selected_doc_ids, selected_secti
         RETURN a.chunk_id AS source, b.chunk_id AS target, 'SIMILAR_TO' AS type
     """, section_ids=selected_section_ids)
     return edges
+
+
+def load_reference_target_stubs(
+    session,
+    selected_doc_ids: list[str],
+    known_node_ids: set[str],
+) -> tuple[list[dict], list[dict]]:
+    """Return (stub_nodes, edges) for REFERENCES targets not already in the node set."""
+    if not selected_doc_ids:
+        return [], []
+    result = session.run("""
+        MATCH (d:Document)-[:REFERENCES]->(r:Document)
+        WHERE d.name IN $doc_ids AND NOT r.name IN $known_ids
+        RETURN DISTINCT d.name AS source, r.name AS target,
+               coalesce(r.title, r.name) AS target_name
+    """, doc_ids=selected_doc_ids, known_ids=list(known_node_ids))
+
+    stub_nodes: list[dict] = []
+    extra_edges: list[dict] = []
+    seen: set[str] = set()
+    for row in result:
+        target_id = str(row["target"] or "").strip()
+        source_id = str(row["source"] or "").strip()
+        if not target_id or not source_id:
+            continue
+        extra_edges.append({"source": source_id, "target": target_id, "type": "REFERENCES"})
+        if target_id not in seen:
+            seen.add(target_id)
+            stub_nodes.append({
+                "id": target_id,
+                "name": row["target_name"] or target_id,
+                "doc_id": target_id,
+                "version": "",
+                "type": "Document",
+                "is_reference_target": True,
+            })
+    return stub_nodes, extra_edges

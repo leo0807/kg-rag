@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 
 from neo4j import Driver
@@ -9,22 +10,44 @@ from .entity_writer_support import TYPE_LABEL, collect_section_entities
 logger = logging.getLogger(__name__)
 
 
+def _parse_rows(rows_json_str: str) -> list[list[str]]:
+    try:
+        return json.loads(rows_json_str) if rows_json_str else []
+    except Exception:
+        return []
+
+
+def _build_structured_data(headers: list[str], data_rows: list[list[str]]) -> str:
+    if not headers or not data_rows:
+        return "[]"
+    records = []
+    for row in data_rows:
+        records.append({headers[i]: (row[i] if i < len(row) else "") for i in range(len(headers))})
+    return json.dumps(records, ensure_ascii=False)
+
+
 def write_tables(driver: Driver, doc_id: str, table_data: list[dict]) -> None:
     total_tables = total_rows = 0
     with driver.session() as session:
         for item in table_data:
             table_id = item["table_id"]
             chunk_id = item["chunk_id"]
+            raw_rows = _parse_rows(item.get("rows_json", ""))
+            headers = raw_rows[0] if raw_rows else []
+            data_rows = raw_rows[1:] if len(raw_rows) > 1 else []
             session.run(
                 """
                 MATCH (sec:Section {chunk_id: $chunk_id})
                 MERGE (t:Table {table_id: $table_id})
-                SET t.doc_id      = $doc_id,
-                    t.markdown    = $markdown,
-                    t.rows_json   = $rows_json,
-                    t.page_index  = $page_index,
-                    t.row_count   = $row_count,
-                    t.bbox        = $bbox
+                SET t.doc_id          = $doc_id,
+                    t.markdown        = $markdown,
+                    t.rows_json       = $rows_json,
+                    t.page_index      = $page_index,
+                    t.row_count       = $row_count,
+                    t.col_count       = $col_count,
+                    t.bbox            = $bbox,
+                    t.headers         = $headers,
+                    t.structured_data = $structured_data
                 MERGE (sec)-[:HAS_TABLE]->(t)
                 """,
                 chunk_id=chunk_id,
@@ -34,7 +57,10 @@ def write_tables(driver: Driver, doc_id: str, table_data: list[dict]) -> None:
                 rows_json=item["rows_json"],
                 page_index=item["page_index"],
                 row_count=item.get("row_count", 0),
+                col_count=len(headers),
                 bbox=item.get("bbox"),
+                headers=headers,
+                structured_data=_build_structured_data(headers, data_rows),
             )
             total_tables += 1
             for constraint in item.get("constraints", []):
