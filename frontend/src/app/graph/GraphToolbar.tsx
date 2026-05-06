@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  Settings, Search, Download, Layers, Share2, Check, Compass, CircleDot, FileText,
+  Settings, Search, Download, Layers, Share2, Check, Compass, CircleDot, FileText, EyeOff,
 } from "lucide-react";
 import {
   type GraphNode, type NodeFilter, type EdgeFilter, type RenderMode, type GraphStats,
@@ -54,6 +54,15 @@ interface Props {
   graphStats: GraphStats | null;
   onExpandAll: () => void;
   onCollapseToLevel1: () => void;
+  hideIsolated: boolean;
+  onToggleHideIsolated: () => void;
+  isolatedCount: number;
+  importanceMode: boolean;
+  onToggleImportance: () => void;
+  domainMode: boolean;
+  onToggleDomain: () => void;
+  showPredictions: boolean;
+  onTogglePredictions: () => void;
 }
 
 export function GraphToolbar({
@@ -67,6 +76,9 @@ export function GraphToolbar({
   showTables, onToggleTables,
   showLevel, onShowLevel, showImages, onToggleImages,
   showEntities, onToggleEntities, graphStats, onExpandAll, onCollapseToLevel1,
+  hideIsolated, onToggleHideIsolated, isolatedCount,
+  importanceMode, onToggleImportance, domainMode, onToggleDomain,
+  showPredictions, onTogglePredictions,
 }: Props) {
   const [searchFocused, setSearchFocused] = useState(false);
   const showSearchDropdown = searchFocused && searchQuery.trim().length > 0;
@@ -155,6 +167,26 @@ export function GraphToolbar({
           {docs.map((d) => <option key={d.doc_id} value={d.doc_id}>{d.doc_id}</option>)}
         </select>
 
+        {/* Hide isolated docs toggle */}
+        <button type="button" onClick={onToggleHideIsolated}
+          title={hideIsolated ? `已隐藏 ${isolatedCount} 个孤立文档` : "显示所有文档（含孤立节点）"}
+          className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+            hideIsolated
+              ? "bg-indigo-600/20 border border-indigo-600/40 text-indigo-300"
+              : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+          }`}
+        >
+          <EyeOff size={12} />
+          <span className="hidden sm:inline">隐藏孤立</span>
+          {hideIsolated && isolatedCount > 0 && (
+            <span className="text-indigo-400 font-mono">{isolatedCount}</span>
+          )}
+        </button>
+
+        <div className="w-px h-5 bg-gray-700 mx-0.5 shrink-0" />
+        <button type="button" onClick={onToggleImportance} title="按节点重要性着色" className={`px-2 h-7 rounded text-xs font-medium transition-colors ${importanceMode ? "bg-orange-600/30 border border-orange-500/50 text-orange-300" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"}`}>🔥 热力</button>
+        <button type="button" onClick={onToggleDomain} title="按文档领域着色" className={`px-2 h-7 rounded text-xs font-medium transition-colors ${domainMode ? "bg-purple-600/30 border border-purple-500/50 text-purple-300" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"}`}>🏷 领域</button>
+        <button type="button" onClick={onTogglePredictions} title="显示/隐藏AI预测关系（虚线紫色）" className={`px-2 h-7 rounded text-xs font-medium transition-colors ${showPredictions ? "bg-violet-600/30 border border-violet-500/50 text-violet-300" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"}`}>✦ 预测</button>
         <div className="w-px h-5 bg-gray-700 mx-0.5 shrink-0" />
 
         {/* Render mode */}

@@ -8,8 +8,9 @@ export interface GraphNode {
     content?:     string;
     path?:        string;
     url?:         string;
-    is_drawing?:  boolean;
-    page_num?:    number | null;
+    is_drawing?:          boolean;
+    page_num?:            number | null;
+    is_reference_target?: boolean;
     row_count?:   number;
     level?:       number;
     number?:      string;
@@ -19,9 +20,11 @@ export interface GraphNode {
 }
 
 export interface GraphEdge {
-    source: string | GraphNode;
-    target: string | GraphNode;
-    type:   string;
+    source:     string | GraphNode;
+    target:     string | GraphNode;
+    type:       string;
+    predicted?: boolean;
+    score?:     number;
 }
 
 export interface GraphStats {
@@ -105,6 +108,7 @@ export const EDGE_COLOR: Record<string, string> = {
     SUPERSEDES:       "#818cf8",
     SIMILAR_TO:       "#94a3b8",
     CHANGED_TO:       "#fbbf24",
+    PREDICTED:        "#a855f7",
 };
 
 export const NODE_TYPES = ["全部", "Document", "Section", "Image", "Tool", "Material", "Process", "Constraint", "Table"] as const;

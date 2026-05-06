@@ -1,6 +1,7 @@
 "use client";
 
-import { X } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Pencil, Check, X as XIcon } from "lucide-react";
 import { GraphNode, NODE_COLOR } from "./constants";
 import { ImageNodeDetail } from "./ImageNodeDetail";
 import { AnnotationPanel } from "./AnnotationPanel";
@@ -12,9 +13,38 @@ interface Props {
     expandingId?:     string | null;
 }
 
+const EDITABLE_SKIP = ["id","name","label","type","x","y","fx","fy","description","path","url","content","chunk_id"];
+
 export function NodeDetailSidebar({ node, onClose, onExpandSection, expandingId }: Props) {
     const type  = node.type || node.label;
     const color = NODE_COLOR[type] ?? "#6b7280";
+
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [editingKey, setEditingKey] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        try { setIsAdmin(JSON.parse(localStorage.getItem("user") || "{}").is_admin === true); }
+        catch { /* ignore */ }
+    }, []);
+
+    // Reset edit state when node changes
+    useEffect(() => { setEditingKey(null); }, [node.id]);
+
+    async function saveEdit() {
+        if (!editingKey) return;
+        setSaving(true);
+        try {
+            const token = localStorage.getItem("token") ?? "";
+            await fetch(`/api/graph/nodes/${encodeURIComponent(node.id)}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ properties: { [editingKey]: editValue } }),
+            });
+            setEditingKey(null);
+        } finally { setSaving(false); }
+    }
 
     return (
         <div className="w-72 shrink-0 bg-gray-900 border-l border-gray-700 flex flex-col overflow-auto">
@@ -50,11 +80,29 @@ export function NodeDetailSidebar({ node, onClose, onExpandSection, expandingId 
             {type !== "Image" && (
                 <div className="px-4 py-3 space-y-2 border-b border-gray-800">
                     {Object.entries(node)
-                        .filter(([k]) => !["id","name","label","type","x","y","fx","fy","description","path","url","content","chunk_id"].includes(k))
+                        .filter(([k]) => !EDITABLE_SKIP.includes(k))
                         .map(([k, v]) => v != null && String(v) !== "" && (
-                            <div key={k} className="flex gap-2">
+                            <div key={k} className="flex gap-2 group items-start">
                                 <span className="text-xs text-gray-600 w-20 shrink-0">{k}</span>
-                                <span className="text-xs text-gray-300 break-all">{String(v)}</span>
+                                {editingKey === k ? (
+                                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                                        <input autoFocus value={editValue} onChange={e => setEditValue(e.target.value)}
+                                            onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") setEditingKey(null); }}
+                                            className="flex-1 min-w-0 text-xs bg-gray-800 border border-indigo-500 rounded px-1.5 py-0.5 text-gray-100 outline-none" />
+                                        <button onClick={saveEdit} disabled={saving} className="text-green-400 hover:text-green-300 disabled:opacity-40"><Check size={12} /></button>
+                                        <button onClick={() => setEditingKey(null)} className="text-gray-500 hover:text-gray-300"><XIcon size={12} /></button>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-start gap-1 flex-1 min-w-0">
+                                        <span className="text-xs text-gray-300 break-all flex-1">{String(v)}</span>
+                                        {isAdmin && (
+                                            <button onClick={() => { setEditingKey(k); setEditValue(String(v)); }}
+                                                className="opacity-0 group-hover:opacity-100 shrink-0 text-gray-600 hover:text-indigo-400 transition-opacity">
+                                                <Pencil size={11} />
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                 </div>

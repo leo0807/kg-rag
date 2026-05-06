@@ -50,6 +50,8 @@ export function drawGraphCanvas(
     tourNodeIds?: Set<string>,
     tourCurrentId?: string,
     isDarkTheme = true,
+    colorOverride?: Map<string, string>,
+    userAnnotatedIds?: Set<string>,
 ): d3.ZoomBehavior<HTMLCanvasElement, unknown> {
     const labelFill = isDarkTheme ? "#ffffff" : "#0f172a";
     const tooltipHint = isDarkTheme ? "#6b7280" : "#64748b";
@@ -103,11 +105,13 @@ export function drawGraphCanvas(
             const opacity = tourMode
                 ? ((tourNodeIds!.has(s.id) && tourNodeIds!.has(t.id)) ? 0.85 : 0.05)
                 : 0.6;
-            ctx.globalAlpha  = opacity;
+            ctx.globalAlpha  = e.predicted ? 0.4 : opacity;
             ctx.strokeStyle  = EDGE_COLOR[e.type] ?? "#374151";
             ctx.lineWidth    = e.type === "REFERENCES" ? 2 : 1.5;
             ctx.setLineDash(
-                e.type === "HAS_IMAGE" || e.type === "MENTIONS_TOOL" || e.type === "HAS_ANNOTATION"
+                e.predicted
+                    ? [6, 4]
+                    : e.type === "HAS_IMAGE" || e.type === "MENTIONS_TOOL" || e.type === "HAS_ANNOTATION"
                     ? [4, 2]
                     : []
             );
@@ -121,11 +125,12 @@ export function drawGraphCanvas(
         for (const n of nodes) {
             if (n.x == null) continue;
             const heatNorm  = heatMap.get(n.id) ?? 0;
-            const color     = NODE_COLOR[n.type || n.label] ?? "#6b7280";
+            const color     = colorOverride?.get(n.id) ?? NODE_COLOR[n.type || n.label] ?? "#6b7280";
             const isCurrent = n.id === tourCurrentId;
             const inPath    = tourNodeIds?.has(n.id) ?? false;
             const opacity   = tourMode ? (isCurrent ? 1 : inPath ? 0.72 : 0.1) : 0.95;
             const isHighlight = highlightedIds.has(n.id);
+            const isRefTarget = !!(n as GraphNode).is_reference_target;
             const isHot     = !tourMode && heatNorm > 0.15 && (n.type || n.label) === "Section";
 
             if (isHot) {
@@ -160,11 +165,27 @@ export function drawGraphCanvas(
             }
             ctx.save();
             ctx.translate(n.x!, n.y!);
-            ctx.globalAlpha = opacity;
+            ctx.globalAlpha = isRefTarget ? opacity * 0.45 : opacity;
             ctx.fillStyle   = color;
             drawNodePath(ctx, n, heatNorm);
             ctx.fill();
-            if (isCurrent || isHighlight) {
+            if (isRefTarget) {
+                ctx.globalAlpha = 0.65;
+                ctx.strokeStyle = color;
+                ctx.lineWidth   = 1.5;
+                ctx.setLineDash([4, 3]);
+                drawNodePath(ctx, n, heatNorm, 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            } else if (userAnnotatedIds?.has(n.id)) {
+                ctx.globalAlpha = 0.85;
+                ctx.strokeStyle = "#a78bfa";
+                ctx.lineWidth   = 1.5;
+                ctx.setLineDash([3, 2]);
+                drawNodePath(ctx, n, heatNorm, 3);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            } else if (isCurrent || isHighlight) {
                 ctx.strokeStyle = isCurrent ? "#fbbf24" : "#f97316";
                 ctx.lineWidth   = 2.5;
                 ctx.stroke();
@@ -256,10 +277,10 @@ export function drawGraphCanvas(
         if (nodeType === "Document") {
             window.open(`/library/${docId || n.id}`, "_blank");
         } else if (nodeType === "Section" && docId) {
-            window.open(`/library/${docId}?section=${n.id}`, "_blank");
+            window.open(`/library/${docId}?section=${n.id}&preview=true`, "_blank");
         } else if (nodeType === "Image" && docId) {
-            const pageNum = n.page_num ?? undefined;
-            window.open(`/library/${docId}${pageNum ? `?page=${pageNum}` : ""}`, "_blank");
+            const pageNum = (n as GraphNode).page_num;
+            window.open(`/library/${docId}?preview=true${pageNum != null ? `&page=${pageNum}` : ""}`, "_blank");
         }
     });
 

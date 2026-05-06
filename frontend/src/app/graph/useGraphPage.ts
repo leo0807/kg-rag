@@ -51,6 +51,14 @@ export function useGraphPage({ svgRef, canvasRef, webglRef, tooltipRef }: GraphP
   const [showLegend, setShowLegend] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [hideIsolated, setHideIsolated] = useState(true);
+  const [viewStats, setViewStats] = useState({ docCount: 0, noRefDocCount: 0, refEdgeCount: 0, hiddenIsolated: 0 });
+  const [importanceMode, setImportanceMode] = useState(false);
+  const [domainMode, setDomainMode] = useState(false);
+  const [colorOverride, setColorOverride] = useState<Map<string, string>>(new Map());
+  const [userAnnotatedIds, setUserAnnotatedIds] = useState<Set<string>>(new Set());
+  const [showPredictions, setShowPredictions] = useState(false);
+  const [predictionEdges, setPredictionEdges] = useState<any[]>([]);
   const isDarkTheme = useGraphTheme();
   const graphTheme = getGraphThemeColors(isDarkTheme);
 
@@ -189,6 +197,58 @@ export function useGraphPage({ svgRef, canvasRef, webglRef, tooltipRef }: GraphP
       .catch(() => {});
   }, []);
 
+  function getDomainColor(docId: string): string {
+    const n = parseInt((docId ?? "").replace(/\D/g, "").slice(0, 4)) || 0;
+    if (n < 1000) return "#3B82F6";
+    if (n < 2000) return "#10B981";
+    if (n < 3000) return "#F59E0B";
+    if (n < 4000) return "#8B5CF6";
+    if (n < 7000) return "#EF4444";
+    return "#6B7280";
+  }
+
+  function getImportanceColor(imp: number): string {
+    if (imp > 0.7) return "#EF4444";
+    if (imp > 0.3) return "#F5A623";
+    return "#3B4F6B";
+  }
+
+  useEffect(() => {
+    if (!importanceMode) { if (!domainMode) setColorOverride(new Map()); return; }
+    fetchApi<{ nodes: { id: string; importance: number }[] }>("/api/graph/importance")
+      .then((d) => {
+        const m = new Map<string, string>();
+        for (const n of d.nodes) m.set(n.id, getImportanceColor(n.importance));
+        setColorOverride(m);
+      })
+      .catch(() => {});
+  }, [importanceMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!domainMode) { if (!importanceMode) setColorOverride(new Map()); return; }
+    if (!data) return;
+    const m = new Map<string, string>();
+    for (const node of data.nodes) {
+      if ((node.type || node.label) === "Document" && node.doc_id) m.set(node.id, getDomainColor(node.doc_id));
+    }
+    setColorOverride(m);
+  }, [domainMode, data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchApi<{ nodes: string[] }>("/api/knowledge/annotations")
+      .then(r => setUserAnnotatedIds(new Set(r.nodes)))
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!showPredictions) { setPredictionEdges([]); return; }
+    fetchApi<{ predictions: { source_id: string; target_id: string; score: number }[] }>("/api/graph/predictions")
+      .then(d => setPredictionEdges(
+        (d.predictions ?? []).map(p => ({ source: p.source_id, target: p.target_id, type: "PREDICTED", predicted: true, score: p.score })),
+      ))
+      .catch(() => {});
+  }, [showPredictions]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -283,7 +343,10 @@ export function useGraphPage({ svgRef, canvasRef, webglRef, tooltipRef }: GraphP
     });
   }
 
-  const effectiveData = tour.tourOpen && tour.tourData ? tour.tourData : data;
+  const baseData = tour.tourOpen && tour.tourData ? tour.tourData : data;
+  const effectiveData = baseData && predictionEdges.length > 0
+    ? { ...baseData, edges: [...baseData.edges, ...predictionEdges] }
+    : baseData;
   useEffect(() => {
     if (!effectiveData || !tooltipRef.current) return;
     const filteredNodes = effectiveData.nodes
@@ -297,7 +360,35 @@ export function useGraphPage({ svgRef, canvasRef, webglRef, tooltipRef }: GraphP
         filteredNodeIds.has(typeof e.target === "string" ? e.target : (e.target as any).id),
       )
       .map((e) => ({ ...e }));
-    filteredNodesRef.current = filteredNodes;
+    // Compute per-node edge counts from visible edges
+    const nodeEdgeCounts = new Map<string, number>();
+    for (const e of filteredEdges) {
+      const src = typeof e.source === "string" ? e.source : (e.source as any).id;
+      const tgt = typeof e.target === "string" ? e.target : (e.target as any).id;
+      nodeEdgeCounts.set(src, (nodeEdgeCounts.get(src) ?? 0) + 1);
+      nodeEdgeCounts.set(tgt, (nodeEdgeCounts.get(tgt) ?? 0) + 1);
+    }
+    let hiddenCount = 0;
+    const displayNodes = hideIsolated
+      ? filteredNodes.filter((n) => {
+          if ((n.type || n.label) !== "Document") return true;
+          if ((nodeEdgeCounts.get(n.id) ?? 0) > 0) return true;
+          hiddenCount++;
+          return false;
+        })
+      : filteredNodes;
+
+    // View stats for panel
+    const refEdgeCount = filteredEdges.filter((e) => e.type === "REFERENCES").length;
+    const visibleDocs = displayNodes.filter((n) => (n.type || n.label) === "Document");
+    const noRefDocCount = visibleDocs.filter((n) =>
+      !filteredEdges.some((e) => e.type === "REFERENCES" &&
+        ((typeof e.source === "string" ? e.source : (e.source as any).id) === n.id ||
+         (typeof e.target === "string" ? e.target : (e.target as any).id) === n.id)),
+    ).length;
+    setViewStats({ docCount: visibleDocs.length, noRefDocCount, refEdgeCount, hiddenIsolated: hiddenCount });
+
+    filteredNodesRef.current = displayNodes;
     filteredEdgesRef.current = filteredEdges;
     if (pixiDestroyRef.current) { pixiDestroyRef.current(); pixiDestroyRef.current = null; }
     const nc = filteredNodes.length;
@@ -326,6 +417,8 @@ export function useGraphPage({ svgRef, canvasRef, webglRef, tooltipRef }: GraphP
         { nodes: filteredNodes, edges: filteredEdges }, canvasRef.current, tooltipRef.current!,
         setScale, (node) => setSelectedNode(node), highlightedIds, heatMap,
         tour.tourOpen ? tour.tourNodeIds : undefined, tour.tourOpen ? tour.tourCurrentId : undefined, isDarkTheme,
+        colorOverride.size > 0 ? colorOverride : undefined,
+        userAnnotatedIds.size > 0 ? userAnnotatedIds : undefined,
       );
     } else if (svgRef.current) {
       zoomRef.current = drawGraph(
@@ -338,7 +431,7 @@ export function useGraphPage({ svgRef, canvasRef, webglRef, tooltipRef }: GraphP
       canceled = true;
       if (pixiDestroyRef.current) { pixiDestroyRef.current(); pixiDestroyRef.current = null; }
     };
-  }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, heatMap, manualMode, tour.tourNodeIds, tour.tourCurrentId, tour.tourOpen, redrawKey, isDarkTheme]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [effectiveData, nodeFilter, edgeFilter, highlightedIds, heatMap, colorOverride, userAnnotatedIds, manualMode, hideIsolated, tour.tourNodeIds, tour.tourCurrentId, tour.tourOpen, redrawKey, isDarkTheme]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onExpandAll(docFilterArg: string, showImages: boolean, showEntities: boolean, totalNodes: number) {
     if (totalNodes > 500 && !confirm(`当前文档共有约 ${totalNodes} 个节点，全部展开可能影响性能，确认？`)) return;
@@ -352,6 +445,7 @@ export function useGraphPage({ svgRef, canvasRef, webglRef, tooltipRef }: GraphP
     containerRef, filteredNodesRef, zoomRef,
     renderMode, manualMode, setManualMode, scale,
     graphStats, heatMap,
+    importanceMode, setImportanceMode, domainMode, setDomainMode,
     nodeFilter, setNodeFilter, edgeFilter, setEdgeFilter,
     selectedNode, setSelectedNode, searchQuery,
     docFilter, setDocFilter, docs,
@@ -359,9 +453,11 @@ export function useGraphPage({ svgRef, canvasRef, webglRef, tooltipRef }: GraphP
     limits, setLimits, expandingId,
     showLimits, setShowLimits, showLegend, setShowLegend,
     showExport, setShowExport, copied,
+    hideIsolated, setHideIsolated, viewStats,
     isDarkTheme, graphTheme, tour,
     zoomIn, zoomOut, zoomReset, focusNode,
     handleSearch, handleSelectNodeResult, handleSelectDocumentResult,
     expandSection, exportGraph, shareSnapshot, onExpandAll,
+    showPredictions, setShowPredictions,
   };
 }

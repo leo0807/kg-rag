@@ -211,10 +211,10 @@ export async function drawGraphWebGL(
             if (nodeType === "Document") {
                 window.open(`/library/${docId || n.id}`, "_blank");
             } else if (nodeType === "Section" && docId) {
-                window.open(`/library/${docId}?section=${n.id}`, "_blank");
+                window.open(`/library/${docId}?section=${n.id}&preview=true`, "_blank");
             } else if (nodeType === "Image" && docId) {
-                const pageNum = n.page_num ?? undefined;
-                window.open(`/library/${docId}${pageNum ? `?page=${pageNum}` : ""}`, "_blank");
+                const pageNum = (n as GraphNode).page_num;
+                window.open(`/library/${docId}?preview=true${pageNum != null ? `&page=${pageNum}` : ""}`, "_blank");
             }
             break;
         }

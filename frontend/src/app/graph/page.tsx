@@ -26,10 +26,13 @@ export default function GraphPage() {
     limits, setLimits, expandingId,
     showLimits, setShowLimits, showLegend, setShowLegend,
     showExport, setShowExport, copied,
+    hideIsolated, setHideIsolated, viewStats,
+    importanceMode, setImportanceMode, domainMode, setDomainMode,
     graphTheme, tour,
     zoomIn, zoomOut, zoomReset,
     handleSearch, handleSelectNodeResult, handleSelectDocumentResult,
     expandSection, exportGraph, shareSnapshot, onExpandAll,
+    showPredictions, setShowPredictions,
   } = useGraphPage({ svgRef, canvasRef, webglRef, tooltipRef });
 
   return (
@@ -58,6 +61,15 @@ export default function GraphPage() {
         graphStats={graphStats}
         onExpandAll={() => onExpandAll(docFilter, limits.show_images, limits.show_entities, graphStats?.total ?? 0)}
         onCollapseToLevel1={() => setLimits((prev) => ({ ...prev, show_level: 1 }))}
+        hideIsolated={hideIsolated}
+        onToggleHideIsolated={() => setHideIsolated((v) => !v)}
+        isolatedCount={viewStats.hiddenIsolated}
+        importanceMode={importanceMode}
+        onToggleImportance={() => { setImportanceMode(v => !v); if (domainMode) setDomainMode(false); }}
+        domainMode={domainMode}
+        onToggleDomain={() => { setDomainMode(v => !v); if (importanceMode) setImportanceMode(false); }}
+        showPredictions={showPredictions}
+        onTogglePredictions={() => setShowPredictions(v => !v)}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden min-h-0">
@@ -77,6 +89,20 @@ export default function GraphPage() {
 
             {showLimits && <GraphLimitsPanel limits={limits} setLimits={setLimits} />}
             {showLegend && <GraphLegend heatMap={heatMap} tourOpen={tour.tourOpen} />}
+
+            {/* Stats overlay */}
+            <div className="absolute bottom-4 left-3 pointer-events-none z-10 flex flex-col gap-0.5">
+              <span className="text-[11px] text-gray-600">{viewStats.docCount} 文档</span>
+              {viewStats.hiddenIsolated > 0 && (
+                <span className="text-[11px] text-gray-600">已隐藏 {viewStats.hiddenIsolated} 孤立</span>
+              )}
+              {viewStats.refEdgeCount > 0 && (
+                <span className="text-[11px] text-gray-600">{viewStats.refEdgeCount} 引用关系</span>
+              )}
+              {viewStats.noRefDocCount > 0 && (
+                <span className="text-[11px] text-gray-600">{viewStats.noRefDocCount} 无引用文档</span>
+              )}
+            </div>
 
             {tour.tourOpen && tour.tourRunning && tour.tourIdx >= 0 && (
               <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-gray-900/90 border border-amber-500/40 rounded-full px-4 py-1.5 flex items-center gap-2 backdrop-blur-sm">
