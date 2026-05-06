@@ -23,8 +23,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.core.logging import setup_logging
 from src.core.database import init_db, get_driver
 from src.core import storage
-from src.services.parser import extract_sections, extract_tables_pdfplumber
-from src.services.entity_writer import write_tables
+from src.services.parsing.parser import extract_tables_pdfplumber
+from src.services.graph.entity_graph_write import write_tables
 
 setup_logging()
 logger = logging.getLogger(__name__)
