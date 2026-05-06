@@ -109,12 +109,24 @@ export default function Sidebar() {
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem("user");
-    if (stored) {
+    function syncUser() {
+      const stored = localStorage.getItem("user");
+      if (!stored) {
+        setUser(null);
+        return;
+      }
       try {
         setUser(JSON.parse(stored));
       } catch { }
     }
+
+    syncUser();
+    window.addEventListener("user-updated", syncUser as EventListener);
+    window.addEventListener("storage", syncUser);
+    return () => {
+      window.removeEventListener("user-updated", syncUser as EventListener);
+      window.removeEventListener("storage", syncUser);
+    };
   }, []);
 
   function toggle() {
