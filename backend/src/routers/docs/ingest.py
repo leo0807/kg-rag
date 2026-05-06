@@ -7,12 +7,12 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from neo4j import Driver
 
 from ...auth.deps import get_admin_user as _get_admin_user
 from ...core.database import get_driver
-from ...services.graph.neo4j_writer import write_document
+from ...services.graph.neo4j_writer import write_document, write_document_incremental
 from ...services.parsing.parser import parse
 from .ingest_helpers import run_image_analysis
 
@@ -45,7 +45,7 @@ def _save_upload_file(file: UploadFile, path: Path) -> None:
         shutil.copyfileobj(file.file, f)
 
 
-async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
+async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver, incremental: bool = True) -> None:
     doc = None
     section_dicts: list[dict] = []
     try:
@@ -65,7 +65,13 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver) -> None:
                     doc_id=doc.doc_id,
                 ).single()
             if rec and rec["cnt"] > 0:
-                _task_update(task_id, status="skipped", doc_id=doc.doc_id, sections=doc.total_sections)
+                if incremental:
+                    _task_update(task_id, step="writing")
+                    inc_stats = await asyncio.to_thread(write_document_incremental, doc)
+                    _task_update(task_id, status="done", doc_id=doc.doc_id,
+                                 sections=doc.total_sections, incremental_stats=inc_stats)
+                else:
+                    _task_update(task_id, status="skipped", doc_id=doc.doc_id, sections=doc.total_sections)
                 return
 
             _task_update(task_id, step="writing")
@@ -168,9 +174,10 @@ async def preview(file: UploadFile = File(...)):
 
 @router.post("/api/ingest")
 async def ingest(
-    file:   UploadFile = File(...),
-    driver: Driver     = Depends(get_driver),
-    _:      object     = Depends(_get_admin_user),
+    file:        UploadFile = File(...),
+    incremental: bool       = Form(True),
+    driver:      Driver     = Depends(get_driver),
+    _:           object     = Depends(_get_admin_user),
 ):
     """接收文件并立即返回 task_id，实际入库在后台执行。"""
     suffix = Path(file.filename or "").suffix.lower()
@@ -208,9 +215,9 @@ async def ingest(
 
     _ingest_tasks[task_id] = {
         "status": "running", "step": "queued", "doc_id": None,
-        "sections": 0, "error": None, "created_at": datetime.utcnow(),
+        "sections": 0, "error": None, "incremental_stats": None, "created_at": datetime.utcnow(),
     }
-    asyncio.create_task(_run_ingest_bg(task_id, tmp_path, driver))
+    asyncio.create_task(_run_ingest_bg(task_id, tmp_path, driver, incremental))
     return {"task_id": task_id, "status": "running"}
 
 
