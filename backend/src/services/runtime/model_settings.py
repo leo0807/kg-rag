@@ -23,12 +23,12 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "reranker_api_url": "",
     "reranker_api_key": "",
     "reranker_enabled": "true",
-    "llm_mode": "api",
+    "llm_mode": "",
     "llm_provider": "",
-    "llm_api_url": "http://localhost:11434/v1",
-    "llm_api_key": "ollama",
+    "llm_api_url": "",
+    "llm_api_key": "",
     "llm_api_secret": "",
-    "llm_model": "qwen2.5:7b",
+    "llm_model": "",
     "vision_mode": "api",
     "qwen_vl_model": "qwen-vl-max",
     "vlm_model": "Qwen/Qwen2.5-VL-32B-Instruct",
@@ -83,7 +83,10 @@ def build_runtime_overrides(user_settings: Mapping[str, str] | None) -> dict[str
     for user_key, runtime_key in _RUNTIME_SETTING_MAP.items():
         if not user_settings or user_key not in user_settings:
             continue
-        overrides[runtime_key] = _coerce_runtime_value(runtime_key, user_settings[user_key])
+        value = user_settings[user_key]
+        if value == "":  # empty → don't shadow env-var defaults
+            continue
+        overrides[runtime_key] = _coerce_runtime_value(runtime_key, value)
     return overrides
 
 
