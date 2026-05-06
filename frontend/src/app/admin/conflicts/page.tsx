@@ -9,7 +9,7 @@ export default function ConflictsPage() {
         scan, scanning, conflicts, total, stats, error,
         filterStatus, setFilterStatus, filterSeverity, setFilterSeverity,
         filterType, setFilterType, expanded, updating,
-        startScan, loadConflicts, loadStats, changeStatus, toggleExpand,
+        startScan, loadConflicts, loadStats, changeStatus, toggleExpand, arbitrate,
     } = useConflicts();
 
     return (
@@ -114,7 +114,7 @@ export default function ConflictsPage() {
 
             <ConflictList
                 conflicts={conflicts} expanded={expanded} updating={updating}
-                onToggle={toggleExpand} onChangeStatus={changeStatus}
+                onToggle={toggleExpand} onChangeStatus={changeStatus} onArbitrate={arbitrate}
             />
         </div>
     );

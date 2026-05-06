@@ -29,9 +29,10 @@ interface Props {
     updating: number | null;
     onToggle: (id: number) => void;
     onChangeStatus: (id: number, status: Status) => void;
+    onArbitrate: (id: number, decision: string, note: string) => void;
 }
 
-export function ConflictList({ conflicts, expanded, updating, onToggle, onChangeStatus }: Props) {
+export function ConflictList({ conflicts, expanded, updating, onToggle, onChangeStatus, onArbitrate }: Props) {
     if (conflicts.length === 0) {
         return (
             <div className="text-center py-16 text-gray-500">
@@ -73,7 +74,7 @@ export function ConflictList({ conflicts, expanded, updating, onToggle, onChange
                         </div>
 
                         {isExpanded && (
-                            <ConflictDetail c={c} updating={updating} onChangeStatus={onChangeStatus} />
+                            <ConflictDetail c={c} updating={updating} onChangeStatus={onChangeStatus} onArbitrate={onArbitrate} />
                         )}
                     </div>
                 );

@@ -152,6 +152,24 @@ export function useConflicts() {
         }
     }
 
+    async function arbitrate(id: number, decision: string, note: string) {
+        setUpdating(id);
+        try {
+            const headers = await getAuthHeaders({ "Content-Type": "application/json" });
+            const res = await fetch(`${API}/api/admin/conflicts/${id}/arbitrate`, {
+                method: "POST", headers, body: JSON.stringify({ decision, note }),
+            });
+            if (!res.ok) throw new Error("仲裁提交失败");
+            const data = await res.json();
+            setConflicts(prev => prev.map(c => c.id === id ? { ...c, status: data.status as Status } : c));
+            loadStats();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "仲裁失败");
+        } finally {
+            setUpdating(null);
+        }
+    }
+
     function toggleExpand(id: number) {
         setExpanded(prev => {
             const next = new Set(prev);
@@ -173,6 +191,6 @@ export function useConflicts() {
         scan, scanning, conflicts, total, stats, error,
         filterStatus, setFilterStatus, filterSeverity, setFilterSeverity,
         filterType, setFilterType, expanded, updating,
-        startScan, loadConflicts, loadStats, changeStatus, toggleExpand,
+        startScan, loadConflicts, loadStats, changeStatus, toggleExpand, arbitrate,
     };
 }

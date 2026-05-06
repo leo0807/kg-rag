@@ -22,6 +22,9 @@ import {
   Legend,
 } from "recharts";
 import { fetchApi } from "@/lib/api";
+import { UserUsageTable } from "./UserUsageTable";
+import { FeedbackStatsPanel } from "./FeedbackStatsPanel";
+import { PerformanceTrendPanel } from "./PerformanceTrendPanel";
 
 
 interface PeriodStats {
@@ -44,6 +47,7 @@ interface TrendItem {
   requests: number;
   tokens: number;
   cost_usd: number;
+  avg_latency_ms?: number;
 }
 
 interface UsageData {
@@ -374,6 +378,9 @@ export default function UsagePage() {
           </div>
         </div>
       )}
+      <PerformanceTrendPanel trend={trend} />
+      <UserUsageTable />
+      <FeedbackStatsPanel />
     </div>
   );
 }
