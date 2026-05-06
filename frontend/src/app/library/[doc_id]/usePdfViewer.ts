@@ -108,8 +108,9 @@ export function usePdfViewer({
       const pdfDoc = pdfDocRef.current, container = scrollContainerRef.current;
       if (!pdfDoc || !container) return;
       if (!autoFitPendingRef.current) { setFitScaleReady(true); return; }
-      if (numPages <= 0) return;
+      if (numPages <= 0 || pdfDoc.numPages <= 0) return;
       const pageNumber = Math.min(Math.max(currentPage, 1), pdfDoc.numPages);
+      if (!Number.isFinite(pageNumber) || pageNumber < 1) return;
       const page = await pdfDoc.getPage(pageNumber);
       const baseViewport = page.getViewport({ scale: 1 });
       const containerWidth = container.clientWidth;

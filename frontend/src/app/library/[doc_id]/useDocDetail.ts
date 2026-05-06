@@ -84,9 +84,10 @@ export function useDocDetail(docId: string) {
   const [fileName, setFileName] = useState<string>("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [showPdf, setShowPdf] = useState(initialPage !== null || searchParams.get("preview") === "true");
-  const [anchorPage, setAnchorPage] = useState<number | undefined>(
-    initialPage ? parseInt(initialPage, 10) : undefined,
-  );
+  const [anchorPage, setAnchorPage] = useState<number | undefined>(() => {
+    const parsed = parseInt(initialPage ?? "", 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  });
   const [watermarkUrl, setWatermarkUrl] = useState("");
   const initialTab = (searchParams.get("tab") as "sections" | "drawings" | "reprocess" | null) ?? "sections";
   const [activeTab, setActiveTab] = useState<"sections" | "drawings" | "reprocess">(
@@ -127,7 +128,10 @@ export function useDocDetail(docId: string) {
 
   useEffect(() => {
     const page = searchParams.get("page");
-    if (page !== null) { setAnchorPage(parseInt(page, 10)); setShowPdf(true); }
+    if (page !== null) {
+      const parsed = parseInt(page, 10);
+      if (Number.isFinite(parsed)) { setAnchorPage(parsed); setShowPdf(true); }
+    }
     if (searchParams.get("preview") === "true") setShowPdf(true);
   }, [searchParams]);
 
