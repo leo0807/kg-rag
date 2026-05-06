@@ -45,6 +45,11 @@ class MLXVisionBackend:
         self._generate = generate
         self._apply_chat_template = apply_chat_template
         logger.info("MLX VLM 模型加载完成: %s", self._model_path)
+        try:
+            from ..model_manager import model_manager
+            model_manager.register("vlm_mlx", self._model)
+        except Exception:
+            pass
 
     def call(self, image_path: str, task: str) -> dict:
         self._load()

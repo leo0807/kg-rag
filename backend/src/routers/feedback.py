@@ -36,6 +36,12 @@ class QueryFeedback(Base):
     user_id:     Mapped[str]  = mapped_column(String(36), default="")
     detail:      Mapped[str]  = mapped_column(Text, default="")   # 隐式反馈元数据
     created_at:  Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # 多维评分（功能十二）
+    retrieval_score:    Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completeness_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    clarity_score:      Mapped[int | None] = mapped_column(Integer, nullable=True)
+    graph_score:        Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comment_text:       Mapped[str | None] = mapped_column(Text,    nullable=True)
 
 
 class FeedbackRequest(BaseModel):
@@ -65,8 +71,90 @@ async def submit_feedback(
         detail   = req.detail,
     )
     db.add(feedback)
+    await db.flush()
+    await db.commit()
+    return {"status": "OK", "id": feedback.id}
+
+
+class DetailedFeedbackRequest(BaseModel):
+    query_id:           int
+    retrieval_score:    int | None = None
+    completeness_score: int | None = None
+    clarity_score:      int | None = None
+    graph_score:        int | None = None
+    comment:            str | None = None
+
+
+@router.post("/detailed")
+async def submit_detailed_feedback(
+    req: DetailedFeedbackRequest,
+    db:  AsyncSession = Depends(get_db),
+):
+    from fastapi import HTTPException
+    result = await db.execute(select(QueryFeedback).where(QueryFeedback.id == req.query_id))
+    fb = result.scalar_one_or_none()
+    if fb is None:
+        raise HTTPException(status_code=404, detail="feedback not found")
+    for attr, val in [
+        ("retrieval_score",    req.retrieval_score),
+        ("completeness_score", req.completeness_score),
+        ("clarity_score",      req.clarity_score),
+        ("graph_score",        req.graph_score),
+        ("comment_text",       req.comment),
+    ]:
+        if val is not None:
+            setattr(fb, attr, val)
     await db.commit()
     return {"status": "OK"}
+
+
+@router.get("/detailed-stats")
+async def detailed_feedback_stats(db: AsyncSession = Depends(get_db)):
+    """Per-dimension averages and low-score questions."""
+    result = await db.execute(
+        select(
+            func.avg(QueryFeedback.retrieval_score).label("avg_retrieval"),
+            func.avg(QueryFeedback.completeness_score).label("avg_completeness"),
+            func.avg(QueryFeedback.clarity_score).label("avg_clarity"),
+            func.avg(QueryFeedback.graph_score).label("avg_graph"),
+        )
+    )
+    row = result.one()
+
+    low_result = await db.execute(
+        select(
+            QueryFeedback.question, QueryFeedback.retrieval_score,
+            QueryFeedback.completeness_score, QueryFeedback.clarity_score,
+            QueryFeedback.graph_score, QueryFeedback.created_at,
+        )
+        .where(
+            (QueryFeedback.retrieval_score <= 2) | (QueryFeedback.completeness_score <= 2) |
+            (QueryFeedback.clarity_score <= 2)   | (QueryFeedback.graph_score <= 2)
+        )
+        .order_by(QueryFeedback.created_at.desc())
+        .limit(20)
+    )
+    low_rows = low_result.all()
+
+    def safe(v): return round(float(v), 2) if v is not None else None
+
+    return {
+        "averages": {
+            "retrieval":    safe(row.avg_retrieval),
+            "completeness": safe(row.avg_completeness),
+            "clarity":      safe(row.avg_clarity),
+            "graph":        safe(row.avg_graph),
+        },
+        "low_score_questions": [
+            {
+                "question":   r.question,
+                "scores":     {"retrieval": r.retrieval_score, "completeness": r.completeness_score,
+                               "clarity": r.clarity_score, "graph": r.graph_score},
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in low_rows
+        ],
+    }
 
 
 @router.get("/stats")

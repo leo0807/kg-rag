@@ -125,6 +125,40 @@ async def update_user_settings(
     return {"status": "OK", "updated": len(req.settings)}
 
 
+class AlertTestRequest(BaseModel):
+    dingtalk_webhook: str = ""
+    wecom_webhook:    str = ""
+
+
+@router.post("/alert/test")
+async def test_alert(
+    req:  AlertTestRequest,
+    user: User = Depends(get_admin_user),
+):
+    """向指定 Webhook 发送一条测试告警（仅管理员）"""
+    from ..services.alert_service import AlertService
+    svc = AlertService.__new__(AlertService)
+    svc._init()
+    svc._last_sent = {}  # 测试时不受冷却限制
+
+    from ..services.runtime.model_settings import get_runtime_settings_namespace
+    runtime = get_runtime_settings_namespace()
+    _orig_dt = getattr(runtime, "DINGTALK_WEBHOOK", "")
+    _orig_wc = getattr(runtime, "WECOM_WEBHOOK", "")
+
+    sent = []
+    if req.dingtalk_webhook:
+        await svc._send_dingtalk(req.dingtalk_webhook, "✅ **CPS知识库测试告警**\n\n钉钉推送配置正常。")
+        sent.append("dingtalk")
+    if req.wecom_webhook:
+        await svc._send_wecom(req.wecom_webhook, "✅ **CPS知识库测试告警**\n\n企业微信推送配置正常。")
+        sent.append("wecom")
+
+    if not sent:
+        raise HTTPException(400, "未提供任何 Webhook URL")
+    return {"status": "OK", "sent": sent}
+
+
 @router.delete("/user/{key}")
 async def delete_user_setting(
     key:  str,
