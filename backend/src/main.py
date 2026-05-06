@@ -16,6 +16,7 @@ from .routers.graph_api.graph    import router as graph_router
 from .routers.graph_api.graph_browse import router as graph_browse_router
 from .routers.graph_api.graph_explore import router as graph_explore_router
 from .routers.graph_api.stats    import router as graph_stats_router
+from .routers.graph_api.schema   import router as graph_schema_router
 from .routers.graph_api.tour     import router as graph_tour_router
 from .routers.query              import router as query_router
 from .routers.sessions           import router as sessions_router
@@ -33,18 +34,34 @@ from .routers.admin_api.eval     import router as admin_eval_router
 from .routers.admin_api.conflicts import router as admin_conflicts_router
 from .routers.admin_api.usage    import router as admin_usage_router
 from .routers.admin_api.ops      import router as admin_ops_router
+from .routers.admin_api.cypher   import router as admin_cypher_router
 from .routers.mobile             import router as mobile_router
 from .routers.graph_api.gnn      import router as gnn_router
 from .routers.graph_api.visual_qc import router as visual_qc_router
 from .routers.docs.reprocess     import router as reprocess_router
 from .routers.admin_api.cache    import router as admin_cache_router
+from .routers.admin_api.synonyms import router as admin_synonyms_router
 from .routers.annotations        import router as annotations_router
 from .routers.ai_status          import router as ai_status_router
-from .routers.graph_api.references import router as graph_references_router
+from .routers.graph_api.references  import router as graph_references_router
+from .routers.graph_api.importance   import router as graph_importance_router
+from .routers.graph_api.timeline   import router as graph_timeline_router
+from .routers.export               import router as export_router
 from .routers.favorites          import router as favorites_router
 from .routers.search_api.autocomplete import router as search_autocomplete_router
+from .routers.search_api.suggest      import router as search_suggest_router
 from .routers.docs.ingest        import router as ingest_router, UPLOAD_DIR
 from .routers.pipeline           import router as pipeline_router
+from .routers.compare            import router as compare_router
+from .routers.graph_edit         import router as graph_edit_router
+from .routers.knowledge_capture  import router as knowledge_capture_router
+from .routers.ocr_review         import router as ocr_review_router
+from .routers.entity_filter      import router as entity_filter_router
+from .routers.admin_api.lab        import router as admin_lab_router
+from .routers.admin_api.processing import router as admin_processing_router
+from .routers.graph_api.predict    import router as graph_predict_router
+from .routers.admin_api.health       import router as admin_health_router
+from .routers.admin_api.associations import router as admin_associations_router
 
 from .services.infra.health import health_monitor
 from .services.ops.presence_service import track_request_activity
@@ -127,6 +144,7 @@ app.include_router(graph_router)
 app.include_router(graph_browse_router)
 app.include_router(graph_explore_router)
 app.include_router(graph_stats_router)
+app.include_router(graph_schema_router)
 app.include_router(graph_tour_router)
 app.include_router(query_router)
 app.include_router(auth_router)
@@ -143,15 +161,31 @@ app.include_router(admin_eval_router)
 app.include_router(admin_conflicts_router)
 app.include_router(admin_usage_router)
 app.include_router(admin_ops_router)
+app.include_router(admin_cypher_router)
 app.include_router(gnn_router)
 app.include_router(visual_qc_router)
 app.include_router(reprocess_router)
 app.include_router(admin_cache_router)
+app.include_router(admin_synonyms_router)
 app.include_router(annotations_router)
 app.include_router(ai_status_router)
 app.include_router(graph_references_router)
+app.include_router(graph_importance_router)
+app.include_router(graph_timeline_router)
+app.include_router(export_router)
 app.include_router(favorites_router)
 app.include_router(search_autocomplete_router)
+app.include_router(search_suggest_router)
 app.include_router(pipeline_router)
+app.include_router(compare_router)
+app.include_router(graph_edit_router)
+app.include_router(knowledge_capture_router)
+app.include_router(ocr_review_router)
+app.include_router(entity_filter_router)
+app.include_router(admin_lab_router)
+app.include_router(admin_processing_router)
+app.include_router(graph_predict_router)
+app.include_router(admin_health_router)
+app.include_router(admin_associations_router)
 
 app.mount("/uploads/images", StaticFiles(directory=str(UPLOAD_DIR / "images")), name="uploads_images")

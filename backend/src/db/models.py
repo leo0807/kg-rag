@@ -223,6 +223,20 @@ class ConflictRecord(Base):
     updated_at:          Mapped[datetime] = mapped_column(DateTime,    server_default=func.now(), onupdate=func.now())
 
 
+class EntityFilter(Base):
+    """实体黑白名单 — 控制 RAG 检索内容权重"""
+    __tablename__ = "entity_filters"
+    __table_args__ = (Index("ix_entity_filters_filter_type", "filter_type"),)
+
+    id:          Mapped[str]      = mapped_column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    entity_name: Mapped[str]      = mapped_column(String(200), nullable=False)
+    entity_type: Mapped[str]      = mapped_column(String(50),  default="")
+    filter_type: Mapped[str]      = mapped_column(String(10))   # blacklist | whitelist
+    reason:      Mapped[str]      = mapped_column(Text,         default="")
+    created_by:  Mapped[str]      = mapped_column(String(36),   nullable=True)
+    created_at:  Mapped[datetime] = mapped_column(DateTime,     server_default=func.now())
+
+
 class Favorite(Base):
     """用户收藏 — 章节、文档或问题"""
     __tablename__  = "favorites"

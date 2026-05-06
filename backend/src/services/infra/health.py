@@ -138,8 +138,35 @@ class ServiceHealthMonitor:
             try:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, self.check_all)
+                await self._fire_alerts()
             except Exception as exc:
                 logger.debug("健康检查循环异常（忽略）: %s", exc)
+
+    async def _fire_alerts(self) -> None:
+        """根据当前服务状态触发相应告警。"""
+        try:
+            from ...services.alert_service import alert_service
+        except Exception:
+            return
+
+        if not self.neo4j.is_ok:
+            await alert_service.send_alert(
+                "Neo4j 图谱不可用",
+                f"错误：{self.neo4j.error}\n图谱问答功能受影响",
+                level="error",
+            )
+        if not self.milvus.is_ok:
+            await alert_service.send_alert(
+                "Milvus 向量库不可用",
+                f"错误：{self.milvus.error}\n向量检索功能受影响",
+                level="error",
+            )
+        if not self.elasticsearch.is_ok:
+            await alert_service.send_alert(
+                "Elasticsearch 不可用",
+                f"错误：{self.elasticsearch.error}\n全文检索功能受影响",
+                level="error",
+            )
 
     def start_background_task(self):
         """在 asyncio event loop 已启动后调用（lifespan 内）"""

@@ -29,5 +29,20 @@ async def init_tables():
     from .base import Base
     from . import models
     from ..routers import feedback  # 确保 QueryFeedback 被注册
+    from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 增量迁移：多维评分字段（若表已存在则补全缺失列）
+        for col, ctype in [
+            ("retrieval_score",    "INTEGER"),
+            ("completeness_score", "INTEGER"),
+            ("clarity_score",      "INTEGER"),
+            ("graph_score",        "INTEGER"),
+            ("comment_text",       "TEXT"),
+        ]:
+            try:
+                await conn.execute(text(
+                    f"ALTER TABLE query_feedback ADD COLUMN IF NOT EXISTS {col} {ctype}"
+                ))
+            except Exception:
+                pass

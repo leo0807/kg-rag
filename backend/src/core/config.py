@@ -99,6 +99,11 @@ class Settings(BaseSettings):
     LOCAL_VLM_PATH:        str = "models/qwen2-vl"
     LOCAL_VLM_BACKUP_PATH: str = "models/internvl2"
 
+    # 告警推送
+    DINGTALK_WEBHOOK:        str = ""
+    WECOM_WEBHOOK:           str = ""
+    ALERT_COOLDOWN_MINUTES:  int = 30
+
     @field_validator("NEO4J_URI", mode="before")
     @classmethod
     def check_neo4j_uri(cls, v: str) -> str:

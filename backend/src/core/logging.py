@@ -9,11 +9,13 @@ import re
 from datetime import datetime
 from .config import settings
 
-# 脱敏正则：匹配 6 位数字工号，或常见的人名模式（简化版）
-# 注意：生产环境需根据实际工号规则调整，例如 [A-Z]?\d{6}
 SENSITIVE_PATTERNS = [
-    (re.compile(r'\b\d{6}\b'), "******"),  # 6位工号
-    # 可以根据需要添加更多模式，如手机号、邮箱等
+    (re.compile(r'\b\d{6}\b'),                                      "******"),          # 6位工号
+    (re.compile(r'\b1[3-9]\d{9}\b'),                                "***-****-****"),   # 手机号
+    (re.compile(r'\b\d{3,4}-\d{7,8}\b'),                           "***-*******"),     # 座机
+    (re.compile(r'[\w.+-]+@[\w.-]+\.\w+'),                          "***@***.***"),     # 邮箱
+    (re.compile(r'\b\d{17}[\dXx]\b'),                               "***...**"),        # 身份证
+    (re.compile(r'(编制|审核|批准|拟制|校核)[：:\s]*[一-鿿]{2,4}'),   r'\1：***'),       # 姓名
 ]
 
 def mask_message(msg: str) -> str:
