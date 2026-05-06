@@ -100,14 +100,17 @@ export function useConversations() {
 
   // 删除会话
   async function deleteConversation(convId: string) {
+    const shouldCreateEmpty = activeId === convId;
     await fetchApi(`/api/conversations/${convId}`, {
       method: "DELETE",
     });
     const updated = conversations.filter((c) => c.id !== convId);
     setConversations(updated);
-    if (activeId === convId) {
-      setActiveId(updated[0]?.id ?? null);
+    if (shouldCreateEmpty) {
+      await createConversation("新对话");
+      return;
     }
+    if (activeId === convId) setActiveId(updated[0]?.id ?? null);
   }
 
   // 清空当前会话消息

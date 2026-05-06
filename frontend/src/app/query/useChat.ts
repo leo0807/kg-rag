@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { fetchApi } from "@/lib/api";
+import { useFavorites } from "@/app/favorites/useFavorites";
 import type { NetToastType } from "@/components/NetToast";
+import { fetchApi } from "@/lib/api";
+import { useCompareQuery } from "./useCompareQuery";
 import { useConversations } from "./useConversations";
 import { useStreamQuery } from "./useStreamQuery";
-import { useCompareQuery } from "./useCompareQuery";
-import { useFavorites } from "@/app/favorites/useFavorites";
 import type { SourcePanelFilters, SourceSection, Strategy } from "./types";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const SOURCE_FILTERS_KEY = "query:source_panel_filters_by_conversation";
 
@@ -17,7 +17,13 @@ function defaultFilters(): SourcePanelFilters {
 
 export function useChat() {
   const conversations = useConversations();
-  const { activeId, activeConv, setActiveId, createConversation, updateConversation, clearConversation } = conversations;
+  const {
+    activeId,
+    activeConv,
+    setActiveId,
+    createConversation,
+    updateConversation,
+  } = conversations;
 
   const [input, setInput] = useState("");
   const [strategy, setStrategy] = useState<Strategy>("parallel");
@@ -25,7 +31,13 @@ export function useChat() {
   const hydeAlpha = 0.5;
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [quoteSource, setQuoteSource] = useState<SourceSection | null>(null);
-  const [netToast, setNetToast] = useState<{ type: NetToastType; label: string } | null>(null);
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(
+    null,
+  );
+  const [netToast, setNetToast] = useState<{
+    type: NetToastType;
+    label: string;
+  } | null>(null);
   const [compareMode, setCompareMode] = useState(() =>
     typeof window !== "undefined" ? localStorage.getItem("query:compare_mode") === "1" : false
   );
@@ -35,13 +47,16 @@ export function useChat() {
     catch { return {}; }
   });
 
-  const isAdmin = typeof window !== "undefined"
-    ? JSON.parse(localStorage.getItem("user") ?? "{}").is_admin === true
-    : false;
+  const isAdmin =
+    typeof window !== "undefined"
+      ? JSON.parse(localStorage.getItem("user") ?? "{}").is_admin === true
+      : false;
 
   const { favorites, getFavoriteId, addFavorite, removeFavorite } = useFavorites();
   const favoritedChunkIds = new Set(
-    favorites.filter((f) => f.type === "section" && f.section_id).map((f) => f.section_id!)
+    favorites
+      .filter((f) => f.type === "section" && Boolean(f.section_id))
+      .flatMap((f) => (f.section_id ? [f.section_id] : []))
   );
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -50,11 +65,16 @@ export function useChat() {
   const conversationsRef = useRef(conversations.conversations);
   const deleteConvRef = useRef(conversations.deleteConversation);
 
-  function showNetToast(type: NetToastType, label: string, autoDismissMs?: number) {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setNetToast({ type, label });
-    if (autoDismissMs) toastTimer.current = setTimeout(() => setNetToast(null), autoDismissMs);
-  }
+  const showNetToast = useCallback(
+    (type: NetToastType, label: string, autoDismissMs?: number) => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      setNetToast({ type, label });
+      if (autoDismissMs) {
+        toastTimer.current = setTimeout(() => setNetToast(null), autoDismissMs);
+      }
+    },
+    [],
+  );
 
   const stream = useStreamQuery({
     strategy, useHyde, hydeAlpha, activeId, activeConv,
@@ -81,7 +101,7 @@ export function useChat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeConv?.messages.length, stream.streaming]);
+  });
 
   useEffect(() => {
     const onOffline = () => showNetToast("offline", "网络已断开");
@@ -89,8 +109,7 @@ export function useChat() {
     window.addEventListener("offline", onOffline);
     window.addEventListener("online", onOnline);
     return () => { window.removeEventListener("offline", onOffline); window.removeEventListener("online", onOnline); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [showNetToast]);
 
   useEffect(() => {
     try { sessionStorage.setItem(SOURCE_FILTERS_KEY, JSON.stringify(filtersByConv)); } catch { void 0; }
@@ -115,7 +134,20 @@ export function useChat() {
     const images = [...pendingImages];
     setInput(""); setPendingImages([]); setQuoteSource(null);
     if (compareMode) await compareQuery.compare(question);
-    else await stream.submit(question, images);
+    else {
+      await stream.submit(
+        question,
+        images,
+        editingMessageIndex !== null ? { replaceFromIndex: editingMessageIndex } : undefined,
+      );
+      setEditingMessageIndex(null);
+    }
+  }
+
+  function handleEditQuestion(messageIndex: number, content: string) {
+    setEditingMessageIndex(messageIndex);
+    setInput(content);
+    setQuoteSource(null);
   }
 
   async function handleBranch(upToIndex: number) {
@@ -195,6 +227,9 @@ export function useChat() {
     handleQuoteSource,
     exportConversation,
     handleFavoriteSection,
+    editingMessageIndex,
+    setEditingMessageIndex,
+    handleEditQuestion,
     showNetToast,
   };
 }
