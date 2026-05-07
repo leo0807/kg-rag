@@ -45,7 +45,12 @@ class QueryMetrics(BaseModel):
 
 
 class QueryResponse(BaseModel):
+    type:           str = "answer"
     answer:         str
     sources:        list[SourceSection]
     expansion_info: list[str] = []
     metrics:        QueryMetrics | None = None
+    iterations:     int | None = None
+    message:        str | None = None
+    options:        list[str] = []
+    original_question: str | None = None

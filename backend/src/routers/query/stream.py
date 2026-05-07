@@ -2,7 +2,6 @@
 流式查询接口，支持多轮对话
 """
 from __future__ import annotations
-
 import asyncio
 import json
 import logging
@@ -14,58 +13,16 @@ from neo4j import Driver
 from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_driver
 from ...db.models import User
-from ...services.ai.llm_service import get_llm_service, LLMError
+from ...services.ai.llm import clean_llm_response
+from ...services.ai.llm_service import get_llm_service
 from ...services.runtime.model_settings import load_effective_settings, use_runtime_settings
 from .models import QueryRequest
 from .core   import do_retrieval
-
+from .clarification_utils import build_clarification_event, detect_clarification
+from .context_utils import build_llm_context, reorder_sources_for_llm
+from .stream_agent import stream_agent_query
+from .stream_utils import _error_event, _emit_follow_ups
 logger = logging.getLogger(__name__)
-
-
-def _error_event(e: Exception) -> str:
-    """将异常序列化为 SSE error 事件字符串。"""
-    if isinstance(e, LLMError):
-        payload = {"type": "error", "code": e.code, "message": e.message,
-                   "status_code": e.status_code, "endpoint": e.endpoint}
-    else:
-        payload = {"type": "error", "code": "unknown_error",
-                   "message": "AI 服务异常，请联系管理员",
-                   "status_code": None, "endpoint": ""}
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-
-def _format_section_ref(section: dict) -> str:
-    """生成章节引用头，兼容 page_idx 为 None 的情况。"""
-    doc_id = section.get("doc_id", "")
-    number = section.get("number", "")
-    title = section.get("title", "")
-    page_idx = section.get("page_idx")
-    page_text = f" (第{page_idx + 1}页)" if isinstance(page_idx, int) and page_idx >= 0 else ""
-    return f"[{doc_id} §{number}{page_text}] {title}"
-
-
-async def _emit_follow_ups(question: str, answer: str):
-    """生成并 yield 追问建议 SSE 事件；失败静默跳过。"""
-    import asyncio
-    try:
-        msgs = [
-            {"role": "system", "content": "只输出一个 JSON 数组，格式：[\"问题1\",\"问题2\",\"问题3\"]，每条不超过30字，不要其他内容。"},
-            {"role": "user",   "content": f"用户问题：{question}\n系统答案（节选）：{answer[:400]}\n\n请生成3条追问建议："},
-        ]
-        raw = await asyncio.wait_for(
-            asyncio.to_thread(get_llm_service().chat, msgs), timeout=8.0
-        )
-        m = re.search(r'\[.*?\]', raw, re.DOTALL)
-        if m:
-            items = json.loads(m.group())
-            questions = [str(q).strip() for q in items if str(q).strip()][:3]
-            if questions:
-                return json.dumps({"type": "follow_up", "content": questions}, ensure_ascii=False)
-    except Exception as _e:
-        logger.debug("追问建议生成失败（跳过）: %s", _e)
-    return None
-
-
 async def query_stream(
     request:      Request,
     req:          QueryRequest,
@@ -75,20 +32,21 @@ async def query_stream(
 ):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question 不能为空")
-
     top_k = req.top_k or 5
     effective_settings = await load_effective_settings(db, current_user.id if current_user else None)
-
     user_id    = current_user.id         if current_user else ""
     department = current_user.department if current_user else ""
-
     async def generate():
         from ...core.observability import send_generation
         import time
-
         with use_runtime_settings(effective_settings):
             t_start = time.time()
             try:
+                clarification = await detect_clarification(req.question, driver)
+                if clarification.get("needs_clarification"):
+                    yield build_clarification_event(req.question, clarification)
+                    yield "data: [DONE]\n\n"
+                    return
                 _q_emb: list[float] | None = None
                 try:
                     from ...services.retrieval.embedder import embed_texts
@@ -99,7 +57,7 @@ async def query_stream(
                         sim = hit.get("similarity", 0)
                         yield f"data: {json.dumps({'type': 'status', 'content': f'⚡ 语义缓存命中（相似度 {sim:.3f}）'}, ensure_ascii=False)}\n\n"
                         yield f"data: {json.dumps({'type': 'sources', 'content': hit.get('sources', [])}, ensure_ascii=False)}\n\n"
-                        cached_answer = hit.get("answer", "")
+                        cached_answer = clean_llm_response(hit.get("answer", ""))
                         for char in cached_answer:
                             yield f"data: {json.dumps({'type': 'delta', 'content': char}, ensure_ascii=False)}\n\n"
                         yield "data: [DONE]\n\n"
@@ -124,8 +82,6 @@ async def query_stream(
                     logger.debug("语义缓存查找异常（跳过）: %s", _e)
 
                 yield f"data: {json.dumps({'type': 'status', 'content': '检索中...'}, ensure_ascii=False)}\n\n"
-
-            # 多跳推理单独处理，以便发送中间步骤
                 if req.strategy == "multi_hop":
                     try:
                         from ...services.retrieval.multi_hop import multi_hop_query_stream
@@ -134,10 +90,12 @@ async def query_stream(
                             if event["type"] == "done":
                                 break
                             if event["type"] == "delta":
-                                full_answer += event["content"]
+                                delta = clean_llm_response(event["content"])
+                                full_answer += delta
+                                event = {**event, "content": delta}
                             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-
                         latency_ms = int((time.time() - t_start) * 1000)
+                        full_answer = clean_llm_response(full_answer)
                         send_generation(
                             name="graphrag-stream", model=get_llm_service().model_name,
                             input_messages=[{"role": "user", "content": req.question}],
@@ -151,8 +109,15 @@ async def query_stream(
                         return
                     except Exception as e:
                         logger.warning("多跳流式推理失败，降级: %s", e)
-
-            # 反事实图查询
+                if req.strategy == "agent":
+                    try:
+                        async for event in stream_agent_query(
+                            req.question, driver, top_k, t_start, user_id, department
+                        ):
+                            yield event
+                        return
+                    except Exception:
+                        logger.exception("Agent 流式推理失败，降级到标准检索")
                 if req.strategy == "counterfactual":
                     try:
                         from ...services.retrieval.counterfactual import prepare_counterfactual
@@ -172,7 +137,7 @@ async def query_stream(
                             {
                                 "chunk_id": s["chunk_id"], "doc_id": s["doc_id"],
                                 "number":   s.get("number") or "", "title": s.get("title") or "",
-                                "score":    0.0,
+                                "score":    round(float(s.get("score") or s.get("rrf_score") or 0.0), 4),
                             }
                             for s in cf_sections
                         ]
@@ -182,6 +147,7 @@ async def query_stream(
                         full_answer = ""
                         try:
                             async for delta in get_llm_service().stream_chat(cf_messages, timeout=90):
+                                delta = clean_llm_response(delta)
                                 full_answer += delta
                                 yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
                         except Exception as e:
@@ -191,6 +157,7 @@ async def query_stream(
                             return
 
                         latency_ms = int((time.time() - t_start) * 1000)
+                        full_answer = clean_llm_response(full_answer)
                         send_generation(
                             name="graphrag-stream", model=get_llm_service().model_name,
                             input_messages=[{"role": "user", "content": req.question}],
@@ -204,7 +171,6 @@ async def query_stream(
                         return
                     except Exception as e:
                         logger.exception("反事实查询失败，降级到标准检索")
-
                 if req.use_hyde:
                     yield f"data: {json.dumps({'type': 'status', 'content': '增强模式：生成假设答案...'}, ensure_ascii=False)}\n\n"
                 _t_retrieval = time.time()
@@ -221,7 +187,14 @@ async def query_stream(
                     {
                         "chunk_id": s["chunk_id"], "doc_id": s["doc_id"],
                         "number":   s.get("number") or "", "title": s.get("title") or "",
-                        "score":    round(s.get("rerank_score") or ft_score_map.get(s["chunk_id"], 0.0), 4),
+                        "score":    round(
+                            s.get("score")
+                            or
+                            s.get("rrf_score")
+                            or s.get("rerank_score")
+                            or ft_score_map.get(s["chunk_id"], 0.0),
+                            4,
+                        ),
                         "page_idx": s.get("page_idx"),
                         "bbox":     s.get("bbox"),
                         "source_type": s.get("source_type", []),
@@ -234,23 +207,19 @@ async def query_stream(
                     for s in sections
                 ]
                 yield f"data: {json.dumps({'type': 'sources', 'content': sources}, ensure_ascii=False)}\n\n"
-
                 if not sections:
                     yield f"data: {json.dumps({'type': 'delta', 'content': '在知识库中未找到相关章节。'}, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
                     return
 
                 yield f"data: {json.dumps({'type': 'status', 'content': '生成回答中...'}, ensure_ascii=False)}\n\n"
-
-                context = "\n\n".join(
-                    f"{_format_section_ref(s)}\n{s['content']}"
-                    for s in sections
-                )
+                llm_sections = reorder_sources_for_llm(sections, req.question)
+                context = build_llm_context(llm_sections)
 
                 messages = [
                     {
                         "role":    "system",
-                        "content": "你是一个航空制造工艺规范专家助手。请根据提供的规范内容，用中文准确回答问题。如果问题与之前的对话相关，请结合上下文回答。",
+                        "content": "你是一个航空制造工艺规范专家助手。请根据提供的规范内容，用中文准确回答问题。回答时优先使用来源中的直接定义和描述，不要过多展开次要细节。如果问题询问'特性'或'性质'，优先引用定义类章节（术语定义、基本要求章节），而不是参数表格。如果来源中出现 'soft and ductile paste'、'solid and elastic rubber' 之类表述，可直接概括为'粘性和弹性'。如果问题与之前的对话相关，请结合上下文回答。",
                     }
                 ]
 
@@ -273,6 +242,7 @@ async def query_stream(
                 _t_llm = time.time()
                 try:
                     async for delta in get_llm_service().stream_chat(messages, timeout=60):
+                        delta = clean_llm_response(delta)
                         full_answer += delta
                         yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
                 except Exception as e:
@@ -283,6 +253,7 @@ async def query_stream(
 
                 _llm_ms    = int((time.time() - _t_llm) * 1000)
                 latency_ms = int((time.time() - t_start) * 1000)
+                full_answer = clean_llm_response(full_answer)
                 send_generation(
                     name="graphrag-stream", model=get_llm_service().model_name,
                     input_messages=[{"role": "user", "content": req.question}],

@@ -11,6 +11,7 @@ from .reprocess_support import (
     get_storage_key,
     resolve_drawing_image_path as _resolve_drawing_image_path,
 )
+from .reprocess_vectorize import _run_vectorize as _run_vectorize_impl
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,10 @@ def _run_reparse(driver, doc_id, pdf_path, task, step):
     cleanup_stale_document_nodes(driver, doc_id)
     step("reparse", f"章节重新解析完成，共 {count} 个章节")
     return count, effective_pdf, cleanup_paths
+
+
+def _run_vectorize(driver, doc_id, task, step):
+    return _run_vectorize_impl(driver, doc_id, task, step)
 
 
 def _run_defects(driver, doc_id, images, task, step):

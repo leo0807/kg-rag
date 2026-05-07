@@ -1,7 +1,6 @@
 from __future__ import annotations
-
 """
-检索核心：RRF融合、章节获取、多策略检索
+检索核心：章节获取、多策略检索
 """
 import json
 import logging
@@ -12,23 +11,13 @@ _ROW_RE = re.compile(r'^(.+)_row_(\d+)$')
 from ...services.infra.health import health_monitor
 from .source_meta import _ensure_source_meta, _mark_sources, _finalize_source_meta
 from .graph_expansion import apply_entity_aware, apply_graph_augmented
-
+from .rrf_utils import rrf_fusion, rrf_scores
+from .query_postprocess import _boost_query_relevant_sections
+from .context_utils import augment_feature_definition_sources
 logger = logging.getLogger(__name__)
-
-
-def rrf_fusion(ft_ids: list[str], vec_ids: list[str], k: int = 60) -> list[str]:
-    scores: dict[str, float] = {}
-    for rank, cid in enumerate(ft_ids,  start=1):
-        scores[cid] = scores.get(cid, 0) + 1 / (k + rank)
-    for rank, cid in enumerate(vec_ids, start=1):
-        scores[cid] = scores.get(cid, 0) + 1 / (k + rank)
-    return sorted(scores, key=lambda x: scores[x], reverse=True)
-
-
 def get_section_details(driver: Driver, chunk_ids: list[str]) -> list[dict]:
     if not chunk_ids:
         return []
-
     section_ids: list[str] = []
     row_id_info: dict[str, tuple[str, int]] = {}
     for cid in chunk_ids:
@@ -105,12 +94,13 @@ def do_retrieval(
     doc_id:     str   = "",
 ):
     """返回 (sections, ft_score_map)"""
+    if strategy == "parallel_rrf":
+        strategy = "parallel"
     source_meta: dict[str, dict] = {}
 
     from ...services.retrieval.query_expander import expand_query
     search_query, expansion_info = expand_query(driver, question)
 
-    # ES 全文检索
     ft_ids, ft_score_map = [], {}
     if health_monitor.elasticsearch.is_ok:
         try:
@@ -142,7 +132,6 @@ def do_retrieval(
         except Exception as e:
             logger.warning("Neo4j 全文索引检索也失败: %s", e)
 
-    # 向量检索
     vector_ids = []
     if strategy in ("parallel", "graph_augmented"):
         if not health_monitor.milvus.is_ok:
@@ -162,7 +151,6 @@ def do_retrieval(
             except Exception as e:
                 logger.warning("向量检索失败: %s", e)
 
-    # ES 混合检索
     if strategy == "hybrid_es":
         try:
             from ...services.retrieval.embedder import embed_query
@@ -200,7 +188,6 @@ def do_retrieval(
         except Exception as exc:
             logger.warning("hybrid_es 检索失败，降级到 parallel: %s", exc)
 
-    # GNN 检索
     gnn_ids: list[str] = []
     if strategy == "gnn":
         try:
@@ -216,13 +203,19 @@ def do_retrieval(
         except Exception as e:
             logger.warning("GNN 检索失败，降级: %s", e)
 
-    # 策略分发
     if strategy == "gnn":
         fused_ids = rrf_fusion(gnn_ids, ft_ids)[:top_k * 2] if gnn_ids and ft_ids else (gnn_ids or ft_ids)[:top_k * 2]
+        fusion_scores = rrf_scores(gnn_ids, ft_ids)
     elif strategy == "parallel" and vector_ids:
-        fused_ids = rrf_fusion(ft_ids, vector_ids)[:top_k * 2]
+        vector_rank_lists = [vector_ids]
+        if use_hyde:
+            vector_rank_lists.append(vector_ids)
+        boosted_vector_ids = [cid for ids in vector_rank_lists for cid in ids]
+        fused_ids = rrf_fusion(ft_ids, boosted_vector_ids)[:top_k * 2]
+        fusion_scores = rrf_scores(ft_ids, boosted_vector_ids)
     elif strategy == "sequential":
         fused_ids = list(ft_ids[:top_k])
+        fusion_scores = rrf_scores(ft_ids)
         if len(fused_ids) < top_k:
             try:
                 from ...services.retrieval.embedder import embed_query
@@ -235,21 +228,23 @@ def do_retrieval(
             except Exception as e:
                 logger.warning("串行向量补充失败: %s", e)
     elif strategy == "graph_augmented" and vector_ids:
-        fused_ids = rrf_fusion(ft_ids, vector_ids)[:top_k * 2]
+        vector_rank_lists = [vector_ids]
+        if use_hyde:
+            vector_rank_lists.append(vector_ids)
+        boosted_vector_ids = [cid for ids in vector_rank_lists for cid in ids]
+        fused_ids = rrf_fusion(ft_ids, boosted_vector_ids)[:top_k * 2]
+        fusion_scores = rrf_scores(ft_ids, boosted_vector_ids)
     else:
         fused_ids = ft_ids[:top_k * 2]
+        fusion_scores = rrf_scores(ft_ids)
 
-    # 实体感知检索
-    if health_monitor.neo4j.is_ok:
+    if health_monitor.neo4j.is_ok and not doc_id:
         fused_ids = apply_entity_aware(driver, fused_ids, source_meta, question, doc_id)
     else:
         logger.info("Neo4j 不可用（已知 DOWN），跳过实体感知检索和图谱增强")
 
-    # 图谱增强
-    if strategy == "graph_augmented" and fused_ids:
+    if strategy == "graph_augmented" and fused_ids and not doc_id:
         fused_ids = apply_graph_augmented(driver, fused_ids, source_meta, doc_id)
-
-    # 获取章节详情
     if health_monitor.neo4j.is_ok:
         sections = get_section_details(driver, fused_ids[:top_k * 2])
     else:
@@ -262,8 +257,18 @@ def do_retrieval(
         except Exception as e:
             logger.warning("ES 降级获取章节详情失败: %s", e)
             sections = []
+    if doc_id:
+        sections = [section for section in sections if section.get("doc_id") == doc_id]
+    else:
+        sections = augment_feature_definition_sources(sections, question)
 
-    # Reranker
+    for section in sections:
+        cid = section.get("chunk_id", "")
+        if cid:
+            fused_score = round(fusion_scores.get(cid, 0.0), 4)
+            section["rrf_score"] = fused_score
+            section["score"] = fused_score
+
     from ...core.config import settings as _s
     if _s.RERANKER_ENABLED and sections and strategy in ("parallel", "graph_augmented", "sequential", "gnn", "hybrid_es"):
         try:
@@ -275,7 +280,6 @@ def do_retrieval(
     for section in sections:
         section.update(_finalize_source_meta(source_meta, section.get("chunk_id", "")))
 
-    # entity blacklist downweighting
     try:
         import redis as _r_mod, json as _json
         from ...core.config import settings as _cfg
@@ -289,5 +293,8 @@ def do_retrieval(
             sections.sort(key=lambda x: x.get("score") or 0, reverse=True)
     except Exception:
         pass
+    if use_hyde:
+        _boost_query_relevant_sections(sections, question, expansion_info, use_hyde)
+        sections.sort(key=lambda x: x.get("score") or 0, reverse=True)
 
     return sections, ft_score_map, expansion_info

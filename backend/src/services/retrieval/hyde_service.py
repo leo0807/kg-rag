@@ -8,24 +8,22 @@ import asyncio
 import logging
 import numpy as np
 
+from ...core.config import settings
 from ..ai.llm_service      import get_llm_service
 from .embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
 
 _HYDE_PROMPT = """\
-你是一位航空制造工艺专家。
-
-请根据以下问题，生成一段可能出现在航空工艺规范文档中的标准技术段落。
-要求：
-- 使用正式的工艺规范语言风格
-- 包含具体的技术参数和操作步骤
-- 长度约100-150字
-- 直接输出段落内容，不要说明"这是假设"或添加前缀
+你是航空工艺规范专家。
+请生成一段可能出现在中国商飞(COMAC)工艺规范中的标准描述。
+要求使用规范语言，包含具体数值参数。
+注意：密封胶的基本特性包括粘性和弹性，
+固化后从糊状变为橡胶状态。
 
 问题：{question}
 
-规范文档内容："""
+规范描述："""
 
 
 class HyDEService:
@@ -35,7 +33,8 @@ class HyDEService:
         try:
             return get_llm_service().chat(
                 [{"role": "user", "content": prompt}],
-                max_tokens=300,
+                max_tokens=settings.LLM_MAX_TOKENS,
+                timeout=settings.LLM_TIMEOUT,
             )
         except Exception as e:
             logger.warning("HyDE 假设答案生成失败: %s", e)
