@@ -819,7 +819,7 @@ Anthropic Claude API 支持 Prompt Caching，对超过 1024 token 的系统提�
          → 可显著提升专业术语稀疏问题的召回率
 ```
 
-- [ ] 在 `parallel.py` 中添加 `hyde=True` 开关，生成假设文档后与原始问题向量做加权平均再检索
+- [x] 在 `parallel.py` 中添加 `hyde=True` 开关，生成假设文档后与原始问题向量做加权平均再检索
 - [ ] A/B 测试：对"定义型"问题（如"CPS1220 的技术要求"）HyDE 与标准向量的 Context Recall 对比
 
 **Self-RAG（自省式检索）**
@@ -842,8 +842,8 @@ Anthropic Claude API 支持 Prompt Caching，对超过 1024 token 的系统提�
 
 基于问题分类器自动选择最优检索策略，替代用户手动切换策略下拉框。
 
-- [ ] 训练五分类 Prompt（或微调小模型）：`factual` / `procedural` / `comparative` / `constraint` / `hypothetical`
-- [ ] 路由规则：factual → parallel，procedural → sequential + graph，comparative → compare 策略，constraint → entity-aware，hypothetical → counterfactual
+- [x] 训练五分类 Prompt（或微调小模型）：`factual` / `procedural` / `comparative` / `constraint` / `hypothetical`
+- [x] 路由规则：factual → parallel，procedural → sequential + graph，comparative → compare 策略，constraint → entity-aware，hypothetical → counterfactual
 - [ ] 前端在 AI 气泡头部展示"自动选择策略：图增强"，用户可一键覆盖
 
 **Microsoft GraphRAG（社区摘要式检索）**
