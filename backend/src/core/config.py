@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     REDIS_URL:       str = "redis://localhost:6379/0"
     QUERY_CACHE_TTL: int = 3600
+    CLARIFICATION_ENABLED: bool = True
+    CLARIFICATION_MIN_LENGTH: int = 8
+    CLARIFICATION_LLM_CHECK: bool = False
 
     DASHSCOPE_API_KEY: str = ""
     OPENAI_API_KEY:    str = ""
@@ -60,6 +63,8 @@ class Settings(BaseSettings):
     LLM_API_URL:  str = "http://localhost:11434/v1"
     LLM_API_KEY:  str = "ollama"
     LLM_MODEL:    str = "qwen2.5:7b"
+    LLM_TIMEOUT:  int = 120
+    LLM_MAX_TOKENS: int = 800
 
     # 各提供方专用模型名（空则使用默认值）
     LLM_QWEN_MODEL:     str = "qwen-plus"

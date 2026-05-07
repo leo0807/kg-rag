@@ -18,10 +18,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+backend_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(backend_dir))
 
 from src.core.logging import setup_logging
 from src.core.database import init_db, get_driver
+from scripts.reparse_all_docs_helpers import neo4j_rewrite_sections, parse_doc
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -44,76 +46,6 @@ def save_progress(progress: dict) -> None:
     PROGRESS_FILE.write_text(
         json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-
-
-# ── Neo4j Section 重写 ────────────────────────────────────────────────────────
-
-def neo4j_rewrite_sections(driver, doc_id: str, sections: list) -> int:
-    if not sections:
-        return 0
-    sections_data = [
-        {
-            "chunk_id":  s["chunk_id"],
-            "number":    s["number"],
-            "title":     s["title"],
-            "content":   s["content"],
-            "level":     s["level"],
-            "seq_index": s["seq_index"],
-        }
-        for s in sections
-    ]
-    with driver.session() as session:
-        session.run(
-            "MATCH (d:Document {name:$d})-[:HAS_SECTION]->(s:Section) DETACH DELETE s",
-            d=doc_id,
-        )
-        session.run(
-            """
-            MATCH (d:Document {name: $doc_id})
-            UNWIND $sections AS s
-            MERGE (sec:Section {chunk_id: s.chunk_id})
-            SET sec.doc_id    = $doc_id,
-                sec.number    = s.number,
-                sec.title     = s.title,
-                sec.content   = s.content,
-                sec.level     = s.level,
-                sec.seq_index = s.seq_index
-            MERGE (d)-[:HAS_SECTION]->(sec)
-            """,
-            doc_id=doc_id,
-            sections=sections_data,
-        )
-        n2c = {s["number"]: s["chunk_id"] for s in sections}
-        parent_pairs = []
-        for s in sections:
-            parts = s["number"].split(".")
-            if len(parts) > 1:
-                parent_num = ".".join(parts[:-1])
-                if parent_num in n2c:
-                    parent_pairs.append(
-                        {"parent_id": n2c[parent_num], "child_id": s["chunk_id"]}
-                    )
-        if parent_pairs:
-            session.run(
-                "UNWIND $p AS p "
-                "MATCH (a:Section{chunk_id:p.parent_id}) "
-                "MATCH (b:Section{chunk_id:p.child_id}) "
-                "MERGE (a)-[:HAS_SUBSECTION]->(b)",
-                p=parent_pairs,
-            )
-        next_pairs = [
-            {"from_id": sections[i]["chunk_id"], "to_id": sections[i + 1]["chunk_id"]}
-            for i in range(len(sections) - 1)
-        ]
-        if next_pairs:
-            session.run(
-                "UNWIND $p AS p "
-                "MATCH (a:Section{chunk_id:p.from_id}) "
-                "MATCH (b:Section{chunk_id:p.to_id}) "
-                "MERGE (a)-[:NEXT_SECTION]->(b)",
-                p=next_pairs,
-            )
-    return len(sections)
 
 
 # ── 文档列表查询 ──────────────────────────────────────────────────────────────
@@ -156,56 +88,6 @@ def section_stats(driver) -> tuple[int, dict]:
         ))
     levels = {r["lv"]: r["cnt"] for r in rows}
     return total, levels
-
-
-# ── 每文档解析 ────────────────────────────────────────────────────────────────
-
-def parse_doc(storage_key: str, doc_id: str) -> list[dict]:
-    from src.core.storage import download_bytes, BUCKET_RAW_DOCUMENTS
-    from src.core.storage import download_file, upload_file
-    from src.services.parser import parse
-    from src.services.docx_parser import parse_docx
-
-    suffix   = Path(storage_key).suffix.lower()
-    tmp_path = Path(f"/tmp/{doc_id}_reparse{suffix}")
-    try:
-        raw = download_bytes(BUCKET_RAW_DOCUMENTS, storage_key)
-        tmp_path.write_bytes(raw)
-
-        if suffix == ".docx":
-            doc_schema = parse_docx(tmp_path)
-        else:
-            doc_schema = parse(tmp_path)
-
-        if hasattr(doc_schema, "sections"):
-            return [
-                {
-                    "chunk_id":  s.chunk_id,
-                    "number":    s.number,
-                    "title":     s.title,
-                    "content":   s.content,
-                    "level":     s.level,
-                    "seq_index": s.seq_index,
-                }
-                for s in doc_schema.sections
-            ]
-        # dict fallback
-        secs = doc_schema.get("sections", []) if isinstance(doc_schema, dict) else []
-        if secs and hasattr(secs[0], "chunk_id"):
-            return [
-                {
-                    "chunk_id":  s.chunk_id,
-                    "number":    s.number,
-                    "title":     s.title,
-                    "content":   s.content,
-                    "level":     s.level,
-                    "seq_index": s.seq_index,
-                }
-                for s in secs
-            ]
-        return secs
-    finally:
-        tmp_path.unlink(missing_ok=True)
 
 
 # ── 主逻辑 ────────────────────────────────────────────────────────────────────

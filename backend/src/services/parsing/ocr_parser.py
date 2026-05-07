@@ -8,15 +8,9 @@ import re
 import logging
 from pathlib import Path
 
-from .parser import (
-    SECTION_PATTERNS,
-    clean_content,
-    extract_refs,
-    extract_meta,
-    is_likely_section_title,
-    _trim_front_matter_headings,
-)
-from .parser_meta import clean_ocr_artifacts
+from .parser import SECTION_PATTERNS, is_likely_section_title
+from .parser_meta import clean_content, clean_ocr_artifacts, extract_meta, extract_refs
+from .parser_toc import _trim_front_matter_headings
 from .ocr_engine import render_page_to_image, ocr_page, is_available
 
 logger = logging.getLogger(__name__)
@@ -97,7 +91,7 @@ def parse_with_ocr(pdf_path: Path):
     完整解析入口（OCR 增强版），供 parser.parse() 调用。
     返回与 DocumentSchema 相同结构的对象。
     """
-    from ..models.schemas import DocumentSchema, SectionSchema
+    from ...models.schemas import DocumentSchema, SectionSchema
 
     meta     = extract_meta(pdf_path)
     sections = extract_sections_with_ocr(pdf_path, meta["doc_id"])
