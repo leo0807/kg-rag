@@ -3,7 +3,7 @@
 import { ChevronDown, ChevronUp, Loader2, Star } from "lucide-react";
 import type { MouseEvent } from "react";
 import { LatexContent } from "@/components/LatexContent";
-import type { Section, SectionContent } from "./useDocDetail";
+import type { Section, SectionContent } from "./useDocDetailTypes";
 
 function highlight(text: string, keyword: string) {
   if (!keyword) return <>{text}</>;
@@ -32,13 +32,25 @@ interface Props {
   onNavigate: (section: Section) => void;
   onToggleExpand: (section: Section) => void;
   onToggleFavorite: (e: MouseEvent, section: Section) => void;
-  getFavoriteId: (opts: { type: string; section_id?: string }) => string | null | undefined;
+  getFavoriteId: (opts: {
+    type: string;
+    section_id?: string;
+  }) => string | null | undefined;
 }
 
 export function DocSectionList({
-  visibleSections, sectionSearch, setSectionSearch,
-  expandedChunk, loadingChunk, activeChunk, sectionContent,
-  sectionRowRefs, onNavigate, onToggleExpand, onToggleFavorite, getFavoriteId,
+  visibleSections,
+  sectionSearch,
+  setSectionSearch,
+  expandedChunk,
+  loadingChunk,
+  activeChunk,
+  sectionContent,
+  sectionRowRefs,
+  onNavigate,
+  onToggleExpand,
+  onToggleFavorite,
+  getFavoriteId,
 }: Props) {
   return (
     <>
@@ -61,7 +73,10 @@ export function DocSectionList({
           const isLoading = loadingChunk === section.chunk_id;
           const isActive = activeChunk === section.chunk_id;
           const content = sectionContent[section.chunk_id];
-          const favId = getFavoriteId({ type: "section", section_id: section.chunk_id });
+          const favId = getFavoriteId({
+            type: "section",
+            section_id: section.chunk_id,
+          });
           return (
             <div
               key={section.chunk_id}
@@ -85,14 +100,22 @@ export function DocSectionList({
                   className="flex-1 flex items-baseline gap-3 px-3 py-2.5 text-left min-w-0"
                   aria-current={isActive ? "true" : undefined}
                 >
-                  <span className={`text-xs font-mono w-12 shrink-0 ${isActive ? "text-indigo-300" : "text-gray-500"}`}>
+                  <span
+                    className={`text-xs font-mono w-12 shrink-0 ${isActive ? "text-indigo-300" : "text-gray-500"}`}
+                  >
                     {section.number}
                   </span>
-                  <span className={`text-sm flex-1 min-w-0 ${isActive ? "text-white" : "text-gray-300"}`}>
+                  <span
+                    className={`text-sm flex-1 min-w-0 ${isActive ? "text-white" : "text-gray-300"}`}
+                  >
                     {highlight(section.title, sectionSearch)}
                   </span>
-                  <span className={`shrink-0 ${isActive ? "text-indigo-300" : "text-gray-600 opacity-0 group-hover:opacity-100"}`}>
-                    {typeof section.page_idx === "number" ? `P${section.page_idx + 1}` : ""}
+                  <span
+                    className={`shrink-0 ${isActive ? "text-indigo-300" : "text-gray-600 opacity-0 group-hover:opacity-100"}`}
+                  >
+                    {typeof section.page_idx === "number"
+                      ? `P${section.page_idx + 1}`
+                      : ""}
                   </span>
                 </button>
                 <button
@@ -100,7 +123,9 @@ export function DocSectionList({
                   onClick={() => void onToggleExpand(section)}
                   title={isExpanded ? "收起章节内容" : "展开章节内容"}
                   className={`px-2 py-2.5 shrink-0 transition-colors ${
-                    isActive ? "text-indigo-300 hover:text-white" : "text-gray-600 hover:text-gray-300"
+                    isActive
+                      ? "text-indigo-300 hover:text-white"
+                      : "text-gray-600 hover:text-gray-300"
                   }`}
                 >
                   {isLoading ? (
@@ -119,7 +144,11 @@ export function DocSectionList({
                 >
                   <Star
                     size={13}
-                    className={favId ? "text-amber-400 fill-amber-400" : "text-gray-600 hover:text-amber-400"}
+                    className={
+                      favId
+                        ? "text-amber-400 fill-amber-400"
+                        : "text-gray-600 hover:text-amber-400"
+                    }
                   />
                 </button>
               </div>
