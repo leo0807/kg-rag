@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from neo4j import Driver
 
 from ...auth.deps import get_current_user, get_protected_driver
-from ...core.database import get_driver
 from ...db.models import User
+from ...services.graph.lazy_loading import (
+    expand_document,
+    expand_section,
+    load_overview,
+)
+from ...services.graph.lazy_loading_search import search_graph
 from ...services.graph.graph_helpers import (
     _selected_ids,
     _extend_unique_nodes,
@@ -125,22 +130,36 @@ async def get_graph(
             )
             nodes = _extend_unique_nodes(nodes, entity_nodes)
 
+        table_edges: list[dict] = []
         if limit_tbl > 0:
             tbl_result = session.run("""
-                MATCH (d:Document)-[:HAS_SECTION]->(s:Section)-[:HAS_TABLE]->(t:Table)
-                WHERE $doc_id = '' OR d.name = $doc_id
+                MATCH (t:Table)
+                WHERE $doc_id = '' OR t.doc_id = $doc_id
                 RETURN t.table_id AS id, t.doc_id AS doc_id, t.page_index AS page_index,
                        t.markdown AS markdown,
                        coalesce(t.row_count, size([x IN split(coalesce(t.markdown,''), '\n') WHERE x STARTS WITH '|'])) AS row_count
+                ORDER BY coalesce(t.page_index, 0), t.table_id
                 LIMIT $limit
             """, doc_id=doc_id, limit=limit_tbl)
             for r in tbl_result:
                 md = r["markdown"] or ""
+                table_id = r["id"]
                 nodes.append({
-                    "id": r["id"], "name": f"表格 p{r['page_index']}", "type": "Table",
-                    "doc_id": r["doc_id"] or "", "description": "\n".join(md.split("\n")[:5]),
-                    "content": md, "row_count": r["row_count"] or 2,
+                    "id": table_id,
+                    "name": f"表格 p{r['page_index']}",
+                    "type": "Table",
+                    "doc_id": r["doc_id"] or "",
+                    "description": "\n".join(md.split("\n")[:5]),
+                    "content": md,
+                    "row_count": r["row_count"] or 2,
+                    "page_index": r["page_index"],
                 })
+                if r["doc_id"]:
+                    table_edges.append({
+                        "source": r["doc_id"],
+                        "target": table_id,
+                        "type": "HAS_TABLE",
+                    })
 
         visible_doc_ids = _owner_doc_ids(nodes)
         if doc_id:
@@ -177,6 +196,7 @@ async def get_graph(
             selected_table_ids=_selected_ids(nodes, "Table"),
             limit_tbl=limit_tbl,
         )
+        edges += table_edges
         ref_stubs, ref_edges = load_reference_target_stubs(session, selected_doc_ids, node_ids)
         nodes = _extend_unique_nodes(nodes, ref_stubs)
         edges += ref_edges
@@ -199,3 +219,50 @@ async def get_graph(
     except Exception:
         pass
     return _result
+
+
+@router.get("/graph/overview")
+async def get_graph_overview(
+    limit: int = 100,
+    _: User = Depends(get_current_user),
+    driver: Driver = Depends(get_protected_driver),
+):
+    limit = max(1, min(limit, 100))
+    with driver.session() as session:
+        return load_overview(session, limit=limit)
+
+
+@router.get("/graph/expand/doc/{doc_id}")
+async def expand_graph_document(
+    doc_id: str,
+    limit: int = 50,
+    _: User = Depends(get_current_user),
+    driver: Driver = Depends(get_protected_driver),
+):
+    limit = max(1, min(limit, 50))
+    with driver.session() as session:
+        return expand_document(session, doc_id, limit=limit)
+
+
+@router.get("/graph/expand/section/{chunk_id}")
+async def expand_graph_section(
+    chunk_id: str,
+    limit: int = 30,
+    _: User = Depends(get_current_user),
+    driver: Driver = Depends(get_protected_driver),
+):
+    limit = max(1, min(limit, 30))
+    with driver.session() as session:
+        return expand_section(session, chunk_id, limit=limit)
+
+
+@router.get("/graph/search")
+async def search_graph_nodes(
+    q: str = Query(default="", description="搜索关键词"),
+    limit: int = 20,
+    _: User = Depends(get_current_user),
+    driver: Driver = Depends(get_protected_driver),
+):
+    limit = max(1, min(limit, 20))
+    with driver.session() as session:
+        return search_graph(session, q, limit=limit)

@@ -13,6 +13,7 @@ from neo4j import Driver
 from pydantic import BaseModel
 
 from ...core.database import get_driver
+from ...services.ai.llm import clean_llm_response
 from ...services.ai.llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ async def _stream_explanation(topic: str, node: dict) -> AsyncIterator[str]:
         async for delta in get_llm_service().stream_chat(
             messages, max_tokens=180, temperature=0.3, timeout=25
         ):
-            yield delta
+            yield clean_llm_response(delta)
     except Exception as exc:
         logger.warning("导览LLM调用失败: %s", exc)
         yield f"（{name}：{content[:80]}{'…' if len(content) > 80 else ''}）"

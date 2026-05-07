@@ -31,6 +31,56 @@ def _trunc_utf8(s: str, max_bytes: int = 4000) -> str:
     return enc[:max_bytes].decode("utf-8", errors="ignore")
 
 
+def _build_text_section_expr(col: Collection, doc_id: str = "") -> str | None:
+    """构造只检索文本章节的 Milvus 过滤表达式。"""
+    field_names = {field.name for field in col.schema.fields}
+    doc_expr = f'doc_id == "{doc_id}"' if doc_id else ""
+    if "content_type" in field_names:
+        text_expr = 'content_type == "section"'
+    else:
+        text_expr = 'not (chunk_id like "%_img%") and not (chunk_id like "%_page%img%")'
+    if doc_expr:
+        return f"({doc_expr}) and ({text_expr})"
+    return text_expr
+
+
+def _enrich_metadata(results: list[dict]) -> list[dict]:
+    """Milvus 仅存向量字段时，从 Neo4j 补全章节元数据。"""
+    chunk_ids = [r.get("chunk_id") for r in results if r.get("chunk_id") and not r.get("number")]
+    if not chunk_ids:
+        return results
+    try:
+        from ...core.database import get_driver
+        driver = get_driver()
+    except Exception as exc:
+        logger.warning("Neo4j 驱动不可用，跳过章节元数据补全: %s", exc)
+        return results
+
+    try:
+        with driver.session() as session:
+            rows = list(session.run("""
+                MATCH (sec:Section)
+                WHERE sec.chunk_id IN $ids
+                RETURN sec.chunk_id AS cid,
+                       sec.number AS number,
+                       sec.title AS title,
+                       sec.content AS content
+            """, ids=chunk_ids))
+        meta = {row["cid"]: dict(row) for row in rows}
+        for result in results:
+            cid = result.get("chunk_id", "")
+            row = meta.get(cid)
+            if not row:
+                continue
+            result["number"] = result.get("number") or row.get("number") or ""
+            result["title"] = result.get("title") or row.get("title") or ""
+            if not result.get("content"):
+                result["content"] = row.get("content") or ""
+    except Exception as exc:
+        logger.warning("章节元数据补全失败: %s", exc)
+    return results
+
+
 def connect_milvus(host: str = "localhost", port: str = "19530") -> None:
     connections.connect("default", host=host, port=port)
     logger.info("Milvus 连接成功 %s:%s", host, port)
@@ -149,6 +199,24 @@ def delete_image_vectors(doc_id: str) -> None:
         logger.warning("Milvus 删除图片向量失败 doc_id=%s: %s", doc_id, e)
 
 
+def delete_section_vectors(doc_id: str) -> None:
+    """删除指定文档的章节向量，不影响图片、表格和公式向量。"""
+    try:
+        doc_id = _safe_doc_id(doc_id)
+        col = get_or_create_collection()
+        expr = (
+            f'doc_id == "{doc_id}" and '
+            f'chunk_id like "{doc_id}_%" and '
+            f'not chunk_id like "{doc_id}_img_%" and '
+            f'not chunk_id like "{doc_id}_tbl_%" and '
+            f'not chunk_id like "{doc_id}_formula_%"'
+        )
+        col.delete(expr=expr)
+        logger.info("Milvus 删除 doc_id=%s 的章节向量", doc_id)
+    except Exception as e:
+        logger.warning("Milvus 删除章节向量失败 doc_id=%s: %s", doc_id, e)
+
+
 def search_sections(
     query_vec: list[float],
     top_k:     int = 10,
@@ -158,14 +226,14 @@ def search_sections(
     if doc_id:
         doc_id = _safe_doc_id(doc_id)
     col    = get_or_create_collection()
-    expr   = f'doc_id == "{doc_id}"' if doc_id else ""
+    expr   = _build_text_section_expr(col, doc_id)
 
     results = col.search(
         data         = [query_vec],
         anns_field   = "embedding",
         param        = {"metric_type": "IP", "params": {"nprobe": 16}},
         limit        = top_k,
-        expr         = expr or None,
+        expr         = expr,
         output_fields= ["chunk_id", "doc_id", "text"],
     )
 
@@ -177,7 +245,7 @@ def search_sections(
             "text":     hit.entity.get("text"),
             "score":    float(hit.score),
         })
-    return hits
+    return _enrich_metadata(hits)
 
 def get_all_embeddings() -> list[dict]:
     """拉取集合中所有向量（用于离线批量相似度计算）。

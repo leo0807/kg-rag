@@ -8,9 +8,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 from xml.etree import ElementTree as ET
+import logging
 
 _WORD_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 _OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+logger = logging.getLogger(__name__)
 
 _QUESTION_START_RE = re.compile(r"^\s*(\d+)[\.、．]\s*(.+?)\s*$")
 _QUESTION_SUFFIX_RE = re.compile(r"^\s*(.+?[？?：:])\s*(?:[（(][A-HＡ-Ｈ对错√×][）)])?\s*$")
@@ -259,9 +261,20 @@ def extract_objective_questions(filename: str, data: bytes) -> list[dict[str, An
     blocks = _split_question_blocks(lines)
     questions: list[dict[str, Any]] = []
     for idx, block in enumerate(blocks, start=1):
-        item = _parse_question_block(block, idx)
+        try:
+            item = _parse_question_block(block, idx)
+        except Exception as exc:
+            logger.warning("客观题块解析失败，已跳过: block=%s, error=%s", block[:3], exc)
+            continue
         if item and item["question"]:
             questions.append(item)
     if not questions:
         raise ValueError("未从文档中识别出客观题，请检查题号或选项格式")
     return questions
+
+
+def _parse_objective_llm_response(raw: str, question_type: str, option_labels: list[str]) -> tuple[str, str]:
+    """兼容旧测试/旧调用名。"""
+    from .objective_doc_eval_runner import _parse_llm_response
+
+    return _parse_llm_response(raw, question_type, option_labels)
