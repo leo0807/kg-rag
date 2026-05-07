@@ -36,6 +36,12 @@ export interface LLMErrorInfo {
   endpoint: string;
 }
 
+export interface ClarificationInfo {
+  message: string;
+  options: string[];
+  originalQuestion: string;
+}
+
 export interface QueryMetrics {
   total_ms: number;
   stages: Record<string, number>;
@@ -56,6 +62,7 @@ export interface Message {
   errorInfo?: LLMErrorInfo;
   expansionInfo?: string[];
   metrics?: QueryMetrics;
+  clarification?: ClarificationInfo;
   timestamp: number;
 }
 
@@ -71,6 +78,7 @@ export type Strategy =
   | "sequential"
   | "graph_augmented"
   | "multi_hop"
+  | "agent"
   | "counterfactual";
 
 // ── 反事实因果链数据结构 ──────────────────────────────────────────

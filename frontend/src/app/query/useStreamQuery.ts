@@ -1,17 +1,18 @@
 "use client";
 
-import type { NetToastType } from "@/components/NetToast";
-import { getAuthHeaders, getApiBaseUrl } from "@/lib/api";
 import { useRef, useState } from "react";
+import type { NetToastType } from "@/components/NetToast";
+import { getApiBaseUrl, getAuthHeaders } from "@/lib/api";
+import type { ReasoningStep } from "./ReasoningChain";
 import type {
   CausalChainData,
+  ClarificationInfo,
   LLMErrorInfo,
   Message,
   QueryMetrics,
   SourceSection,
   Strategy,
 } from "./types";
-import type { ReasoningStep } from "./ReasoningChain";
 
 interface UseStreamQueryParams {
   strategy: Strategy;
@@ -39,9 +40,8 @@ function normalizeAnswerText(text: string) {
 
 function isAbortError(error: unknown) {
   return (
-    error instanceof DOMException && error.name === "AbortError"
-  ) || (
-    error instanceof Error && error.name === "AbortError"
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
   );
 }
 
@@ -63,14 +63,17 @@ export function useStreamQuery({
   const [streamingText, setStreamingText] = useState("");
   const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
   const [causalChain, setCausalChain] = useState<CausalChainData | null>(null);
+  const [streamingConvId, setStreamingConvId] = useState<string | null>(null);
   const answerRef = useRef("");
   const abortRef = useRef<AbortController | null>(null);
+  const requestSeqRef = useRef(0);
 
   async function submit(
     question: string,
     images: string[],
     options?: { replaceFromIndex?: number },
   ) {
+    const requestSeq = ++requestSeqRef.current;
     let convId = activeId;
     if (!convId) {
       convId = await createConversation(question.slice(0, 20), strategy);
@@ -78,9 +81,10 @@ export function useStreamQuery({
     if (!convId) return;
 
     const conv = conversations.find((c) => c.id === convId);
-    const prevMsgs = options?.replaceFromIndex !== undefined
-      ? (conv?.messages ?? []).slice(0, options.replaceFromIndex)
-      : (conv?.messages ?? []);
+    const prevMsgs =
+      options?.replaceFromIndex !== undefined
+        ? (conv?.messages ?? []).slice(0, options.replaceFromIndex)
+        : (conv?.messages ?? []);
 
     const userMsg: Message = {
       id: `user_${Date.now()}`,
@@ -102,6 +106,7 @@ export function useStreamQuery({
     const newTitle = prevMsgs.length === 0 ? question.slice(0, 20) : undefined;
     await updateConversation(convId, newMsgs, newTitle);
 
+    setStreamingConvId(convId);
     setStreamingMsgId(aiMsgId);
     setLoading(true);
     setReasoningSteps([]);
@@ -137,6 +142,7 @@ export function useStreamQuery({
     let streamError: LLMErrorInfo | null = null;
     let streamExpansionInfo: string[] = [];
     let streamMetrics: QueryMetrics | null = null;
+    let streamClarification: ClarificationInfo | null = null;
 
     const MAX_RETRIES = 3;
     let retryDelay = 1000;
@@ -261,6 +267,15 @@ export function useStreamQuery({
                 const event = JSON.parse(data);
                 if (event.type === "sources") {
                   sources = [...sources, ...event.content];
+                } else if (event.type === "clarification_needed") {
+                  streamClarification = {
+                    message:
+                      event.message ??
+                      "您的问题有些宽泛，请选择您想了解的方向：",
+                    options: event.options || [],
+                    originalQuestion: event.original_question ?? question,
+                  };
+                  answerRef.current = streamClarification.message;
                 } else if (event.type === "delta") {
                   answerRef.current = normalizeAnswerText(
                     answerRef.current + event.content,
@@ -304,22 +319,22 @@ export function useStreamQuery({
       }
 
       clearInterval(intervalId);
-      setStreaming(false);
-      setStreamingMsgId(null);
-      abortRef.current = null;
       const persistedAnswer = normalizeAnswerText(answerRef.current);
       const finalMsgs = newMsgs.map((m) =>
         m.id === aiMsgId
           ? {
               ...m,
-              content: persistedAnswer,
+              content: streamClarification?.message ?? persistedAnswer,
               sources,
+              clarification: streamClarification ?? undefined,
               causalChain: streamCausalChain ?? undefined,
               followUpQuestions:
                 streamFollowUps.length > 0 ? streamFollowUps : undefined,
               errorInfo: streamError ?? undefined,
               expansionInfo:
-                streamExpansionInfo.length > 0 ? streamExpansionInfo : undefined,
+                streamExpansionInfo.length > 0
+                  ? streamExpansionInfo
+                  : undefined,
               metrics: streamMetrics ?? undefined,
             }
           : m,
@@ -328,12 +343,14 @@ export function useStreamQuery({
         convId,
         persistedAnswer.trim() ? finalMsgs : newMsgs.slice(0, -1),
       );
+      if (requestSeq === requestSeqRef.current) {
+        setStreaming(false);
+        setStreamingMsgId(null);
+        setStreamingConvId(null);
+        abortRef.current = null;
+      }
     } catch (e) {
       clearInterval(intervalId);
-      setLoading(false);
-      setStreaming(false);
-      setStreamingMsgId(null);
-      abortRef.current = null;
       if (isAbortError(e)) {
         const persistedAnswer = normalizeAnswerText(answerRef.current);
         await updateConversation(
@@ -343,20 +360,32 @@ export function useStreamQuery({
                 m.id === aiMsgId
                   ? {
                       ...m,
-                      content: persistedAnswer,
+                      content: streamClarification?.message ?? persistedAnswer,
                       sources,
+                      clarification: streamClarification ?? undefined,
                       causalChain: streamCausalChain ?? undefined,
                       followUpQuestions:
-                        streamFollowUps.length > 0 ? streamFollowUps : undefined,
+                        streamFollowUps.length > 0
+                          ? streamFollowUps
+                          : undefined,
                       errorInfo: streamError ?? undefined,
                       expansionInfo:
-                        streamExpansionInfo.length > 0 ? streamExpansionInfo : undefined,
+                        streamExpansionInfo.length > 0
+                          ? streamExpansionInfo
+                          : undefined,
                       metrics: streamMetrics ?? undefined,
                     }
                   : m,
               )
             : newMsgs.slice(0, -1),
         );
+        if (requestSeq === requestSeqRef.current) {
+          setLoading(false);
+          setStreaming(false);
+          setStreamingMsgId(null);
+          setStreamingConvId(null);
+          abortRef.current = null;
+        }
         return;
       }
       const errMsg = e instanceof Error ? e.message : "网络异常";
@@ -364,6 +393,13 @@ export function useStreamQuery({
         convId,
         newMsgs.map((m) => (m.id === aiMsgId ? { ...m, content: errMsg } : m)),
       );
+      if (requestSeq === requestSeqRef.current) {
+        setLoading(false);
+        setStreaming(false);
+        setStreamingMsgId(null);
+        setStreamingConvId(null);
+        abortRef.current = null;
+      }
     }
   }
 
@@ -372,6 +408,7 @@ export function useStreamQuery({
     streaming,
     streamingMsgId,
     streamingText,
+    streamingConvId,
     reasoningSteps,
     causalChain,
     submit,
