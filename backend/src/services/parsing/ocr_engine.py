@@ -17,13 +17,13 @@ _FITZ_AVAILABLE   = False
 try:
     import paddleocr as _po   # noqa: F401
     _PADDLE_AVAILABLE = True
-except ImportError:
+except Exception:
     pass
 
 try:
     import fitz as _fitz      # noqa: F401
     _FITZ_AVAILABLE = True
-except ImportError:
+except Exception:
     pass
 
 # 懒初始化单例（避免重复加载模型）

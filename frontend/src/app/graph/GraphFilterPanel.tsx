@@ -1,12 +1,12 @@
 "use client";
 
 import {
-  type NodeFilter,
+  EDGE_TYPES,
   type EdgeFilter,
   NODE_COLOR,
   NODE_SHORT,
   NODE_TYPES,
-  EDGE_TYPES,
+  type NodeFilter,
 } from "./constants";
 
 interface Props {
@@ -19,7 +19,12 @@ interface Props {
 }
 
 export function GraphFilterPanel({
-  nodeFilter, setNodeFilter, edgeFilter, setEdgeFilter, showTables, onToggleTables,
+  nodeFilter,
+  setNodeFilter,
+  edgeFilter,
+  setEdgeFilter,
+  showTables,
+  onToggleTables,
 }: Props) {
   return (
     <>
@@ -57,7 +62,10 @@ export function GraphFilterPanel({
             : "text-gray-500 hover:text-gray-100 hover:bg-gray-800 border border-dashed border-gray-700"
         }`}
       >
-        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: "#22c55e" }} />
+        <span
+          className="w-1.5 h-1.5 rounded-full shrink-0"
+          style={{ backgroundColor: "#22c55e" }}
+        />
         表格
       </button>
 
@@ -69,7 +77,9 @@ export function GraphFilterPanel({
         className="h-7 px-2 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300 outline-none focus:border-indigo-500 max-w-[138px]"
       >
         {EDGE_TYPES.map((t) => (
-          <option key={t} value={t}>{t}</option>
+          <option key={t} value={t}>
+            {t}
+          </option>
         ))}
       </select>
     </>

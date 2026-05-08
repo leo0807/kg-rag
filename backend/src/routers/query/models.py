@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class QueryRequest(BaseModel):
@@ -11,6 +11,7 @@ class QueryRequest(BaseModel):
     images:     list[str]  = []   # base64 data URIs, e.g. "data:image/png;base64,..."
     use_hyde:   bool       = False
     hyde_alpha: float      = 0.5  # 假设答案向量权重（0=纯原始问题，1=纯假设答案）
+    skip_clarification: bool = False
 
 
 class SourceSection(BaseModel):
@@ -45,7 +46,13 @@ class QueryMetrics(BaseModel):
 
 
 class QueryResponse(BaseModel):
+    type:           str = "answer"
     answer:         str
     sources:        list[SourceSection]
-    expansion_info: list[str] = []
+    images:         list[dict] = Field(default_factory=list)
+    expansion_info: list[str] = Field(default_factory=list)
     metrics:        QueryMetrics | None = None
+    iterations:     int | None = None
+    message:        str | None = None
+    options:        list[str] = Field(default_factory=list)
+    original_question: str | None = None

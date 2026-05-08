@@ -7,11 +7,9 @@ from __future__ import annotations
 import re
 import logging
 from pathlib import Path
-from .parser import (
-    _looks_like_toc,
-    _trim_front_matter_headings,
-    is_likely_section_title,
-)
+from .parser_toc import _trim_front_matter_headings
+from .parser_heading import _looks_like_toc
+from .parser import is_likely_section_title
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +70,7 @@ def _trim_front_matter_sections(sections: list[dict]) -> list[dict]:
 def parse_docx(path: Path) -> dict:
     """解析 DOCX 文件，返回与 PDF 解析器兼容的 DocumentSchema dict"""
     from docx import Document as _DocxDoc
-    from ..models.schemas import DocumentSchema, SectionSchema
+    from ...models.schemas import DocumentSchema, SectionSchema
 
     doc = _DocxDoc(str(path))
 

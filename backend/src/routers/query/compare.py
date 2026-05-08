@@ -14,6 +14,7 @@ from ...services.runtime.model_settings import load_effective_settings, use_runt
 from ...db.models import User
 from .models import QueryRequest
 from .core import do_retrieval
+from .context_utils import build_llm_context, reorder_sources_for_llm
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ async def _run_strategy(driver: Driver, question: str, strategy: str, top_k: int
                 {
                     "chunk_id": s["chunk_id"], "doc_id": s["doc_id"],
                     "number":   s.get("number") or "", "title": s.get("title") or "",
-                    "score":    round(float(s.get("score", 0)), 4),
+                    "score":    round(float(s.get("rrf_score") or s.get("score", 0)), 4),
                 }
                 for s in sections
             ]
@@ -53,19 +54,20 @@ async def _run_strategy(driver: Driver, question: str, strategy: str, top_k: int
                     "chunk_id": s["chunk_id"], "doc_id": s["doc_id"],
                     "number":   s.get("number") or "", "title": s.get("title") or "",
                     "score":    round(
-                        s.get("rerank_score") or ft_score_map.get(s["chunk_id"], 0.0), 4
+                        s.get("rrf_score")
+                        or s.get("rerank_score")
+                        or ft_score_map.get(s["chunk_id"], 0.0),
+                        4,
                     ),
                 }
                 for s in sections
             ]
-            context = "\n\n".join(
-                f"[{s['doc_id']} §{s['number']}] {s['title']}\n{s['content']}"
-                for s in sections
-            )
+            llm_sections = reorder_sources_for_llm(sections, question)
+            context = build_llm_context(llm_sections)
             messages = [
                 {
                     "role":    "system",
-                    "content": "你是一个航空制造工艺规范专家助手。请根据提供的规范内容，用中文准确回答问题。",
+                    "content": "你是一个航空制造工艺规范专家助手。请根据提供的规范内容，用中文准确回答问题。回答时优先使用来源中的直接定义和描述，不要过多展开次要细节。如果问题询问'特性'或'性质'，优先引用定义类章节（术语定义、基本要求章节），而不是参数表格。如果来源中出现 'soft and ductile paste'、'solid and elastic rubber' 之类表述，可直接概括为'粘性和弹性'。",
                 },
                 {
                     "role":    "user",

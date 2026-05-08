@@ -12,6 +12,7 @@ from .reprocess_pipelines import (
     _run_entities,
     _run_images,
     _run_reparse,
+    _run_vectorize,
     _run_tables,
 )
 from .reprocess_support import cancelled as _cancelled, find_pdf, load_images, load_sections
@@ -51,7 +52,7 @@ def reprocess_document(
         cleanup_paths: list[Path] = []
         results: dict[str, int] = {}
 
-        pipeline_order = ["reparse", "images", "entities", "constraints", "tables", "drawings", "defects"]
+        pipeline_order = ["reparse", "vectorize", "images", "entities", "constraints", "tables", "drawings", "defects"]
         ordered_pipelines = sorted(
             pipelines,
             key=lambda pipeline: pipeline_order.index(pipeline) if pipeline in pipeline_order else 999,
@@ -82,6 +83,8 @@ def reprocess_document(
                     for path in new_cleanup:
                         if path and path not in cleanup_paths:
                             cleanup_paths.append(path)
+                elif pipeline == "vectorize":
+                    results[pipeline] = _run_vectorize(driver, doc_id, task, step)
                 elif pipeline == "images":
                     if not extract_pdf_path:
                         from .reprocess_support import prepare_reprocess_pdf as _prepare_reprocess_pdf

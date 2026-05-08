@@ -11,6 +11,8 @@ from ...core.config import settings
 
 logger = logging.getLogger(__name__)
 
+QUERY_CACHE_VERSION = "v37"
+
 
 @lru_cache(maxsize=1)
 def get_redis() -> redis.Redis:
@@ -19,7 +21,7 @@ def get_redis() -> redis.Redis:
 
 def make_cache_key(question: str, strategy: str, top_k: int) -> str:
     """生成缓存 key，用 MD5 避免特殊字符问题"""
-    raw = f"{question}:{strategy}:{top_k}"
+    raw = f"{QUERY_CACHE_VERSION}:{question}:{strategy}:{top_k}"
     return f"query:{hashlib.md5(raw.encode()).hexdigest()}"
 
 

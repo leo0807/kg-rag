@@ -24,19 +24,20 @@ def clean_ocr_artifacts(text: str) -> str:
     if not text:
         return text
 
-    # 修复常见 OCR 错误
-    # 'D' 被误识别为小数点（如 0D6 → 0.6）
-    text = re.sub(r'(\d)D(\d)', r'\1.\2', text)
+    # 第一遍单位空格修复（为后面的 D→小数点规则创造词边界，去掉 \b 以兼容非 ASCII 单位符号）
+    text = re.sub(r'(\d)\s*(MPa|kPa|℃|mm|min|kg)', r'\1 \2', text)
 
-    # 'is' 被误识别为 '0'
+    # 'D' 被误识别为小数点（如 0D6→0.6，0D017→0.017）
+    # 使用 \b 词边界：在零件编号（如 CETR0001D08）中字母与数字相邻，无词边界，不会匹配
+    text = re.sub(r'\b(\d+)D(\d+)\b', r'\1.\2', text)
+
+    # 'isis' 被误识别为 '00'；'is' 被误识别为 '0'
+    text = re.sub(r'isis', '00', text)
     text = re.sub(r'\bis\b(?=\d)', '0', text)
     text = re.sub(r'(?<=\d)\bis\b', '0', text)
 
-    # 连续的 'is' 替换为对应数字
-    text = re.sub(r'isis', '00', text)
-
-    # 修复单位前的空格
-    text = re.sub(r'(\d)\s*(MPa|kPa|℃|mm|min|kg)\b', r'\1 \2', text)
+    # 第二遍单位空格修复（处理 isis→00 等替换后产生的新的数字+单位连接）
+    text = re.sub(r'(\d)\s*(MPa|kPa|℃|mm|min|kg)', r'\1 \2', text)
 
     return text
 
@@ -106,6 +107,8 @@ def extract_title_from_first_page(pdf_path: Path) -> str:
             lines[-1].append(w["text"])
 
     title = " ".join("".join(line) for line in lines).strip()
+    if re.search(r"(目次|Contents|SHEET\s+\d+\s+OF\s+\d+)", title, re.IGNORECASE):
+        return ""
     return title
 
 
@@ -115,8 +118,8 @@ def extract_meta(pdf_path: Path) -> dict:
 
     doc_match = re.search(r'(CPS\d+)\s*版本[:：]\s*([A-Z])', cover_text)
     if not doc_match:
-        name_match = re.search(r'(CPS\d+)', pdf_path.stem)
-        doc_id  = name_match.group(1) if name_match else ""
+        name_match = re.search(r'(cps\d+)', pdf_path.stem, re.IGNORECASE)
+        doc_id  = name_match.group(1).upper() if name_match else ""
         version = ""
     else:
         doc_id  = doc_match.group(1)
@@ -134,6 +137,12 @@ def extract_meta(pdf_path: Path) -> dict:
 
     if not title:
         title = _extract_title_fallback(cover_text, pdf_path)
+    if re.search(r"(目次|Contents|SHEET\s+\d+\s+OF\s+\d+)", title, re.IGNORECASE):
+        title = ""
+    if title and (re.search(r"\.{8,}", title) or re.search(r"\b\d+\b\s*$", title)):
+        title = ""
+    if not title:
+        title = doc_id or pdf_path.stem
 
     date_match = re.search(r'(\d{4}-\d{2}-\d{2})', cover_text)
     issue_date = date_match.group(1) if date_match else ""

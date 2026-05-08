@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """LLM service facade built on provider adapters."""
 
+import json
 import logging
 from typing import AsyncGenerator
 
@@ -90,10 +91,16 @@ class LLMService:
     def model_name(self) -> str:
         return self._provider.model_name
 
+    def _apply_defaults(self, kwargs: dict) -> dict:
+        call_kwargs = dict(kwargs)
+        call_kwargs.setdefault("timeout", self._settings.LLM_TIMEOUT)
+        call_kwargs.setdefault("max_tokens", self._settings.LLM_MAX_TOKENS)
+        return call_kwargs
+
     def chat(self, messages: list[dict], system_prompt: str = "", **kwargs) -> str:
         msgs = prepend_system(messages, system_prompt)
         try:
-            return self._provider.chat(msgs, **kwargs)
+            return self._provider.chat(msgs, **self._apply_defaults(kwargs))
         except LLMError:
             raise
         except Exception as exc:
@@ -108,7 +115,7 @@ class LLMService:
     ) -> tuple[str, dict]:
         msgs = prepend_system(messages, system_prompt)
         try:
-            return self._provider.chat_with_usage(msgs, **kwargs)
+            return self._provider.chat_with_usage(msgs, **self._apply_defaults(kwargs))
         except LLMError:
             raise
         except Exception as exc:
@@ -123,7 +130,7 @@ class LLMService:
     ) -> AsyncGenerator[str, None]:
         msgs = prepend_system(messages, system_prompt)
         try:
-            async for chunk in self._provider.stream_chat(msgs, **kwargs):
+            async for chunk in self._provider.stream_chat(msgs, **self._apply_defaults(kwargs)):
                 yield chunk
         except LLMError:
             raise
@@ -135,6 +142,150 @@ class LLMService:
                 len(msgs),
             )
             raise map_exception(exc) from exc
+
+    async def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        system_prompt: str = "",
+        **kwargs,
+    ) -> dict:
+        msgs = prepend_system(messages, system_prompt)
+        try:
+            if isinstance(self._provider, OpenAICompatProvider):
+                return await self._chat_with_tools_openai_compat(msgs, tools, **kwargs)
+            if isinstance(self._provider, AnthropicProvider):
+                return await self._chat_with_tools_anthropic(msgs, tools, **kwargs)
+            text = self.chat(msgs, **kwargs)
+            return {"text": text}
+        except LLMError:
+            raise
+        except Exception as exc:
+            logger.exception(
+                "LLMService.chat_with_tools 失败 provider=%s model=%s",
+                type(self._provider).__name__,
+                self.model_name,
+            )
+            raise map_exception(exc) from exc
+
+    async def _chat_with_tools_openai_compat(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        **kwargs,
+    ) -> dict:
+        import requests
+
+        provider = self._provider
+        tool_defs = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["input_schema"],
+                },
+            }
+            for t in tools
+        ]
+        resp = await self._run_in_thread(
+            requests.post,
+            f"{provider._url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {provider._key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": kwargs.pop("model", provider.model_name),
+                "messages": messages,
+                "tools": tool_defs,
+                "tool_choice": "auto",
+                "stream": False,
+                **kwargs,
+            },
+            timeout=kwargs.pop("timeout", self._settings.LLM_TIMEOUT),
+        )
+        resp.raise_for_status()
+        msg = resp.json()["choices"][0]["message"]
+        tool_calls = msg.get("tool_calls") or []
+        if tool_calls:
+            tc = tool_calls[0]
+            arguments = tc.get("function", {}).get("arguments", "{}")
+            try:
+                tool_input = json.loads(arguments) if isinstance(arguments, str) else arguments
+            except Exception:
+                tool_input = {}
+            return {
+                "tool_use": {
+                    "name": tc.get("function", {}).get("name", ""),
+                    "input": tool_input,
+                    "id": tc.get("id", ""),
+                },
+                "text": msg.get("content") or "",
+            }
+        return {"text": msg.get("content") or ""}
+
+    async def _chat_with_tools_anthropic(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        **kwargs,
+    ) -> dict:
+        import requests
+
+        provider = self._provider
+        system = ""
+        non_system = []
+        for message in messages:
+            if message.get("role") == "system":
+                system = message.get("content", "")
+            else:
+                non_system.append(message)
+        payload = provider._build_payload(non_system, **kwargs)
+        if system:
+            payload["system"] = system
+        payload["tools"] = [
+            {
+                "name": t["name"],
+                "description": t["description"],
+                "input_schema": t["input_schema"],
+            }
+            for t in tools
+        ]
+        payload["tool_choice"] = {"type": "auto"}
+        resp = await self._run_in_thread(
+            requests.post,
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": provider._key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=kwargs.pop("timeout", self._settings.LLM_TIMEOUT),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        tool_use = None
+        text_parts: list[str] = []
+        for block in data.get("content", []):
+            if block.get("type") == "tool_use" and tool_use is None:
+                tool_use = {
+                    "name": block.get("name", ""),
+                    "input": block.get("input", {}),
+                    "id": block.get("id", ""),
+                }
+            elif block.get("type") == "text":
+                text_parts.append(block.get("text", ""))
+        result = {"text": "".join(text_parts)}
+        if tool_use:
+            result["tool_use"] = tool_use
+        return result
+
+    async def _run_in_thread(self, func, *args, **kwargs):
+        import asyncio
+
+        return await asyncio.to_thread(func, *args, **kwargs)
 
 def get_llm_service() -> LLMService:
     return LLMService(get_runtime_settings_namespace())

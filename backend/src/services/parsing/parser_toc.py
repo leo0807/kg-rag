@@ -11,6 +11,17 @@ from .parser_heading import (
 from .parser_patterns import _REFERENCE_TITLE_RE
 
 
+def _looks_like_toc_line(text: str) -> bool:
+    t = re.sub(r"\s+", " ", (text or "").strip())
+    if not t:
+        return False
+    if re.search(r"[·.…]{3,}", t):
+        return True
+    if re.search(r"\s+\d+\s*$", t):
+        return True
+    return False
+
+
 def _collect_toc_numbers_from_all_lines(all_lines: list[dict]) -> set[str]:
     first_scope_page: int | None = None
     for line in all_lines:
@@ -109,6 +120,31 @@ def _trim_front_matter_headings(headings: list[dict]) -> list[dict]:
     if anchor_idx is None or anchor_idx == 0:
         return headings
     return headings[anchor_idx:]
+
+
+def _trim_front_matter_sections(sections: list[dict]) -> list[dict]:
+    if not sections:
+        return sections
+    filtered: list[dict] = []
+    for section in sections:
+        page_idx = int(section.get("page_idx", 9999))
+        title = re.sub(r"\s+", " ", str(section.get("title", "")).strip())
+        content = re.sub(r"\s+", " ", str(section.get("content", "")).strip())
+        is_toc_entry = (
+            page_idx <= 3
+            and (
+                _looks_like_toc_line(title)
+                or _looks_like_toc_line(content[:200])
+                or (
+                    not content
+                    and page_idx <= 2
+                )
+            )
+        )
+        if is_toc_entry:
+            continue
+        filtered.append(section)
+    return filtered
 
 
 def _postprocess_headings(headings: list[dict], toc_numbers: set[str]) -> list[dict]:

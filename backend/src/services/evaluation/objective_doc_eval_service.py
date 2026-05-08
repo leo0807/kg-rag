@@ -15,6 +15,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from ...db.models import ObjectiveDocEvalTask
 from .objective_doc_eval_parser import extract_objective_questions
 from .objective_doc_eval_runner import run_eval_task
+from .objective_doc_eval_runner import _parse_llm_response as _parse_objective_llm_response
+from .objective_doc_eval_metrics import (
+    _apply_choice_support_override,
+    _infer_answer_from_option_content,
+)
+from .objective_doc_eval_parser import _build_objective_retrieval_query, _parse_question_block
 
 logger = logging.getLogger(__name__)
 

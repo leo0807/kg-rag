@@ -18,8 +18,13 @@ router = APIRouter(prefix="/api", tags=["reprocess"])
 _tasks: dict[str, dict] = {}
 _batch: dict = load_batch_state()
 
-VALID = {"reparse", "images", "entities", "constraints", "tables", "drawings", "defects"}
-ALL   = ["reparse", "images", "entities", "constraints", "tables", "drawings", "defects"]
+VALID = {"reparse", "vectorize", "images", "entities", "constraints", "tables", "drawings", "defects"}
+ALL   = ["reparse", "vectorize", "images", "entities", "constraints", "tables", "drawings", "defects"]
+ALIASES = {"reparse_sections": "reparse"}
+
+
+def _normalize_pipeline(name: str) -> str:
+    return ALIASES.get(name, name)
 
 
 class ReprocessReq(BaseModel):
@@ -49,7 +54,8 @@ async def reprocess_doc(
     if _tasks.get(doc_id, {}).get("status") == "running":
         return {"doc_id": doc_id, "status": "running", "message": "已有任务在运行"}
 
-    pipelines = [p for p in req.pipelines if p in VALID]
+    pipelines = [_normalize_pipeline(p) for p in req.pipelines]
+    pipelines = [p for p in pipelines if p in VALID]
     if not pipelines:
         raise HTTPException(400, f"无有效管道: {sorted(VALID)}")
 
@@ -124,7 +130,8 @@ async def reprocess_all(
         return {"status": "running", "message": "批量处理正在进行中",
                 "total": _batch.get("total", 0), "done": _batch.get("done", 0)}
 
-    pipelines = [p for p in req.pipelines if p in VALID]
+    pipelines = [_normalize_pipeline(p) for p in req.pipelines]
+    pipelines = [p for p in pipelines if p in VALID]
     if not pipelines:
         raise HTTPException(400, f"无有效管道: {sorted(VALID)}")
 
@@ -171,7 +178,8 @@ async def resume_batch(
     if _batch.get("status") == "running":
         raise HTTPException(409, "批量任务仍在运行中")
     completed = set(_batch.get("completed_docs", []))
-    pipelines = [p for p in req.pipelines if p in VALID] or ALL
+    pipelines = [_normalize_pipeline(p) for p in req.pipelines]
+    pipelines = [p for p in pipelines if p in VALID] or ALL
     with driver.session() as s:
         all_ids = [r["doc_id"] for r in s.run(
             "MATCH (d:Document) WHERE d.title IS NOT NULL RETURN d.name AS doc_id ORDER BY d.name"

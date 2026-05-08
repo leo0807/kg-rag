@@ -14,7 +14,11 @@ from .parser_heading import (
     _is_likely_toc_page,
     is_likely_section_title,
 )
-from .parser_toc import _collect_toc_numbers_from_all_lines, _postprocess_headings
+from .parser_toc import (
+    _collect_toc_numbers_from_all_lines,
+    _postprocess_headings,
+    _trim_front_matter_sections,
+)
 from .parser_meta import clean_content, clean_ocr_artifacts
 from .parser_patterns import SECTION_PATTERNS
 
@@ -101,12 +105,12 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
                 and not h["title"].strip().replace('.', '').replace(' ', '').isdigit()
             ]
             _seen_nums: set[str] = set()
-            _deduped: list[dict] = []
-            for h in headings:
+            _deduped_rev: list[dict] = []
+            for h in reversed(headings):
                 if h["number"] not in _seen_nums:
                     _seen_nums.add(h["number"])
-                    _deduped.append(h)
-            headings = _deduped
+                    _deduped_rev.append(h)
+            headings = list(reversed(_deduped_rev))
             toc_numbers = _collect_toc_numbers_from_all_lines(all_lines)
             headings = _postprocess_headings(headings, toc_numbers)
 
@@ -139,7 +143,7 @@ def extract_sections(pdf_path: Path, doc_id: str) -> list[dict]:
 
     if not sections:
         return _extract_sections_legacy(pdf_path, doc_id)
-    return sections
+    return _trim_front_matter_sections(sections)
 
 
 def _extract_sections_legacy(pdf_path: Path, doc_id: str) -> list[dict]:
@@ -210,4 +214,4 @@ def _extract_sections_legacy(pdf_path: Path, doc_id: str) -> list[dict]:
             "level":    len(number.split(".")),
             "seq_index": i,
         })
-    return sections
+    return _trim_front_matter_sections(sections)

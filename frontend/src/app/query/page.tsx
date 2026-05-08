@@ -35,6 +35,8 @@ export default function QueryPage() {
     bottomRef,
     activeSourceFilters,
     stream,
+    currentConversationLoading,
+    currentConversationStreaming,
     compareQuery,
     handleSourceFiltersChange,
     toggleCompareMode,
@@ -45,8 +47,12 @@ export default function QueryPage() {
     exportConversation,
     handleFavoriteSection,
     editingMessageIndex,
-    setEditingMessageIndex,
+    editingMessageDraft,
+    setEditingMessageDraft,
     handleEditQuestion,
+    cancelEditQuestion,
+    submitEditedQuestion,
+    handleClarificationSelect,
   } = chat;
 
   const historyLen = activeConv?.messages.length ?? 0;
@@ -111,26 +117,22 @@ export default function QueryPage() {
           onSourceFiltersChange={handleSourceFiltersChange}
           onFavoriteSection={handleFavoriteSection}
           onLowScoreRetry={handleLowScoreRetry}
+          editingMessageIndex={editingMessageIndex}
+          editingMessageDraft={editingMessageDraft}
+          onEditDraftChange={setEditingMessageDraft}
+          onEditCancel={cancelEditQuestion}
+          onEditSubmit={submitEditedQuestion}
+          onClarificationSelect={handleClarificationSelect}
         />
 
         <ConversationInput
           value={input}
-          strategy={strategy}
-          useHyde={useHyde}
-          loading={stream.loading}
-          streaming={stream.streaming}
+          loading={currentConversationLoading}
+          streaming={currentConversationStreaming}
           onStop={stream.cancel}
-          historyLen={historyLen}
           pendingImages={pendingImages}
           quoteSource={quoteSource}
-          editingQuestionIndex={editingMessageIndex}
-          activeQuestion={
-            activeConv?.messages[editingMessageIndex ?? -1]?.content ?? null
-          }
-          onCancelEdit={() => setEditingMessageIndex(null)}
           onChange={setInput}
-          onStrategy={setStrategy}
-          onHydeToggle={setUseHyde}
           onSubmit={handleSubmit}
           onClear={clearConversation}
           onAddImages={(imgs) => setPendingImages((prev) => [...prev, ...imgs])}
@@ -138,6 +140,11 @@ export default function QueryPage() {
             setPendingImages((prev) => prev.filter((_, i) => i !== idx))
           }
           onClearQuote={() => setQuoteSource(null)}
+          strategy={strategy}
+          onStrategy={setStrategy}
+          useHyde={useHyde}
+          onHydeToggle={setUseHyde}
+          historyLen={historyLen}
         />
       </div>
     </div>
