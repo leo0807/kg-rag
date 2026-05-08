@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef } from "react";
 import { useFavorites } from "@/app/favorites/useFavorites";
 import { ConversationInputComposer } from "./ConversationInputComposer";
 import { ConversationInputStatusBars } from "./ConversationInputStatusBars";
-import type { SourceSection } from "./types";
+import { StrategySelector } from "./StrategySelector";
+import type { SourceSection, Strategy } from "./types";
 
 interface Props {
   value: string;
@@ -18,6 +19,11 @@ interface Props {
   onAddImages: (imgs: string[]) => void;
   onRemoveImage: (idx: number) => void;
   onClearQuote?: () => void;
+  strategy: Strategy;
+  onStrategy: (s: Strategy) => void;
+  useHyde: boolean;
+  onHydeToggle: (v: boolean) => void;
+  historyLen: number;
 }
 
 export default function ConversationInput({
@@ -32,6 +38,12 @@ export default function ConversationInput({
   onAddImages,
   onRemoveImage,
   onClearQuote,
+  onClear,
+  strategy,
+  onStrategy,
+  useHyde,
+  onHydeToggle,
+  historyLen,
 }: Props) {
   const { getFavoriteId, addFavorite, removeFavorite } = useFavorites();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -86,7 +98,7 @@ export default function ConversationInput({
   }
 
   const canSend =
-    (value.trim() || pendingImages.length > 0) && !loading && !streaming;
+    Boolean(value.trim() || pendingImages.length > 0) && !loading && !streaming;
 
   return (
     <div className="border-t border-gray-800 bg-gray-950 px-4 py-4 relative">
@@ -96,6 +108,16 @@ export default function ConversationInput({
         onClearQuote={onClearQuote}
         onRemoveImage={onRemoveImage}
       />
+      <div className="mb-3">
+        <StrategySelector
+          strategy={strategy}
+          useHyde={useHyde}
+          historyLen={historyLen}
+          onStrategy={onStrategy}
+          onHydeToggle={onHydeToggle}
+          onClear={onClear}
+        />
+      </div>
       <ConversationInputComposer
         value={value}
         loading={loading}

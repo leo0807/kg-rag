@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from .pipeline_node_handlers import NodeHandlersMixin
+from .pipeline_rrf import run_rrf_fusion
 
 logger = logging.getLogger(__name__)
 
@@ -204,18 +205,7 @@ class PipelineExecutor(NodeHandlersMixin):
             return {"candidates": []}
 
     async def _run_rrf_fusion(self, params: dict, inputs: dict) -> dict:
-        k, all_lists = int(params.get("k", 60)), inputs["candidates"]
-        if not all_lists:
-            return {"candidates": []}
-        scores: dict[str, float] = {}
-        id_to_sec: dict[str, dict] = {}
-        for lst in all_lists:
-            for rank, sec in enumerate(lst, start=1):
-                cid = sec.get("chunk_id", "")
-                if cid:
-                    scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank)
-                    id_to_sec[cid] = sec
-        return {"candidates": [id_to_sec[c] for c in sorted(scores, key=scores.__getitem__, reverse=True) if c in id_to_sec]}
+        return run_rrf_fusion(params, inputs)
 
     async def _run_rerank(self, params: dict, inputs: dict) -> dict:
         top_k = int(params.get("top_k", 5))

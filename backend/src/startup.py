@@ -2,6 +2,7 @@
 src/startup.py
 FastAPI lifespan 上下文管理器 — 应用启动/关闭钩子
 """
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -13,6 +14,7 @@ from .core.database import init_db, get_driver
 from .core.logging import setup_logging
 from .db.session import AsyncSessionLocal, init_tables
 from .services.infra.health import health_monitor
+from .services.retrieval.embedder import get_cached_embedding
 from .services.storage.milvus_store import connect_milvus, get_or_create_collection
 from .services.storage.es_store import init_es_index
 from .core.storage import ensure_buckets
@@ -96,6 +98,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("启动健康检查异常: %s", e)
     health_monitor.start_background_task()
+
+    try:
+        await asyncio.to_thread(get_cached_embedding, "启动预热")
+        logger.info("Embedding 预热完成")
+    except Exception as e:
+        logger.warning("Embedding 预热失败: %s", e)
 
     # ... (existing GNN service logic)
 

@@ -82,6 +82,9 @@ NODE_TYPES: dict = {
         "inputs": ["candidates"], "outputs": ["candidates"],
         "params": {
             "k": {"type": "int", "default": 60, "min": 1, "max": 200, "label": "RRF常数k"},
+            "alpha": {"type": "float", "default": 0.5, "min": 0.0, "max": 1.0, "label": "融合权重"},
+            "alpha_source": {"type": "select", "default": "fixed", "options": ["fixed", "redis"], "label": "alpha来源"},
+            "alpha_redis_key": {"type": "text", "default": "search:hybrid_alpha", "label": "Redis键"},
         },
     },
     "rerank": {

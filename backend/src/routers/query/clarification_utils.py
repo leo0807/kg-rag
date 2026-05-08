@@ -7,9 +7,9 @@ from ...services.agent.clarification import ClarificationDetector
 CLARIFICATION_MESSAGE = "您的问题有些宽泛，请选择您想了解的方向："
 
 
-async def detect_clarification(question: str, driver) -> dict:
+async def detect_clarification(question: str, driver, skip: bool = False) -> dict:
     detector = ClarificationDetector()
-    return await detector.needs_clarification(question, driver)
+    return await detector.needs_clarification(question, driver, skip=skip)
 
 
 def build_clarification_payload(

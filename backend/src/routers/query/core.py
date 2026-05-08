@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from neo4j import Driver
 
 _ROW_RE = re.compile(r'^(.+)_row_(\d+)$')
@@ -92,64 +93,21 @@ def do_retrieval(
     use_hyde:   bool  = False,
     hyde_alpha: float = 0.5,
     doc_id:     str   = "",
+    skip_rerank: bool = False,
 ):
     """返回 (sections, ft_score_map)"""
     if strategy == "parallel_rrf":
         strategy = "parallel"
     source_meta: dict[str, dict] = {}
 
-    from ...services.retrieval.query_expander import expand_query
-    search_query, expansion_info = expand_query(driver, question)
-
-    ft_ids, ft_score_map = [], {}
-    if health_monitor.elasticsearch.is_ok:
-        try:
-            from ...services.storage.es_store import search_sections_es
-            es_results   = search_sections_es(search_query, top_k=top_k * 2, doc_id=doc_id)
-            ft_ids       = [r["chunk_id"] for r in es_results]
-            ft_score_map = {r["chunk_id"]: r["score"] for r in es_results}
-            _mark_sources(source_meta, ft_ids, source_type="fulltext", trace="fulltext:es", is_fulltext_hit=True)
-        except Exception as e:
-            logger.warning("ES 检索失败，降级到 Neo4j 全文索引: %s", e)
-            health_monitor.elasticsearch.state = health_monitor.elasticsearch.state.__class__.DOWN
-    else:
-        logger.info("ES 不可用（已知 DOWN），跳过 ES 检索")
-
-    if not ft_ids and health_monitor.neo4j.is_ok:
-        try:
-            with driver.session() as session:
-                ft_result = session.run("""
-                    CALL db.index.fulltext.queryNodes('cps_fulltext_index', $q)
-                    YIELD node, score
-                    WHERE ($doc_id = '' OR node.doc_id = $doc_id)
-                    RETURN node.chunk_id AS chunk_id, score
-                    ORDER BY score DESC LIMIT $top_k
-                """, q=search_query, top_k=top_k * 2, doc_id=doc_id)
-                rows         = [dict(r) for r in ft_result]
-                ft_ids       = [r["chunk_id"] for r in rows]
-                ft_score_map = {r["chunk_id"]: r["score"] for r in rows}
-                _mark_sources(source_meta, ft_ids, source_type="fulltext", trace="fulltext:neo4j", is_fulltext_hit=True)
-        except Exception as e:
-            logger.warning("Neo4j 全文索引检索也失败: %s", e)
-
-    vector_ids = []
-    if strategy in ("parallel", "graph_augmented"):
-        if not health_monitor.milvus.is_ok:
-            logger.info("Milvus 不可用（已知 DOWN），跳过向量检索")
-        else:
-            try:
-                from ...services.retrieval.embedder import embed_query
-                from ...services.storage.milvus_store import search_sections
-                if use_hyde:
-                    from ...services.retrieval.hyde_service import get_hyde_service
-                    query_vec = get_hyde_service().hybrid_embedding(question, alpha=hyde_alpha)
-                    logger.info("HyDE 增强向量检索（alpha=%.2f）", hyde_alpha)
-                else:
-                    query_vec = embed_query(question)
-                vector_ids = [r["chunk_id"] for r in search_sections(query_vec, top_k=top_k * 2, doc_id=doc_id)]
-                _mark_sources(source_meta, vector_ids, source_type="vector", trace="vector:milvus", is_vector_hit=True)
-            except Exception as e:
-                logger.warning("向量检索失败: %s", e)
+    from ...services.retrieval.parallel_search import search_fulltext_and_vector
+    search_query, expansion_info, ft_ids, ft_score_map, vector_ids = search_fulltext_and_vector(
+        driver, question, top_k, use_hyde, hyde_alpha, doc_id
+    )
+    if ft_ids:
+        _mark_sources(source_meta, ft_ids, source_type="fulltext", trace="fulltext:parallel", is_fulltext_hit=True)
+    if vector_ids:
+        _mark_sources(source_meta, vector_ids, source_type="vector", trace="vector:parallel", is_vector_hit=True)
 
     if strategy == "hybrid_es":
         try:
@@ -238,6 +196,7 @@ def do_retrieval(
         fused_ids = ft_ids[:top_k * 2]
         fusion_scores = rrf_scores(ft_ids)
 
+    t_stage = time.time()
     if health_monitor.neo4j.is_ok and not doc_id:
         fused_ids = apply_entity_aware(driver, fused_ids, source_meta, question, doc_id)
     else:
@@ -245,6 +204,9 @@ def do_retrieval(
 
     if strategy == "graph_augmented" and fused_ids and not doc_id:
         fused_ids = apply_graph_augmented(driver, fused_ids, source_meta, doc_id)
+    logger.info("[timing] 实体/图谱增强 %.2fs", time.time() - t_stage)
+
+    t_stage = time.time()
     if health_monitor.neo4j.is_ok:
         sections = get_section_details(driver, fused_ids[:top_k * 2])
     else:
@@ -257,6 +219,7 @@ def do_retrieval(
         except Exception as e:
             logger.warning("ES 降级获取章节详情失败: %s", e)
             sections = []
+    logger.info("[timing] 章节详情 %.2fs", time.time() - t_stage)
     if doc_id:
         sections = [section for section in sections if section.get("doc_id") == doc_id]
     else:
@@ -270,13 +233,16 @@ def do_retrieval(
             section["score"] = fused_score
 
     from ...core.config import settings as _s
-    if _s.RERANKER_ENABLED and sections and strategy in ("parallel", "graph_augmented", "sequential", "gnn", "hybrid_es"):
+    t_stage = time.time()
+    if (not skip_rerank) and _s.RERANKER_ENABLED and sections and strategy in ("parallel", "graph_augmented", "sequential", "gnn", "hybrid_es"):
         try:
             from ...services.retrieval.reranker import rerank
             sections = rerank(question, sections, top_k=top_k)
         except Exception as e:
             logger.warning("Reranker 失败: %s", e)
+    logger.info("[timing] Reranker %.2fs", time.time() - t_stage)
 
+    t_stage = time.time()
     for section in sections:
         section.update(_finalize_source_meta(source_meta, section.get("chunk_id", "")))
 
@@ -296,5 +262,6 @@ def do_retrieval(
     if use_hyde:
         _boost_query_relevant_sections(sections, question, expansion_info, use_hyde)
         sections.sort(key=lambda x: x.get("score") or 0, reverse=True)
+    logger.info("[timing] 后处理 %.2fs", time.time() - t_stage)
 
     return sections, ft_score_map, expansion_info

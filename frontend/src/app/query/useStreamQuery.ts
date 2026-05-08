@@ -5,6 +5,7 @@ import type { NetToastType } from "@/components/NetToast";
 import { getApiBaseUrl, getAuthHeaders } from "@/lib/api";
 import type { ReasoningStep } from "./ReasoningChain";
 import type {
+  AgentStepInfo,
   CausalChainData,
   ClarificationInfo,
   LLMErrorInfo,
@@ -36,6 +37,17 @@ interface UseStreamQueryParams {
 
 function normalizeAnswerText(text: string) {
   return text.replace(/\u00A0/g, " ").replace(/[ \t]{3,}/g, " ");
+}
+
+function upsertAgentStep(
+  steps: AgentStepInfo[],
+  nextStep: AgentStepInfo,
+): AgentStepInfo[] {
+  const index = steps.findIndex((step) => step.step === nextStep.step);
+  if (index === -1) return [...steps, nextStep];
+  const copy = [...steps];
+  copy[index] = { ...copy[index], ...nextStep };
+  return copy;
 }
 
 function isAbortError(error: unknown) {
@@ -71,7 +83,7 @@ export function useStreamQuery({
   async function submit(
     question: string,
     images: string[],
-    options?: { replaceFromIndex?: number },
+    options?: { replaceFromIndex?: number; skipClarification?: boolean },
   ) {
     const requestSeq = ++requestSeqRef.current;
     let convId = activeId;
@@ -125,15 +137,7 @@ export function useStreamQuery({
     // 每 800ms 同步一次流式内容到对话状态，供侧边栏实时预览；
     // 流结束后会再做一次完整写入，此处仅用于 UI 视觉反馈。
     const intervalId = setInterval(() => {
-      if (!convId) return;
-      updateConversation(
-        convId,
-        newMsgs.map((m) =>
-          m.id === aiMsgId
-            ? { ...m, content: normalizeAnswerText(answerRef.current) }
-            : m,
-        ),
-      );
+      syncAssistantMessage(answerRef.current);
     }, 800);
 
     let sources: SourceSection[] = [];
@@ -143,6 +147,36 @@ export function useStreamQuery({
     let streamExpansionInfo: string[] = [];
     let streamMetrics: QueryMetrics | null = null;
     let streamClarification: ClarificationInfo | null = null;
+    let streamAgentSteps: AgentStepInfo[] = [];
+
+    const syncAssistantMessage = (content: string) => {
+      if (!convId) return;
+      void updateConversation(
+        convId,
+        newMsgs.map((m) =>
+          m.id === aiMsgId
+            ? {
+                ...m,
+                content:
+                  streamClarification?.message ?? normalizeAnswerText(content),
+                sources,
+                clarification: streamClarification ?? undefined,
+                agentSteps:
+                  streamAgentSteps.length > 0 ? streamAgentSteps : undefined,
+                causalChain: streamCausalChain ?? undefined,
+                followUpQuestions:
+                  streamFollowUps.length > 0 ? streamFollowUps : undefined,
+                errorInfo: streamError ?? undefined,
+                expansionInfo:
+                  streamExpansionInfo.length > 0
+                    ? streamExpansionInfo
+                    : undefined,
+                metrics: streamMetrics ?? undefined,
+              }
+            : m,
+        ),
+      );
+    };
 
     const MAX_RETRIES = 3;
     let retryDelay = 1000;
@@ -158,6 +192,7 @@ export function useStreamQuery({
           retryDelay = Math.min(retryDelay * 2, 8000);
           answerRef.current = "";
           setStreamingText("");
+          streamAgentSteps = [];
           showNetToast("reconnecting", "正在重连…");
         }
 
@@ -182,6 +217,7 @@ export function useStreamQuery({
               images,
               use_hyde: useHyde,
               hyde_alpha: hydeAlpha,
+              skip_clarification: options?.skipClarification ?? false,
             }),
           });
           if (!res.ok) throw new Error("请求失败");
@@ -219,6 +255,10 @@ export function useStreamQuery({
                     const event = JSON.parse(data);
                     if (event.type === "sources") {
                       sources = [...sources, ...event.content];
+                    } else if (event.type === "sources_update") {
+                      sources = Array.isArray(event.content)
+                        ? event.content
+                        : sources;
                     } else if (event.type === "delta") {
                       answerRef.current = normalizeAnswerText(
                         answerRef.current + event.content,
@@ -226,6 +266,25 @@ export function useStreamQuery({
                       setStreamingText(answerRef.current);
                     } else if (event.type === "steps") {
                       setReasoningSteps((prev) => [...prev, ...event.content]);
+                    } else if (event.type === "agent_step") {
+                      streamAgentSteps = upsertAgentStep(streamAgentSteps, {
+                        step: Number(event.step ?? 0),
+                        action: String(event.action ?? ""),
+                        status:
+                          event.status === "failed"
+                            ? "failed"
+                            : event.status === "done"
+                              ? "done"
+                              : "running",
+                        input: event.input,
+                        result_summary: event.result_summary,
+                      });
+                      syncAssistantMessage(answerRef.current);
+                    } else if (event.type === "agent_steps") {
+                      streamAgentSteps = Array.isArray(event.content)
+                        ? event.content
+                        : streamAgentSteps;
+                      syncAssistantMessage(answerRef.current);
                     } else if (event.type === "status") {
                       showNetToast("online", event.content, 2000);
                     } else if (event.type === "causal_chain") {
@@ -267,6 +326,10 @@ export function useStreamQuery({
                 const event = JSON.parse(data);
                 if (event.type === "sources") {
                   sources = [...sources, ...event.content];
+                } else if (event.type === "sources_update") {
+                  sources = Array.isArray(event.content)
+                    ? event.content
+                    : sources;
                 } else if (event.type === "clarification_needed") {
                   streamClarification = {
                     message:
@@ -283,6 +346,25 @@ export function useStreamQuery({
                   setStreamingText(answerRef.current);
                 } else if (event.type === "steps") {
                   setReasoningSteps((prev) => [...prev, ...event.content]);
+                } else if (event.type === "agent_step") {
+                  streamAgentSteps = upsertAgentStep(streamAgentSteps, {
+                    step: Number(event.step ?? 0),
+                    action: String(event.action ?? ""),
+                    status:
+                      event.status === "failed"
+                        ? "failed"
+                        : event.status === "done"
+                          ? "done"
+                          : "running",
+                    input: event.input,
+                    result_summary: event.result_summary,
+                  });
+                  syncAssistantMessage(answerRef.current);
+                } else if (event.type === "agent_steps") {
+                  streamAgentSteps = Array.isArray(event.content)
+                    ? event.content
+                    : streamAgentSteps;
+                  syncAssistantMessage(answerRef.current);
                 } else if (event.type === "status") {
                   showNetToast("online", event.content, 2000);
                 } else if (event.type === "causal_chain") {
@@ -327,6 +409,8 @@ export function useStreamQuery({
               content: streamClarification?.message ?? persistedAnswer,
               sources,
               clarification: streamClarification ?? undefined,
+              agentSteps:
+                streamAgentSteps.length > 0 ? streamAgentSteps : undefined,
               causalChain: streamCausalChain ?? undefined,
               followUpQuestions:
                 streamFollowUps.length > 0 ? streamFollowUps : undefined,
@@ -363,6 +447,10 @@ export function useStreamQuery({
                       content: streamClarification?.message ?? persistedAnswer,
                       sources,
                       clarification: streamClarification ?? undefined,
+                      agentSteps:
+                        streamAgentSteps.length > 0
+                          ? streamAgentSteps
+                          : undefined,
                       causalChain: streamCausalChain ?? undefined,
                       followUpQuestions:
                         streamFollowUps.length > 0

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     REDIS_URL:       str = "redis://localhost:6379/0"
     QUERY_CACHE_TTL: int = 3600
+    SEMANTIC_CACHE_LOOKUP_TIMEOUT: float = 1.0
     CLARIFICATION_ENABLED: bool = True
     CLARIFICATION_MIN_LENGTH: int = 8
     CLARIFICATION_LLM_CHECK: bool = False

@@ -2,6 +2,7 @@
 
 import { AssistantMessageBubble } from "./AssistantMessageBubble";
 import type {
+  AgentStepInfo,
   ClarificationInfo,
   LLMErrorInfo,
   QueryMetrics,
@@ -41,6 +42,7 @@ interface Props {
   onLowScoreRetry?: (q: string) => void;
   clarification?: ClarificationInfo;
   onClarificationSelect?: (option: string) => void;
+  agentSteps?: AgentStepInfo[];
 }
 
 export default function MessageBubble({
@@ -72,6 +74,7 @@ export default function MessageBubble({
   onLowScoreRetry,
   clarification,
   onClarificationSelect,
+  agentSteps,
 }: Props) {
   if (role === "user") {
     return (
@@ -110,6 +113,7 @@ export default function MessageBubble({
       onLowScoreRetry={onLowScoreRetry}
       clarification={clarification}
       onClarificationSelect={onClarificationSelect}
+      agentSteps={agentSteps}
     />
   );
 }

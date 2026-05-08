@@ -21,6 +21,8 @@ export default function QueryPage() {
     setInput,
     strategy,
     setStrategy,
+    useHyde,
+    setUseHyde,
     pendingImages,
     setPendingImages,
     quoteSource,
@@ -138,6 +140,11 @@ export default function QueryPage() {
             setPendingImages((prev) => prev.filter((_, i) => i !== idx))
           }
           onClearQuote={() => setQuoteSource(null)}
+          strategy={strategy}
+          onStrategy={setStrategy}
+          useHyde={useHyde}
+          onHydeToggle={setUseHyde}
+          historyLen={historyLen}
         />
       </div>
     </div>

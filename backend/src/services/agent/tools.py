@@ -65,6 +65,24 @@ TOOLS = [
         },
     },
     {
+        "name": "search_images",
+        "description": "检索工艺规范中的相关工程图片，适合需要图示说明的工艺问题",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_id": {
+                    "type": "string",
+                    "description": "规范编号，如 CPS1000，可选",
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "图片主题关键词",
+                },
+            },
+            "required": ["topic"],
+        },
+    },
+    {
         "name": "get_graph_relations",
         "description": "获取某规范与其他规范的引用关系，用于追踪依赖链路",
         "input_schema": {
@@ -111,4 +129,3 @@ TOOLS = [
         },
     },
 ]
-

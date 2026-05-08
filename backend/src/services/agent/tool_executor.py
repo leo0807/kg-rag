@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-
 logger = logging.getLogger(__name__)
 
 
@@ -18,6 +17,7 @@ class ToolExecutor:
             "search_sections": self._search_sections,
             "get_section_content": self._get_section_content,
             "compare_documents": self._compare_documents,
+            "search_images": self._search_images,
             "get_graph_relations": self._get_graph_relations,
         }
         handler = handlers.get(tool_name)
@@ -80,13 +80,53 @@ class ToolExecutor:
         return row
 
     async def _compare_documents(self, doc_id_a: str, doc_id_b: str, topic: str) -> dict:
-        a_task = self._search_sections(query=topic, doc_id=doc_id_a, top_k=3)
-        b_task = self._search_sections(query=topic, doc_id=doc_id_b, top_k=3)
-        results_a, results_b = await asyncio.gather(a_task, b_task)
+        a_task = self._search_sections(query=topic, doc_id=doc_id_a, top_k=5)
+        b_task = self._search_sections(query=topic, doc_id=doc_id_b, top_k=5)
+        images_a_task = self._search_images(topic=topic, doc_id=doc_id_a)
+        images_b_task = self._search_images(topic=topic, doc_id=doc_id_b)
+        results_a, results_b, images_a, images_b = await asyncio.gather(
+            a_task, b_task, images_a_task, images_b_task
+        )
         return {
-            doc_id_a: results_a.get("sections", []),
-            doc_id_b: results_b.get("sections", []),
+            doc_id_a: {
+                "sections": results_a.get("sections", []),
+                "images": images_a.get("images", []),
+            },
+            doc_id_b: {
+                "sections": results_b.get("sections", []),
+                "images": images_b.get("images", []),
+            },
+            "images": images_a.get("images", []) + images_b.get("images", []),
+            "comparison_steps": [
+                f"{doc_id_a} 检索到 {len(results_a.get('sections', []))} 个章节",
+                f"{doc_id_b} 检索到 {len(results_b.get('sections', []))} 个章节",
+                f"{len(images_a.get('images', [])) + len(images_b.get('images', []))} 张相关图片",
+            ],
+            "comparison_hint": f"请对比{doc_id_a}和{doc_id_b}关于{topic}的异同",
         }
+
+    async def _search_images(self, topic: str, doc_id: str | None = None) -> dict:
+        def _run() -> list[dict]:
+            with self.driver.session() as s:
+                query = [
+                    "MATCH (i:Image)",
+                    "WHERE (toLower(coalesce(i.caption, '')) CONTAINS $needle OR toLower(coalesce(i.description, '')) CONTAINS $needle)",
+                ]
+                if doc_id:
+                    query.append("AND i.doc_id = $doc_id")
+                query.append(
+                    "RETURN i.image_id AS image_id, i.doc_id AS doc_id, coalesce(i.page_num, i.page, 0) AS page_num, i.caption AS caption, i.description AS description, i.minio_path AS minio_path LIMIT 3"
+                )
+                rows = list(
+                    s.run(" ".join(query), needle=(topic or "").lower(), doc_id=doc_id)
+                )
+                return [dict(row) for row in rows]
+
+        results = await asyncio.to_thread(_run)
+        for row in results:
+            minio_path = row.get("minio_path") or ""
+            row["url"] = f"/api/images/{row.get('image_id')}" if minio_path else None
+        return {"images": results, "count": len(results)}
 
     async def _get_graph_relations(self, doc_id: str, direction: str = "both") -> dict:
         def _run() -> dict:

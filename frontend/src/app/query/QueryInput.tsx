@@ -3,8 +3,8 @@ import { Download } from "lucide-react";
 import type { Strategy } from "./types";
 
 const strategies: { value: Strategy; label: string; desc: string }[] = [
-  { value: "parallel", label: "并行检索", desc: "同时检索，RRF 融合" },
-  { value: "sequential", label: "串行检索", desc: "图谱优先，精确查询" },
+  { value: "parallel", label: "并行RRF", desc: "同时检索，RRF 融合" },
+  { value: "sequential", label: "ES混合", desc: "图谱优先，精确查询" },
   { value: "graph_augmented", label: "图谱增强", desc: "向量召回+图谱扩展" },
   { value: "multi_hop", label: "多跳推理", desc: "复杂因果分析" },
   { value: "agent", label: "Agent", desc: "工具调用式多步推理" },

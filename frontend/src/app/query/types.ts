@@ -42,6 +42,14 @@ export interface ClarificationInfo {
   originalQuestion: string;
 }
 
+export interface AgentStepInfo {
+  step: number;
+  action: string;
+  status: "running" | "done" | "failed";
+  input?: unknown;
+  result_summary?: string;
+}
+
 export interface QueryMetrics {
   total_ms: number;
   stages: Record<string, number>;
@@ -63,6 +71,7 @@ export interface Message {
   expansionInfo?: string[];
   metrics?: QueryMetrics;
   clarification?: ClarificationInfo;
+  agentSteps?: AgentStepInfo[];
   timestamp: number;
 }
 

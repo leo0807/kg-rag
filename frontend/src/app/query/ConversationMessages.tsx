@@ -5,7 +5,12 @@ import SkeletonCard from "@/components/SkeletonCard";
 import CompareGrid from "./CompareGrid";
 import { ConversationMessageList } from "./ConversationMessageList";
 import { ReasoningChain } from "./ReasoningChain";
-import type { SourcePanelFilters, SourceSection, Strategy } from "./types";
+import type {
+  AgentStepInfo,
+  SourcePanelFilters,
+  SourceSection,
+  Strategy,
+} from "./types";
 
 interface Conversation {
   messages: {
@@ -19,6 +24,8 @@ interface Conversation {
     errorInfo?: unknown;
     causalChain?: unknown;
     metrics?: import("./types").QueryMetrics;
+    clarification?: import("./types").ClarificationInfo;
+    agentSteps?: AgentStepInfo[];
   }[];
 }
 

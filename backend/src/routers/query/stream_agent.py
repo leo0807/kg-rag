@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -47,10 +48,41 @@ async def stream_agent_query(
 ) -> AsyncGenerator[str, None]:
     yield f"data: {json.dumps({'type': 'status', 'content': 'Agent 推理中...'}, ensure_ascii=False)}\n\n"
     executor = AgentExecutor(get_llm_service(), ToolExecutor(driver))
-    result = await executor.run(question)
+    queue: asyncio.Queue[dict] = asyncio.Queue()
+
+    async def emit_event(payload: dict) -> None:
+        await queue.put(payload)
+
+    async def run_agent() -> None:
+        try:
+            result = await executor.run(question, emit_event=emit_event)
+            await queue.put({"type": "agent_done", "result": result})
+        except Exception as exc:
+            await queue.put({"type": "agent_error", "error": str(exc)})
+
+    task = asyncio.create_task(run_agent())
+    result: dict | None = None
+    agent_steps: list[dict] = []
+    while True:
+        event = await queue.get()
+        if event.get("type") == "agent_done":
+            result = event.get("result", {})
+            break
+        if event.get("type") == "agent_error":
+            task.cancel()
+            raise RuntimeError(event.get("error") or "Agent 执行失败")
+        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    await task
+    result = result or {}
+    agent_steps = result.get("agent_steps", [])
+    images = result.get("images", []) or []
+
     answer = clean_llm_response(result.get("answer", ""))
     sources = _to_sources(result.get("sources", []))
     yield f"data: {json.dumps({'type': 'sources', 'content': sources}, ensure_ascii=False)}\n\n"
+    if agent_steps:
+        yield f"data: {json.dumps({'type': 'agent_steps', 'content': agent_steps}, ensure_ascii=False)}\n\n"
     for char in answer:
         yield f"data: {json.dumps({'type': 'delta', 'content': char}, ensure_ascii=False)}\n\n"
 
@@ -73,8 +105,10 @@ async def stream_agent_query(
         {
             "answer": answer,
             "sources": sources,
+            "images": images,
             "iterations": result.get("iterations"),
             "strategy_used": result.get("strategy_used", "agent"),
+            "agent_steps": agent_steps,
         },
     )
     yield f"data: {json.dumps({'type': 'metrics', 'content': {'total_ms': latency_ms, 'stages': {}, 'tokens': {}, 'cost_usd': 0.0, 'candidates_retrieved': len(sources), 'candidates_after_rerank': len(sources)}}, ensure_ascii=False)}\n\n"

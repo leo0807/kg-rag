@@ -4,10 +4,10 @@ import { RotateCcw, Zap } from "lucide-react";
 import type { Strategy } from "./types";
 
 const STRATEGIES: { value: Strategy; label: string; title: string }[] = [
-  { value: "parallel", label: "并行", title: "全文 + 向量 RRF 融合" },
-  { value: "sequential", label: "串行", title: "全文优先，精确查询" },
-  { value: "graph_augmented", label: "图谱", title: "向量召回 + 图谱扩展" },
-  { value: "multi_hop", label: "多跳", title: "多跳推理，复杂因果" },
+  { value: "parallel", label: "并行RRF", title: "全文 + 向量 RRF 融合" },
+  { value: "sequential", label: "ES混合", title: "全文优先，精确查询" },
+  { value: "graph_augmented", label: "图谱增强", title: "向量召回 + 图谱扩展" },
+  { value: "multi_hop", label: "多跳推理", title: "多跳推理，复杂因果" },
   { value: "agent", label: "Agent", title: "工具调用式多步推理" },
   {
     value: "counterfactual",

@@ -3,6 +3,7 @@
 import { CausalChainPanel } from "./CausalChainPanel";
 import MessageBubble from "./MessageBubble";
 import type {
+  AgentStepInfo,
   ClarificationInfo,
   SourcePanelFilters,
   SourceSection,
@@ -23,6 +24,7 @@ interface Props {
       causalChain?: unknown;
       metrics?: import("./types").QueryMetrics;
       clarification?: ClarificationInfo;
+      agentSteps?: AgentStepInfo[];
     }[];
   };
   streaming: boolean;
@@ -178,6 +180,7 @@ export function ConversationMessageList({
             clarification={
               msg.role === "assistant" ? msg.clarification : undefined
             }
+            agentSteps={msg.role === "assistant" ? msg.agentSteps : undefined}
             onClarificationSelect={
               msg.role === "assistant"
                 ? (option) =>

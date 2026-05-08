@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -21,7 +20,16 @@ from .core   import do_retrieval
 from .clarification_utils import build_clarification_event, detect_clarification
 from .context_utils import build_llm_context, reorder_sources_for_llm
 from .stream_agent import stream_agent_query
-from .stream_utils import _error_event, _emit_follow_ups
+from .stream_utils import (
+    _error_event,
+    _emit_follow_ups,
+    emit_status_event,
+    estimate_answer_max_tokens,
+    serialize_sources,
+    stream_semantic_cache_hit,
+    try_semantic_cache_lookup,
+    stream_with_first_token_logging,
+)
 logger = logging.getLogger(__name__)
 async def query_stream(
     request:      Request,
@@ -42,46 +50,29 @@ async def query_stream(
         with use_runtime_settings(effective_settings):
             t_start = time.time()
             try:
-                clarification = await detect_clarification(req.question, driver)
+                logger.info("[timing] 开始检索 t=%.2fs", time.time() - t_start)
+                yield emit_status_event("正在检索相关规范...")
+                clarification = await detect_clarification(
+                    req.question,
+                    driver,
+                    skip=req.skip_clarification,
+                )
                 if clarification.get("needs_clarification"):
                     yield build_clarification_event(req.question, clarification)
                     yield "data: [DONE]\n\n"
                     return
                 _q_emb: list[float] | None = None
                 try:
-                    from ...services.retrieval.embedder import embed_texts
-                    from ...services.retrieval import semantic_cache
-                    _q_emb = (await asyncio.to_thread(embed_texts, [req.question]) or [None])[0]
-                    hit = _q_emb and semantic_cache.lookup(_q_emb, req.strategy or "parallel")
+                    timeout_s = float(getattr(effective_settings, "SEMANTIC_CACHE_LOOKUP_TIMEOUT", 1.0) or 1.0)
+                    _q_emb, hit = await try_semantic_cache_lookup(req.question, req.strategy or "parallel", timeout_s)
                     if hit:
-                        sim = hit.get("similarity", 0)
-                        yield f"data: {json.dumps({'type': 'status', 'content': f'⚡ 语义缓存命中（相似度 {sim:.3f}）'}, ensure_ascii=False)}\n\n"
-                        yield f"data: {json.dumps({'type': 'sources', 'content': hit.get('sources', [])}, ensure_ascii=False)}\n\n"
-                        cached_answer = clean_llm_response(hit.get("answer", ""))
-                        for char in cached_answer:
-                            yield f"data: {json.dumps({'type': 'delta', 'content': char}, ensure_ascii=False)}\n\n"
-                        yield "data: [DONE]\n\n"
-                        try:
-                            from ...db.session import AsyncSessionLocal
-                            from ...db.models import CacheHit
-                            tok = max(100, len(cached_answer) // 3)
-                            async with AsyncSessionLocal() as db_session:
-                                db_session.add(CacheHit(
-                                    user_id=user_id, department=department,
-                                    question_preview=req.question[:200],
-                                    matched_question_preview=hit.get("question_preview", "")[:200],
-                                    similarity=sim, strategy=req.strategy or "parallel",
-                                    cache_id=hit.get("cache_id", ""),
-                                    prompt_tokens_saved=tok, cost_saved_usd=round(tok * 0.000002, 6),
-                                ))
-                                await db_session.commit()
-                        except Exception as _ce:
-                            logger.warning("CacheHit 写入失败: %s", _ce)
+                        async for event in stream_semantic_cache_hit(
+                            hit, req.question, user_id, department, req.strategy or "parallel"
+                        ):
+                            yield event
                         return
                 except Exception as _e:
                     logger.debug("语义缓存查找异常（跳过）: %s", _e)
-
-                yield f"data: {json.dumps({'type': 'status', 'content': '检索中...'}, ensure_ascii=False)}\n\n"
                 if req.strategy == "multi_hop":
                     try:
                         from ...services.retrieval.multi_hop import multi_hop_query_stream
@@ -143,7 +134,6 @@ async def query_stream(
                         ]
                         yield f"data: {json.dumps({'type': 'sources', 'content': sources_cf}, ensure_ascii=False)}\n\n"
                         yield f"data: {json.dumps({'type': 'status', 'content': '推理中...'}, ensure_ascii=False)}\n\n"
-
                         full_answer = ""
                         try:
                             async for delta in get_llm_service().stream_chat(cf_messages, timeout=90):
@@ -155,7 +145,6 @@ async def query_stream(
                             yield _error_event(e)
                             yield "data: [DONE]\n\n"
                             return
-
                         latency_ms = int((time.time() - t_start) * 1000)
                         full_answer = clean_llm_response(full_answer)
                         send_generation(
@@ -172,60 +161,42 @@ async def query_stream(
                     except Exception as e:
                         logger.exception("反事实查询失败，降级到标准检索")
                 if req.use_hyde:
-                    yield f"data: {json.dumps({'type': 'status', 'content': '增强模式：生成假设答案...'}, ensure_ascii=False)}\n\n"
+                    yield emit_status_event("增强模式：生成假设答案...")
                 _t_retrieval = time.time()
                 sections, ft_score_map, expansion_info = await asyncio.to_thread(
                     do_retrieval,
                     driver, req.question, req.strategy, top_k,
-                    req.use_hyde, req.hyde_alpha,
+                    req.use_hyde, req.hyde_alpha, "", True,
                 )
-                _retrieval_ms = int((time.time() - _t_retrieval) * 1000)
+                _retrieval_ms = int((time.time() - t_start) * 1000)
+                logger.info("[timing] 检索完成 t=%.2fs", time.time() - t_start)
                 if expansion_info:
                     yield f"data: {json.dumps({'type': 'expansion', 'content': expansion_info}, ensure_ascii=False)}\n\n"
-
-                sources = [
-                    {
-                        "chunk_id": s["chunk_id"], "doc_id": s["doc_id"],
-                        "number":   s.get("number") or "", "title": s.get("title") or "",
-                        "score":    round(
-                            s.get("score")
-                            or
-                            s.get("rrf_score")
-                            or s.get("rerank_score")
-                            or ft_score_map.get(s["chunk_id"], 0.0),
-                            4,
-                        ),
-                        "page_idx": s.get("page_idx"),
-                        "bbox":     s.get("bbox"),
-                        "source_type": s.get("source_type", []),
-                        "retrieval_trace": s.get("retrieval_trace", []),
-                        "is_graph_expanded": bool(s.get("is_graph_expanded")),
-                        "is_vector_hit": bool(s.get("is_vector_hit")),
-                        "is_fulltext_hit": bool(s.get("is_fulltext_hit")),
-                        "is_gnn_hit": bool(s.get("is_gnn_hit")),
-                    }
-                    for s in sections
-                ]
+                sources = serialize_sources(sections, ft_score_map)
                 yield f"data: {json.dumps({'type': 'sources', 'content': sources}, ensure_ascii=False)}\n\n"
                 if not sections:
                     yield f"data: {json.dumps({'type': 'delta', 'content': '在知识库中未找到相关章节。'}, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
                     return
-
-                yield f"data: {json.dumps({'type': 'status', 'content': '生成回答中...'}, ensure_ascii=False)}\n\n"
+                yield emit_status_event("正在生成答案...")
+                rerank_task = None
+                rerank_sent = False
+                if req.strategy in ("parallel", "graph_augmented", "sequential", "gnn", "hybrid_es") and sections:
+                    try:
+                        from ...services.retrieval.reranker import rerank
+                        rerank_task = asyncio.create_task(asyncio.to_thread(rerank, req.question, sections, top_k))
+                    except Exception as _re:
+                        logger.debug("后台 rerank 任务启动失败（跳过）: %s", _re)
                 llm_sections = reorder_sources_for_llm(sections, req.question)
                 context = build_llm_context(llm_sections)
-
+                answer_max_tokens = estimate_answer_max_tokens(req.question, context)
                 messages = [
                     {
                         "role":    "system",
                         "content": "你是一个航空制造工艺规范专家助手。请根据提供的规范内容，用中文准确回答问题。回答时优先使用来源中的直接定义和描述，不要过多展开次要细节。如果问题询问'特性'或'性质'，优先引用定义类章节（术语定义、基本要求章节），而不是参数表格。如果来源中出现 'soft and ductile paste'、'solid and elastic rubber' 之类表述，可直接概括为'粘性和弹性'。如果问题与之前的对话相关，请结合上下文回答。",
                     }
                 ]
-
-                for h in req.history[-12:]:
-                    messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
-
+                for h in req.history[-12:]: messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
                 user_text = f"## 相关规范内容\n\n{context}\n\n## 问题\n\n{req.question}"
                 if req.images:
                     user_content: list = [{"type": "text", "text": user_text}]
@@ -237,11 +208,24 @@ async def query_stream(
                     messages.append({"role": "user", "content": user_content})
                 else:
                     messages.append({"role": "user", "content": user_text})
-
                 full_answer = ""
-                _t_llm = time.time()
                 try:
-                    async for delta in get_llm_service().stream_chat(messages, timeout=60):
+                    async for delta in stream_with_first_token_logging(
+                        get_llm_service(),
+                        messages,
+                        timeout=answer_max_tokens,
+                        t_start=t_start,
+                        logger=logger,
+                    ):
+                        if rerank_task is not None and not rerank_sent and rerank_task.done():
+                            try:
+                                reranked_sections = rerank_task.result()
+                                if reranked_sections:
+                                    sources = serialize_sources(reranked_sections, ft_score_map)
+                                    yield f"data: {json.dumps({'type': 'sources_update', 'content': sources}, ensure_ascii=False)}\n\n"
+                            except Exception as _re:
+                                logger.debug("后台 rerank 失败（跳过）: %s", _re)
+                            rerank_sent = True
                         delta = clean_llm_response(delta)
                         full_answer += delta
                         yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
@@ -250,8 +234,14 @@ async def query_stream(
                     yield _error_event(e)
                     yield "data: [DONE]\n\n"
                     return
-
-                _llm_ms    = int((time.time() - _t_llm) * 1000)
+                if rerank_task is not None and not rerank_sent:
+                    try:
+                        reranked_sections = await rerank_task
+                        if reranked_sections:
+                            sources = serialize_sources(reranked_sections, ft_score_map)
+                            yield f"data: {json.dumps({'type': 'sources_update', 'content': sources}, ensure_ascii=False)}\n\n"
+                    except Exception as _re:
+                        logger.debug("后台 rerank 失败（跳过）: %s", _re)
                 latency_ms = int((time.time() - t_start) * 1000)
                 full_answer = clean_llm_response(full_answer)
                 send_generation(
@@ -271,7 +261,7 @@ async def query_stream(
                         )
                     except Exception as _se:
                         logger.debug("语义缓存写入失败（跳过）: %s", _se)
-                _metrics = {
+                _llm_ms = max(0, latency_ms - _retrieval_ms); _metrics = {
                     "total_ms": latency_ms,
                     "stages": {"检索": _retrieval_ms, "LLM生成": _llm_ms},
                     "tokens": {}, "cost_usd": 0.0,
@@ -292,9 +282,4 @@ async def query_stream(
                     return
                 yield _error_event(e)
                 yield "data: [DONE]\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

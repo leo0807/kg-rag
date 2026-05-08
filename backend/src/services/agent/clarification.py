@@ -43,9 +43,18 @@ class ClarificationDetector:
             else use_llm_check
         )
 
-    async def needs_clarification(self, question: str, driver) -> dict:
+    async def needs_clarification(
+        self,
+        question: str,
+        driver,
+        skip: bool = False,
+    ) -> dict:
         question = (question or "").strip()
         if not self.enabled:
+            return {"needs_clarification": False}
+        if skip:
+            return {"needs_clarification": False}
+        if "具体关于" in question or re.search(r"CPS\d+", question):
             return {"needs_clarification": False}
 
         if len(question) < self.min_question_length:

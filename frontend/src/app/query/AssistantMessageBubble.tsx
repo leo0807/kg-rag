@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AgentStepsPanel } from "./AgentStepsPanel";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import { AssistantMessageActions } from "./AssistantMessageActions";
 import { AssistantMessageExtras } from "./AssistantMessageExtras";
@@ -9,6 +10,7 @@ import DetailedFeedbackPanel from "./DetailedFeedbackPanel";
 import { FollowUpSuggestions } from "./FollowUpSuggestions";
 import { MessageError } from "./MessageError";
 import type {
+  AgentStepInfo,
   ClarificationInfo,
   LLMErrorInfo,
   QueryMetrics,
@@ -37,6 +39,7 @@ interface Props {
   strategy?: string;
   onLowScoreRetry?: (q: string) => void;
   onClarificationSelect?: (option: string) => void;
+  agentSteps?: AgentStepInfo[];
 }
 
 export function AssistantMessageBubble({
@@ -60,6 +63,7 @@ export function AssistantMessageBubble({
   strategy,
   onLowScoreRetry,
   onClarificationSelect,
+  agentSteps,
 }: Props) {
   const [feedback, setFeedback] = useState<{
     rating: number;
@@ -150,6 +154,9 @@ export function AssistantMessageBubble({
               />
             ) : (
               <>
+                {agentSteps && agentSteps.length > 0 && (
+                  <AgentStepsPanel steps={agentSteps} streaming={streaming} />
+                )}
                 {!streaming && <AssistantMessageActions text={content} />}
                 <AssistantMarkdown content={content} streaming={streaming} />
 

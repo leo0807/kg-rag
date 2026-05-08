@@ -191,10 +191,16 @@ export function useChat() {
     await submitQuestion(question, images);
   }
 
-  async function submitQuestion(question: string, images: string[]) {
+  async function submitQuestion(
+    question: string,
+    images: string[],
+    options?: { skipClarification?: boolean },
+  ) {
     if (compareMode) await compareQuery.compare(question);
     else {
-      await stream.submit(question, images);
+      await stream.submit(question, images, {
+        skipClarification: options?.skipClarification ?? false,
+      });
     }
   }
 
@@ -209,12 +215,12 @@ export function useChat() {
   }
 
   async function handleClarificationSelect(
-    originalQuestion: string,
+    _originalQuestion: string,
     option: string,
   ) {
-    const refined = `${originalQuestion}，具体关于${option}`;
+    const refined = `请介绍${option}的工艺要求`;
     setInput(refined);
-    await submitQuestion(refined, []);
+    await submitQuestion(refined, [], { skipClarification: true });
     setInput("");
   }
 
