@@ -2,6 +2,18 @@ from __future__ import annotations
 
 import re
 
+_COMPARE_TOPIC_HINTS = ("安装要求", "材料要求", "检验标准", "存储要求", "安装前检查")
+
+
+def build_compare_topic(question: str) -> str:
+    doc_ids = re.findall(r"CPS\d{3,4}", question.upper())
+    topic = re.sub(r"CPS\d{3,4}", "", question)
+    topic = re.sub(r"[和与及,，。？?比较不同差异区别有什么对比]\s*", " ", topic)
+    topic = re.sub(r"\s+", " ", topic).strip() or "相关要求"
+    if len(doc_ids) >= 2:
+        return " ".join([topic, *_COMPARE_TOPIC_HINTS]).strip()
+    return topic
+
 
 def is_compare_question(question: str) -> bool:
     text = question or ""
@@ -15,18 +27,16 @@ def build_compare_plan(question: str) -> list[dict]:
     doc_ids = re.findall(r"CPS\d{3,4}", question.upper())
     if len(doc_ids) < 2:
         return []
-    topic = re.sub(r"CPS\d{3,4}", "", question)
-    topic = re.sub(r"[和与及,，。？?比较不同差异区别有什么对比]\s*", " ", topic)
-    topic = re.sub(r"\s+", " ", topic).strip() or "相关要求"
+    compare_topic = build_compare_topic(question)
     return [
-        {"name": "search_sections", "input": {"query": topic, "doc_id": doc_ids[0], "top_k": 5}},
-        {"name": "search_sections", "input": {"query": topic, "doc_id": doc_ids[1], "top_k": 5}},
+        {"name": "search_sections", "input": {"query": compare_topic, "doc_id": doc_ids[0], "top_k": 5}},
+        {"name": "search_sections", "input": {"query": compare_topic, "doc_id": doc_ids[1], "top_k": 5}},
         {
             "name": "compare_documents",
             "input": {
                 "doc_id_a": doc_ids[0],
                 "doc_id_b": doc_ids[1],
-                "topic": topic,
+                "topic": compare_topic,
             },
         },
     ]

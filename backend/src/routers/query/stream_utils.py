@@ -15,6 +15,14 @@ def emit_status_event(content: str) -> str:
     return f"data: {json.dumps({'type': 'status', 'content': content}, ensure_ascii=False)}\n\n"
 
 
+def clean_stream_chunk(chunk: str | None) -> str:
+    if not chunk:
+        return ""
+    if any(marker in chunk for marker in ("user##", "##assistant", "<|user|>", "<|im_start|>")):
+        return ""
+    return chunk.replace("\ufffd", "")
+
+
 def estimate_answer_max_tokens(question: str, context: str, cap: int = 800) -> int:
     estimated = 160 + len(question) // 2 + len(context) // 9
     return max(256, min(cap, estimated))

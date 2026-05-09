@@ -1,11 +1,14 @@
 import logging
-from neo4j import GraphDatabase, Driver
 from .config import settings
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from neo4j import Driver
 
 logger = logging.getLogger(__name__)
 _driver = None
 
-def get_driver() -> Driver:
+def get_driver() -> "Driver":
     if _driver is None:
         raise RuntimeError("Neo4j 未初始化，请检查数据库连接")
     return _driver
@@ -33,6 +36,7 @@ def _init_schema(driver):
 
 def init_db():
     global _driver
+    from neo4j import GraphDatabase
     _driver = GraphDatabase.driver(
         settings.NEO4J_URI,
         auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)

@@ -10,6 +10,7 @@ LLM 调用薄包装层 — 所有实现已迁移到 LLMService。
 import logging
 import re
 from .llm_service import get_llm_service
+from ..context_utils import trim_conversation_history
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,9 @@ _SYSTEM_PROMPT = (
     "回答时优先使用来源中的直接定义和描述，不要过多展开次要细节。"
     "如果问题询问'特性'或'性质'，优先引用定义类章节（术语定义、基本要求章节），"
     "而不是参数表格。"
+    "重要：规范编号必须与来源章节完全一致，不得自行修改或补全。"
+    "如果来源中没有某个规范的相关内容，必须明确说未找到该规范的相关内容，"
+    "不得自行补充、猜测或把其他规范编号替换进来。"
 )
 
 
@@ -57,7 +61,7 @@ _ANSWER_TMPL = """\
 
 def _build_messages(question: str, context: str, history: list[dict] | None = None) -> list[dict]:
     msgs: list[dict] = [{"role": "system", "content": _SYSTEM_PROMPT}]
-    for h in (history or [])[-12:]:
+    for h in trim_conversation_history(history, max_rounds=3):
         role    = h.get("role", "user")
         content = h.get("content", "")
         if content.strip():

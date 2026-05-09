@@ -13,6 +13,7 @@ from .agent_helpers import (
     is_compare_question,
     summarize_sources,
 )
+from ..answer_guard import validate_answer
 from .tools import TOOLS
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,15 @@ class AgentExecutor:
 1. 先查第一个规范的相关章节
 2. 再查第二个规范的相关章节
 3. 如有需要再查相关图片
-4. 最后综合生成答案""",
+4. 最后综合生成答案
+
+比较两份规范时，子查询要包含具体的工艺术语，
+如：安装要求、材料要求、检验标准、存储要求、安装前检查。
+不要只用规范名称或笼统词语。
+
+对于 CPS7251（密封圈专用规范），
+如问题涉及安装或检查，可优先精确获取 §7.5.1、§7.5.2、§7.5.3 章节。
+""",
             },
             {"role": "user", "content": question},
         ]
@@ -93,6 +102,11 @@ class AgentExecutor:
                 text = response.get("text", "")
                 if all_sources:
                     text = compose_compare_answer(question, all_sources, all_images=all_images)
+                text = validate_answer(text, all_sources, question)
+                logger.info(
+                    "[agent] final_sources=%s",
+                    sorted({src.get("doc_id", "") for src in all_sources if src.get("doc_id")}),
+                )
                 return {
                     "answer": text or summarize_sources(all_sources),
                     "sources": all_sources,
@@ -122,6 +136,11 @@ class AgentExecutor:
                 )
                 answer = tool_input.get("answer", response.get("text", ""))
                 citations = tool_input.get("citations", [])
+                answer = validate_answer(answer, all_sources, question)
+                logger.info(
+                    "[agent] final_sources=%s",
+                    sorted({src.get("doc_id", "") for src in all_sources if src.get("doc_id")}),
+                )
                 return {
                     "answer": answer or summarize_sources(all_sources),
                     "sources": all_sources,
@@ -177,6 +196,11 @@ class AgentExecutor:
                     comparison=tool_result,
                     all_images=all_images,
                 )
+                answer = validate_answer(answer, all_sources, question)
+                logger.info(
+                    "[agent] final_sources=%s",
+                    sorted({src.get("doc_id", "") for src in all_sources if src.get("doc_id")}),
+                )
                 return {
                     "answer": answer,
                     "sources": all_sources,
@@ -211,7 +235,11 @@ class AgentExecutor:
             )
 
         return {
-            "answer": compose_compare_answer(question, all_sources, all_images=all_images),
+            "answer": validate_answer(
+                compose_compare_answer(question, all_sources, all_images=all_images),
+                all_sources,
+                question,
+            ),
             "sources": all_sources,
             "images": all_images,
             "iterations": self.MAX_ITERATIONS,

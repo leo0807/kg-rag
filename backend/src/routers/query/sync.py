@@ -10,84 +10,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_driver
 from ...core.config import settings
-from ...core.observability import send_generation
 from ...services.ai.llm import clean_llm_response
 from ...services.ai.llm_service import get_llm_service
 from ...services.infra.cache import get_cached_result, set_cached_result
 from ...services.runtime.model_settings import load_effective_settings, use_runtime_settings
 from ...db.models import User, PipelineConfig
+from .query_utils import (
+    emit_generation_record,
+    extract_numeric_answer,
+    finalize_answer_text,
+    log_source_doc_ids,
+    sections_to_sources,
+)
 from .models import QueryRequest, QueryResponse, QueryMetrics, SourceSection
 from .core   import do_retrieval
 from .clarification_utils import build_clarification_payload, detect_clarification
 from .context_utils import build_llm_context, reorder_sources_for_llm
-# 已知模型每 1K token 成本 (USD: input, output)
-_MODEL_PRICE: dict[str, tuple[float, float]] = {
-    "gpt-4o":            (0.005,  0.015),
-    "gpt-4o-mini":       (0.00015, 0.0006),
-    "claude-3-5-sonnet": (0.003,  0.015),
-    "claude-3-haiku":    (0.00025, 0.00125),
-    "qwen2.5-7b":        (0.0,    0.0),
-}
-def _calc_cost(model: str, prompt_tok: int, completion_tok: int) -> float:
-    key = next((k for k in _MODEL_PRICE if k in model.lower()), None)
-    if not key:
-        return 0.0
-    p_in, p_out = _MODEL_PRICE[key]
-    return round((prompt_tok * p_in + completion_tok * p_out) / 1000, 6)
 logger = logging.getLogger(__name__)
-def _sections_to_sources(sections: list[dict], score_map: dict) -> list[SourceSection]:
-    return [
-        SourceSection(
-            chunk_id=s["chunk_id"], doc_id=s["doc_id"],
-            number=s.get("number") or "", title=s.get("title") or "",
-            score=round(
-                s.get("score")
-                or s.get("rrf_score")
-                or s.get("rerank_score")
-                or score_map.get(s["chunk_id"], 0.0),
-                4,
-            ),
-            page_idx=s.get("page_idx"),
-            bbox=s.get("bbox"),
-            source_type=s.get("source_type", []),
-            retrieval_trace=s.get("retrieval_trace", []),
-            is_graph_expanded=bool(s.get("is_graph_expanded")),
-            is_vector_hit=bool(s.get("is_vector_hit")),
-            is_fulltext_hit=bool(s.get("is_fulltext_hit")),
-            is_gnn_hit=bool(s.get("is_gnn_hit")),
-            content_type=s.get("content_type", "section"),
-            table_id=s.get("table_id"),
-            row_index=s.get("row_index"),
-            headers=s.get("headers") or [],
-            row_data=s.get("row_data"),
-        )
-        for s in sections
-    ]
-def _extract_numeric_answer(question: str, sections: list[dict]) -> str | None:
-    q = question or ""
-    if not any(key in q for key in ("初始压力", "维持真空", "真空度")):
-        return None
-    text = "\n".join((s.get("content") or "") for s in sections[:3])
-    if "0.6 MPa" not in text and "0.6MPa" not in text:
-        return None
-    if "-0.08 MPa" not in text and "-0.08MPa" not in text:
-        return None
-    initial_pressure = "0.6 MPa"
-    vacuum_pressure = "-0.08 MPa"
-    hold_drop = "0.017 MPa" if re.search(r"0\.017\s*MPa", text) else ""
-    hold_time = "5 min" if re.search(r"5\s*min", text) else ""
-    temp_hint = "100±2℃ / 180±2℃ / 210±2℃" if re.search(r"100±2℃|180±2℃|210±2℃", text) else ""
-    parts = [
-        f"初始压力为 {initial_pressure}",
-        f"维持真空度为 {vacuum_pressure}",
-    ]
-    if temp_hint:
-        parts.append(f"温度条件为 {temp_hint}")
-    if hold_time:
-        parts.append(f"真空表下降要求为 {hold_time} 内不超过 {hold_drop or '0.017 MPa'}")
-    elif hold_drop:
-        parts.append(f"真空表下降要求不超过 {hold_drop}")
-    return "根据检索到的规范，" + "，".join(parts) + "。"
 async def _get_default_pipeline(user_id: str, db: AsyncSession) -> dict | None:
     """取用户默认链路配置，无则返回 None。"""
     try:
@@ -148,19 +87,18 @@ async def query_sync(
                 answer, sections = await _run_pipeline(
                     pipeline_cfg, req.question, driver, user_id
                 )
-                answer = clean_llm_response(answer)
-                sources = _sections_to_sources(sections, {})
+                answer = finalize_answer_text(answer, sections, req.question)
+                sources = sections_to_sources(sections, {})
+                log_source_doc_ids("Pipeline", sections)
                 latency_ms = int((time.time() - start) * 1000)
-                send_generation(
-                    name="graphrag-query",
-                    model=get_llm_service().model_name,
-                    input_messages=[{"role": "user", "content": req.question}],
-                    output=answer,
-                    latency_ms=latency_ms,
+                emit_generation_record(
                     strategy="pipeline",
+                    question=req.question,
+                    answer=answer,
+                    latency_ms=latency_ms,
                     user_id=user_id,
                     department=department,
-                    question_preview=req.question,
+                    model_name=get_llm_service().model_name,
                 )
                 set_cached_result(
                     req.question,
@@ -177,14 +115,18 @@ async def query_sync(
         try:
             from ...services.retrieval.multi_hop import multi_hop_query
             answer, mh_sections, _steps = multi_hop_query(req.question, driver, top_k=top_k)
-            answer = clean_llm_response(answer)
-            sources = _sections_to_sources(mh_sections, {})
+            answer = finalize_answer_text(answer, mh_sections, req.question)
+            sources = sections_to_sources(mh_sections, {})
+            log_source_doc_ids("Multi-hop", mh_sections)
             latency_ms = int((time.time() - start) * 1000)
-            send_generation(
-                name="graphrag-query", model=get_llm_service().model_name,
-                input_messages=[{"role": "user", "content": req.question}],
-                output=answer, latency_ms=latency_ms, strategy="multi_hop",
-                user_id=user_id, department=department, question_preview=req.question,
+            emit_generation_record(
+                strategy="multi_hop",
+                question=req.question,
+                answer=answer,
+                latency_ms=latency_ms,
+                user_id=user_id,
+                department=department,
+                model_name=get_llm_service().model_name,
             )
             set_cached_result(req.question, req.strategy, top_k,
                               {"answer": answer, "sources": [s.model_dump() for s in sources]})
@@ -199,15 +141,19 @@ async def query_sync(
             tool_executor = ToolExecutor(driver)
             executor = AgentExecutor(get_llm_service(), tool_executor)
             result = await executor.run(req.question)
-            answer = clean_llm_response(result.get("answer", ""))
-            sources = _sections_to_sources(result.get("sources", []), {})
+            answer = finalize_answer_text(result.get("answer", ""), result.get("sources", []), req.question)
+            sources = sections_to_sources(result.get("sources", []), {})
             images = result.get("images", []) or []
+            log_source_doc_ids("Agent", result.get("sources", []))
             latency_ms = int((time.time() - start) * 1000)
-            send_generation(
-                name="graphrag-query", model=get_llm_service().model_name,
-                input_messages=[{"role": "user", "content": req.question}],
-                output=answer, latency_ms=latency_ms, strategy="agent",
-                user_id=user_id, department=department, question_preview=req.question,
+            emit_generation_record(
+                strategy="agent",
+                question=req.question,
+                answer=answer,
+                latency_ms=latency_ms,
+                user_id=user_id,
+                department=department,
+                model_name=get_llm_service().model_name,
             )
             set_cached_result(
                 req.question,
@@ -260,9 +206,10 @@ async def query_sync(
             )
             answer = clean_llm_response(answer)
             if "未找到相关信息" in answer:
-                extracted = _extract_numeric_answer(req.question, sections)
+                extracted = extract_numeric_answer(req.question, sections)
                 if extracted:
                     answer = extracted
+            answer = finalize_answer_text(answer, sections, req.question)
             llm_ms            = int((time.time() - t_llm) * 1000)
             prompt_tokens     = usage.get("prompt_tokens", 0)
             completion_tokens = usage.get("completion_tokens", 0)
@@ -270,8 +217,9 @@ async def query_sync(
             logger.warning("LLM 失败: %s", e)
             answer = f"检索到 {len(sections)} 个相关章节：\n\n{context[:2000]}"
 
-    sources = _sections_to_sources(sections, ft_score_map)
-    answer = clean_llm_response(answer)
+    sources = sections_to_sources(sections, ft_score_map)
+    log_source_doc_ids("检索", sections)
+    answer = finalize_answer_text(answer, sections, req.question)
     total_ms = int((time.time() - start) * 1000)
     model_name = get_llm_service().model_name
 
@@ -285,12 +233,14 @@ async def query_sync(
         candidates_after_rerank=len(sources),
     )
 
-    send_generation(
-        name="graphrag-query", model=model_name,
-        input_messages=[{"role": "user", "content": req.question}],
-        output=answer, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-        latency_ms=total_ms, strategy=req.strategy,
-        user_id=user_id, department=department, question_preview=req.question,
+    emit_generation_record(
+        strategy=req.strategy,
+        question=req.question,
+        answer=answer,
+        latency_ms=total_ms,
+        user_id=user_id,
+        department=department,
+        model_name=model_name,
     )
     set_cached_result(req.question, req.strategy, top_k,
                       {"answer": answer, "sources": [s.model_dump() for s in sources],

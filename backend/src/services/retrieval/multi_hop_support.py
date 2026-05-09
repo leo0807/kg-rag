@@ -6,6 +6,7 @@ import re
 
 from ..ai.llm import clean_llm_response
 from ..ai.llm_service import get_llm_service
+from ..answer_guard import validate_answer
 
 logger = logging.getLogger(__name__)
 DOC_ID_RE = re.compile(r"CPS\d{4}")
@@ -169,7 +170,7 @@ def synthesize_answer(question: str, retrieved: list[dict], sub_queries: list[st
         logger.warning("多跳综合失败: %s", e)
         answer = f"根据多步检索，找到 {len(unique)} 个相关章节：\n\n{context[:2000]}"
 
-    return clean_llm_response(answer), unique, []
+    return validate_answer(clean_llm_response(answer), unique, question), unique, []
 
 
 def synthesize_answer(question: str, retrieved: list[dict], sub_queries: list[str]) -> tuple[str, list[dict], list[dict]]:
@@ -198,7 +199,7 @@ def synthesize_answer(question: str, retrieved: list[dict], sub_queries: list[st
         logger.warning("多跳综合失败: %s", e)
         answer = f"根据多步检索，找到 {len(unique)} 个相关章节：\n\n{context[:2000]}"
 
-    return clean_llm_response(answer), unique, []
+    return validate_answer(clean_llm_response(answer), unique, question), unique, []
 
 
 def parse_sub_queries(content: str, question: str) -> list[str]:
@@ -261,7 +262,7 @@ def fallback_parallel_answer(question: str, driver, top_k: int = 5) -> tuple[str
         )
         prompt = build_synthesis_prompt(question, context, [question])
         answer = get_llm_service().chat([{"role": "user", "content": prompt}], timeout=60)
-        answer = clean_llm_response(answer)
+        answer = validate_answer(clean_llm_response(answer), sections, question)
         steps = [
             {
                 "hop": 0,
@@ -272,7 +273,7 @@ def fallback_parallel_answer(question: str, driver, top_k: int = 5) -> tuple[str
                 "expansion": expansion_info,
             }
         ]
-        return answer, sections[:top_k], steps
+        return validate_answer(answer, sections, question), sections[:top_k], steps
     except Exception as e:
         logger.warning("multi_hop 降级到 parallel_rrf 失败: %s", e)
         return "在知识库中未找到相关章节，请确认文件已入库。", [], []

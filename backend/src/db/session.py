@@ -1,24 +1,42 @@
 """
 数据库会话管理
 """
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+import logging
+from functools import lru_cache
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from ..core.config import settings
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=False,
-    pool_size=20,
-    max_overflow=40,
-    pool_timeout=10,       # fail fast instead of waiting 30 s
-    pool_recycle=3600,     # recycle idle connections hourly
-    pool_pre_ping=True,    # detect stale connections after container restarts
-)
+logger = logging.getLogger(__name__)
 
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+
+@lru_cache(maxsize=1)
+def get_engine():
+    return create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        pool_size=20,
+        max_overflow=40,
+        pool_timeout=10,       # fail fast instead of waiting 30 s
+        pool_recycle=3600,     # recycle idle connections hourly
+        pool_pre_ping=True,    # detect stale connections after container restarts
+    )
+
+@lru_cache(maxsize=1)
+def get_sessionmaker():
+    return async_sessionmaker(
+        get_engine(),
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+
+class _LazySessionLocal:
+    def __call__(self, *args, **kwargs):
+        return get_sessionmaker()(*args, **kwargs)
+
+
+AsyncSessionLocal = _LazySessionLocal()
 
 
 async def get_db():
@@ -27,6 +45,7 @@ async def get_db():
 
 
 async def init_tables():
+    engine = get_engine()
     from .base import Base
     from . import models
     from ..routers import feedback  # 确保 QueryFeedback 被注册

@@ -7,6 +7,7 @@ import time
 from typing import AsyncGenerator
 
 from ...core.observability import send_generation
+from ...services.answer_guard import validate_answer
 from ...services.agent.agent_executor import AgentExecutor
 from ...services.agent.tool_executor import ToolExecutor
 from ...services.ai.llm import clean_llm_response
@@ -78,8 +79,9 @@ async def stream_agent_query(
     agent_steps = result.get("agent_steps", [])
     images = result.get("images", []) or []
 
-    answer = clean_llm_response(result.get("answer", ""))
     sources = _to_sources(result.get("sources", []))
+    answer = clean_llm_response(result.get("answer", ""))
+    answer = validate_answer(answer, sources, question)
     yield f"data: {json.dumps({'type': 'sources', 'content': sources}, ensure_ascii=False)}\n\n"
     if agent_steps:
         yield f"data: {json.dumps({'type': 'agent_steps', 'content': agent_steps}, ensure_ascii=False)}\n\n"

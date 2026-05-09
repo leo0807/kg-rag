@@ -14,7 +14,9 @@ from ...core.database import get_driver
 from ...db.models import User
 from ...services.ai.llm import clean_llm_response
 from ...services.ai.llm_service import get_llm_service
+from ...services.context_utils import trim_conversation_history
 from ...services.runtime.model_settings import load_effective_settings, use_runtime_settings
+from .query_utils import finalize_answer_text, log_source_doc_ids, emit_generation_record
 from .models import QueryRequest
 from .core   import do_retrieval
 from .clarification_utils import build_clarification_event, detect_clarification
@@ -23,6 +25,7 @@ from .stream_agent import stream_agent_query
 from .stream_utils import (
     _error_event,
     _emit_follow_ups,
+    clean_stream_chunk,
     emit_status_event,
     estimate_answer_max_tokens,
     serialize_sources,
@@ -31,6 +34,8 @@ from .stream_utils import (
     stream_with_first_token_logging,
 )
 logger = logging.getLogger(__name__)
+
+
 async def query_stream(
     request:      Request,
     req:          QueryRequest,
@@ -45,7 +50,6 @@ async def query_stream(
     user_id    = current_user.id         if current_user else ""
     department = current_user.department if current_user else ""
     async def generate():
-        from ...core.observability import send_generation
         import time
         with use_runtime_settings(effective_settings):
             t_start = time.time()
@@ -77,22 +81,22 @@ async def query_stream(
                     try:
                         from ...services.retrieval.multi_hop import multi_hop_query_stream
                         full_answer = ""
+                        mh_sources: list[dict] = []
                         async for event in multi_hop_query_stream(req.question, driver, top_k=top_k):
                             if event["type"] == "done":
                                 break
+                            if event["type"] == "sources":
+                                mh_sources = event.get("content") or mh_sources
+                                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                                continue
                             if event["type"] == "delta":
                                 delta = clean_llm_response(event["content"])
                                 full_answer += delta
                                 event = {**event, "content": delta}
                             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                         latency_ms = int((time.time() - t_start) * 1000)
-                        full_answer = clean_llm_response(full_answer)
-                        send_generation(
-                            name="graphrag-stream", model=get_llm_service().model_name,
-                            input_messages=[{"role": "user", "content": req.question}],
-                            output=full_answer, latency_ms=latency_ms, strategy="multi_hop",
-                            user_id=user_id, department=department, question_preview=req.question,
-                        )
+                        full_answer = finalize_answer_text(full_answer, mh_sources, req.question)
+                        emit_generation_record(strategy="multi_hop", question=req.question, answer=full_answer, latency_ms=latency_ms, user_id=user_id, department=department, model_name=get_llm_service().model_name)
                         fu = await _emit_follow_ups(req.question, full_answer)
                         if fu:
                             yield f"data: {fu}\n\n"
@@ -117,11 +121,7 @@ async def query_stream(
                             req.question, driver, top_k=top_k
                         )
                         if req.history:
-                            history_msgs = [
-                                {"role": h.get("role", "user"), "content": h.get("content", "")}
-                                for h in req.history[-10:]
-                                if h.get("content", "").strip()
-                            ]
+                            history_msgs = trim_conversation_history(req.history, max_rounds=3)
                             cf_messages = [cf_messages[0]] + history_msgs + [cf_messages[-1]]
                         yield f"data: {json.dumps({'type': 'causal_chain', 'content': causal_chain}, ensure_ascii=False)}\n\n"
                         sources_cf = [
@@ -133,10 +133,14 @@ async def query_stream(
                             for s in cf_sections
                         ]
                         yield f"data: {json.dumps({'type': 'sources', 'content': sources_cf}, ensure_ascii=False)}\n\n"
+                        log_source_doc_ids("counterfactual", cf_sections)
                         yield f"data: {json.dumps({'type': 'status', 'content': '推理中...'}, ensure_ascii=False)}\n\n"
                         full_answer = ""
                         try:
                             async for delta in get_llm_service().stream_chat(cf_messages, timeout=90):
+                                delta = clean_stream_chunk(delta)
+                                if not delta:
+                                    continue
                                 delta = clean_llm_response(delta)
                                 full_answer += delta
                                 yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
@@ -146,13 +150,8 @@ async def query_stream(
                             yield "data: [DONE]\n\n"
                             return
                         latency_ms = int((time.time() - t_start) * 1000)
-                        full_answer = clean_llm_response(full_answer)
-                        send_generation(
-                            name="graphrag-stream", model=get_llm_service().model_name,
-                            input_messages=[{"role": "user", "content": req.question}],
-                            output=full_answer, latency_ms=latency_ms, strategy="counterfactual",
-                            user_id=user_id, department=department, question_preview=req.question,
-                        )
+                        full_answer = finalize_answer_text(full_answer, cf_sections, req.question)
+                        emit_generation_record(strategy="counterfactual", question=req.question, answer=full_answer, latency_ms=latency_ms, user_id=user_id, department=department, model_name=get_llm_service().model_name)
                         fu = await _emit_follow_ups(req.question, full_answer)
                         if fu:
                             yield f"data: {fu}\n\n"
@@ -174,6 +173,7 @@ async def query_stream(
                     yield f"data: {json.dumps({'type': 'expansion', 'content': expansion_info}, ensure_ascii=False)}\n\n"
                 sources = serialize_sources(sections, ft_score_map)
                 yield f"data: {json.dumps({'type': 'sources', 'content': sources}, ensure_ascii=False)}\n\n"
+                log_source_doc_ids("检索", sections)
                 if not sections:
                     yield f"data: {json.dumps({'type': 'delta', 'content': '在知识库中未找到相关章节。'}, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
@@ -193,10 +193,18 @@ async def query_stream(
                 messages = [
                     {
                         "role":    "system",
-                        "content": "你是一个航空制造工艺规范专家助手。请根据提供的规范内容，用中文准确回答问题。回答时优先使用来源中的直接定义和描述，不要过多展开次要细节。如果问题询问'特性'或'性质'，优先引用定义类章节（术语定义、基本要求章节），而不是参数表格。如果来源中出现 'soft and ductile paste'、'solid and elastic rubber' 之类表述，可直接概括为'粘性和弹性'。如果问题与之前的对话相关，请结合上下文回答。",
+                        "content": (
+                            "你是一个航空制造工艺规范专家助手。请根据提供的规范内容，用中文准确回答问题。"
+                            "回答时优先使用来源中的直接定义和描述，不要过多展开次要细节。"
+                            "如果问题询问'特性'或'性质'，优先引用定义类章节（术语定义、基本要求章节），而不是参数表格。"
+                            "如果来源中出现 'soft and ductile paste'、'solid and elastic rubber' 之类表述，可直接概括为'粘性和弹性'。"
+                            "重要：规范编号必须与来源章节完全一致，不得自行修改或补全。"
+                            "如果问题与之前的对话相关，请结合上下文回答。"
+                        ),
                     }
                 ]
-                for h in req.history[-12:]: messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+                for h in trim_conversation_history(req.history, max_rounds=3):
+                    messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
                 user_text = f"## 相关规范内容\n\n{context}\n\n## 问题\n\n{req.question}"
                 if req.images:
                     user_content: list = [{"type": "text", "text": user_text}]
@@ -226,6 +234,9 @@ async def query_stream(
                             except Exception as _re:
                                 logger.debug("后台 rerank 失败（跳过）: %s", _re)
                             rerank_sent = True
+                        delta = clean_stream_chunk(delta)
+                        if not delta:
+                            continue
                         delta = clean_llm_response(delta)
                         full_answer += delta
                         yield f"data: {json.dumps({'type': 'delta', 'content': delta}, ensure_ascii=False)}\n\n"
@@ -243,13 +254,8 @@ async def query_stream(
                     except Exception as _re:
                         logger.debug("后台 rerank 失败（跳过）: %s", _re)
                 latency_ms = int((time.time() - t_start) * 1000)
-                full_answer = clean_llm_response(full_answer)
-                send_generation(
-                    name="graphrag-stream", model=get_llm_service().model_name,
-                    input_messages=[{"role": "user", "content": req.question}],
-                    output=full_answer, latency_ms=latency_ms, strategy=req.strategy,
-                    user_id=user_id, department=department, question_preview=req.question,
-                )
+                full_answer = finalize_answer_text(full_answer, sections, req.question)
+                emit_generation_record(strategy=req.strategy, question=req.question, answer=full_answer, latency_ms=latency_ms, user_id=user_id, department=department, model_name=get_llm_service().model_name)
                 if _q_emb and full_answer.strip():
                     try:
                         from ...services import semantic_cache
