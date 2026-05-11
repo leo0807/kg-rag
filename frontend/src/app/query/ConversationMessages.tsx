@@ -48,6 +48,12 @@ interface Props {
   bottomRef: RefObject<HTMLDivElement | null>;
   strategy: Strategy;
   setInput: (v: string) => void;
+  onFollowUpSelect: (q: string, sourceDocIds?: string[]) => void;
+  onRetryMessage: (
+    q: string,
+    images?: string[],
+    replaceFromIndex?: number,
+  ) => void;
   onLowScoreRetry?: (q: string) => void;
   toggleCompareMode: () => void;
   onRetryStrategy: (s: string) => void;
@@ -83,6 +89,8 @@ export function ConversationMessages({
   bottomRef,
   strategy,
   setInput,
+  onFollowUpSelect,
+  onRetryMessage,
   toggleCompareMode,
   onRetryStrategy,
   onSourceClick,
@@ -150,7 +158,8 @@ export function ConversationMessages({
               favoritedChunkIds={favoritedChunkIds}
               activeSourceFilters={activeSourceFilters}
               strategy={strategy}
-              setInput={setInput}
+              onFollowUpSelect={onFollowUpSelect}
+              onRetryMessage={onRetryMessage}
               onLowScoreRetry={onLowScoreRetry}
               onSourceClick={onSourceClick}
               onQuoteSource={onQuoteSource}

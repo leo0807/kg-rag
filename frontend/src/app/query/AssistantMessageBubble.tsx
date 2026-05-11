@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
 import { AgentStepsPanel } from "./AgentStepsPanel";
+import { AnswerImageGallery } from "./AnswerImageGallery";
+import { AssistantFeedbackSection } from "./AssistantFeedbackSection";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import { AssistantMessageActions } from "./AssistantMessageActions";
 import { AssistantMessageExtras } from "./AssistantMessageExtras";
 import { ClarificationBubble } from "./ClarificationBubble";
-import DetailedFeedbackPanel from "./DetailedFeedbackPanel";
 import { FollowUpSuggestions } from "./FollowUpSuggestions";
 import { MessageError } from "./MessageError";
 import type {
   AgentStepInfo,
+  AnswerImage,
   ClarificationInfo,
   LLMErrorInfo,
   QueryMetrics,
@@ -23,6 +24,7 @@ interface Props {
   sources?: SourceSection[];
   streaming?: boolean;
   followUpQuestions?: string[];
+  followUpDocIds?: string[];
   errorInfo?: LLMErrorInfo;
   expansionInfo?: string[];
   metrics?: QueryMetrics;
@@ -31,7 +33,7 @@ interface Props {
   onSourceClick?: (chunkId: string) => void;
   onQuoteSource?: (source: SourceSection) => void;
   onBranch?: () => void;
-  onFollowUp?: (q: string) => void;
+  onFollowUp?: (q: string, sourceDocIds?: string[]) => void;
   onRetry?: () => void;
   onFavoriteSection?: (s: SourceSection) => void;
   favoritedChunkIds?: Set<string>;
@@ -40,6 +42,7 @@ interface Props {
   onLowScoreRetry?: (q: string) => void;
   onClarificationSelect?: (option: string) => void;
   agentSteps?: AgentStepInfo[];
+  answerImages?: AnswerImage[];
 }
 
 export function AssistantMessageBubble({
@@ -47,6 +50,7 @@ export function AssistantMessageBubble({
   sources,
   streaming,
   followUpQuestions,
+  followUpDocIds,
   errorInfo,
   expansionInfo,
   metrics,
@@ -64,36 +68,9 @@ export function AssistantMessageBubble({
   onLowScoreRetry,
   onClarificationSelect,
   agentSteps,
+  answerImages,
 }: Props) {
-  const [feedback, setFeedback] = useState<{
-    rating: number;
-    id: number | null;
-    showDetail: boolean;
-  } | null>(null);
   const sourcePanelState = useSourcePanelState(sources);
-
-  async function rate(r: number) {
-    if (!question) return;
-    const t = localStorage.getItem("token") ?? "";
-    const res = await fetch("/api/feedback", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${t}`,
-      },
-      body: JSON.stringify({
-        question,
-        answer: content,
-        sources: sources ?? [],
-        rating: r,
-        strategy: strategy ?? "parallel",
-      }),
-    });
-    if (res.ok) {
-      const d = await res.json();
-      setFeedback({ rating: r, id: d.id ?? null, showDetail: true });
-    }
-  }
 
   return (
     <div className="mb-6 flex justify-start">
@@ -160,6 +137,13 @@ export function AssistantMessageBubble({
                 {!streaming && <AssistantMessageActions text={content} />}
                 <AssistantMarkdown content={content} streaming={streaming} />
 
+                {!streaming && answerImages && answerImages.length > 0 && (
+                  <AnswerImageGallery
+                    images={answerImages}
+                    contextText={content}
+                  />
+                )}
+
                 {!streaming && expansionInfo && expansionInfo.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {expansionInfo.map((info) => (
@@ -179,6 +163,7 @@ export function AssistantMessageBubble({
                   followUpQuestions.length > 0 && (
                     <FollowUpSuggestions
                       questions={followUpQuestions}
+                      sourceDocIds={followUpDocIds}
                       onFollowUp={onFollowUp}
                     />
                   )}
@@ -194,51 +179,14 @@ export function AssistantMessageBubble({
                     state={sourcePanelState}
                   />
                 )}
-                {!streaming && question && (
-                  <div className="mt-3 border-t border-gray-800 pt-2">
-                    {!feedback ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => rate(1)}
-                          className="text-lg transition-transform hover:scale-110"
-                        >
-                          👍
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => rate(-1)}
-                          className="text-lg transition-transform hover:scale-110"
-                        >
-                          👎
-                        </button>
-                        <span className="text-xs text-gray-700">
-                          对这个回答有帮助吗？
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-600">
-                        {feedback.rating === 1 ? "👍" : "👎"} 感谢反馈
-                      </span>
-                    )}
-                    {feedback?.showDetail && feedback.id !== null && (
-                      <DetailedFeedbackPanel
-                        feedbackId={feedback.id}
-                        onDone={(avg) => {
-                          setFeedback((s) =>
-                            s ? { ...s, showDetail: false } : null,
-                          );
-                          if (avg < 2 && onLowScoreRetry)
-                            onLowScoreRetry(question);
-                        }}
-                        onSkip={() =>
-                          setFeedback((s) =>
-                            s ? { ...s, showDetail: false } : null,
-                          )
-                        }
-                      />
-                    )}
-                  </div>
+                {!streaming && (
+                  <AssistantFeedbackSection
+                    question={question}
+                    content={content}
+                    sources={sources}
+                    strategy={strategy}
+                    onLowScoreRetry={onLowScoreRetry}
+                  />
                 )}
               </>
             )}

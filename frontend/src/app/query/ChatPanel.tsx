@@ -38,6 +38,12 @@ interface Props {
   bottomRef: RefObject<HTMLDivElement | null>;
   strategy: Strategy;
   setInput: (v: string) => void;
+  onFollowUpSelect: (q: string, sourceDocIds?: string[]) => void;
+  onRetryMessage: (
+    q: string,
+    images?: string[],
+    replaceFromIndex?: number,
+  ) => void;
   onLowScoreRetry?: (q: string) => void;
   toggleCompareMode: () => void;
   onRetryStrategy: (s: string) => void;

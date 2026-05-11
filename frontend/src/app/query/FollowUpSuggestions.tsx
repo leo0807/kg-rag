@@ -2,10 +2,15 @@
 
 interface Props {
   questions: string[];
-  onFollowUp?: (q: string) => void;
+  sourceDocIds?: string[];
+  onFollowUp?: (q: string, sourceDocIds?: string[]) => void;
 }
 
-export function FollowUpSuggestions({ questions, onFollowUp }: Props) {
+export function FollowUpSuggestions({
+  questions,
+  sourceDocIds,
+  onFollowUp,
+}: Props) {
   if (questions.length === 0) return null;
   return (
     <div className="mt-3 pt-3 border-t border-gray-800 animate-fade-in">
@@ -15,7 +20,7 @@ export function FollowUpSuggestions({ questions, onFollowUp }: Props) {
           <button
             key={q}
             type="button"
-            onClick={() => onFollowUp?.(q)}
+            onClick={() => onFollowUp?.(q, sourceDocIds)}
             className="text-left px-3 py-1.5 text-xs text-indigo-300/80 bg-indigo-950/30
                        border border-indigo-800/40 rounded-lg hover:border-indigo-500/60
                        hover:text-indigo-200 hover:bg-indigo-950/50 transition-colors"

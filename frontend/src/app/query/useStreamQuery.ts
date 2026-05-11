@@ -6,6 +6,7 @@ import { getApiBaseUrl, getAuthHeaders } from "@/lib/api";
 import type { ReasoningStep } from "./ReasoningChain";
 import type {
   AgentStepInfo,
+  AnswerImage,
   CausalChainData,
   ClarificationInfo,
   LLMErrorInfo,
@@ -73,6 +74,7 @@ export function useStreamQuery({
   const [streaming, setStreaming] = useState(false);
   const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
+  const [, setStreamAnswerImages] = useState<AnswerImage[]>([]);
   const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
   const [causalChain, setCausalChain] = useState<CausalChainData | null>(null);
   const [streamingConvId, setStreamingConvId] = useState<string | null>(null);
@@ -83,7 +85,11 @@ export function useStreamQuery({
   async function submit(
     question: string,
     images: string[],
-    options?: { replaceFromIndex?: number; skipClarification?: boolean },
+    options?: {
+      replaceFromIndex?: number;
+      skipClarification?: boolean;
+      docHints?: string[];
+    },
   ) {
     const requestSeq = ++requestSeqRef.current;
     let convId = activeId;
@@ -124,6 +130,7 @@ export function useStreamQuery({
     setReasoningSteps([]);
     setCausalChain(null);
     setStreamingText("");
+    setStreamAnswerImages([]);
     answerRef.current = "";
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -148,6 +155,7 @@ export function useStreamQuery({
     let streamMetrics: QueryMetrics | null = null;
     let streamClarification: ClarificationInfo | null = null;
     let streamAgentSteps: AgentStepInfo[] = [];
+    let currentAnswerImages: AnswerImage[] = [];
 
     const syncAssistantMessage = (content: string) => {
       if (!convId) return;
@@ -163,6 +171,10 @@ export function useStreamQuery({
                 clarification: streamClarification ?? undefined,
                 agentSteps:
                   streamAgentSteps.length > 0 ? streamAgentSteps : undefined,
+                answerImages:
+                  currentAnswerImages.length > 0
+                    ? currentAnswerImages
+                    : undefined,
                 causalChain: streamCausalChain ?? undefined,
                 followUpQuestions:
                   streamFollowUps.length > 0 ? streamFollowUps : undefined,
@@ -193,6 +205,8 @@ export function useStreamQuery({
           answerRef.current = "";
           setStreamingText("");
           streamAgentSteps = [];
+          currentAnswerImages = [];
+          setStreamAnswerImages([]);
           showNetToast("reconnecting", "正在重连…");
         }
 
@@ -203,6 +217,8 @@ export function useStreamQuery({
           streamFollowUps = [];
           streamError = null;
           streamExpansionInfo = [];
+          currentAnswerImages = [];
+          setStreamAnswerImages([]);
           const headers = await getAuthHeaders({
             "Content-Type": "application/json",
           });
@@ -218,6 +234,7 @@ export function useStreamQuery({
               use_hyde: useHyde,
               hyde_alpha: hydeAlpha,
               skip_clarification: options?.skipClarification ?? false,
+              doc_hints: options?.docHints ?? [],
             }),
           });
           if (!res.ok) throw new Error("请求失败");
@@ -266,6 +283,12 @@ export function useStreamQuery({
                       setStreamingText(answerRef.current);
                     } else if (event.type === "steps") {
                       setReasoningSteps((prev) => [...prev, ...event.content]);
+                    } else if (event.type === "images") {
+                      currentAnswerImages = Array.isArray(event.content)
+                        ? event.content
+                        : [];
+                      setStreamAnswerImages(currentAnswerImages);
+                      syncAssistantMessage(answerRef.current);
                     } else if (event.type === "agent_step") {
                       streamAgentSteps = upsertAgentStep(streamAgentSteps, {
                         step: Number(event.step ?? 0),
@@ -346,6 +369,12 @@ export function useStreamQuery({
                   setStreamingText(answerRef.current);
                 } else if (event.type === "steps") {
                   setReasoningSteps((prev) => [...prev, ...event.content]);
+                } else if (event.type === "images") {
+                  currentAnswerImages = Array.isArray(event.content)
+                    ? event.content
+                    : [];
+                  setStreamAnswerImages(currentAnswerImages);
+                  syncAssistantMessage(answerRef.current);
                 } else if (event.type === "agent_step") {
                   streamAgentSteps = upsertAgentStep(streamAgentSteps, {
                     step: Number(event.step ?? 0),
@@ -393,6 +422,15 @@ export function useStreamQuery({
             streamDone = true;
             break;
           }
+          streamError = {
+            code: "network_error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "网络异常，已达最大重试次数",
+            status_code: null,
+            endpoint: "",
+          };
           if (attempt >= MAX_RETRIES) {
             throw new Error("网络异常，已达最大重试次数");
           }
@@ -411,6 +449,10 @@ export function useStreamQuery({
               clarification: streamClarification ?? undefined,
               agentSteps:
                 streamAgentSteps.length > 0 ? streamAgentSteps : undefined,
+              answerImages:
+                currentAnswerImages.length > 0
+                  ? currentAnswerImages
+                  : undefined,
               causalChain: streamCausalChain ?? undefined,
               followUpQuestions:
                 streamFollowUps.length > 0 ? streamFollowUps : undefined,
@@ -451,6 +493,10 @@ export function useStreamQuery({
                         streamAgentSteps.length > 0
                           ? streamAgentSteps
                           : undefined,
+                      answerImages:
+                        currentAnswerImages.length > 0
+                          ? currentAnswerImages
+                          : undefined,
                       causalChain: streamCausalChain ?? undefined,
                       followUpQuestions:
                         streamFollowUps.length > 0
@@ -477,9 +523,19 @@ export function useStreamQuery({
         return;
       }
       const errMsg = e instanceof Error ? e.message : "网络异常";
+      const networkErrorInfo: LLMErrorInfo = {
+        code: "network_error",
+        message: errMsg,
+        status_code: null,
+        endpoint: "",
+      };
       await updateConversation(
         convId,
-        newMsgs.map((m) => (m.id === aiMsgId ? { ...m, content: errMsg } : m)),
+        newMsgs.map((m) =>
+          m.id === aiMsgId
+            ? { ...m, content: errMsg, errorInfo: networkErrorInfo }
+            : m,
+        ),
       );
       if (requestSeq === requestSeqRef.current) {
         setLoading(false);

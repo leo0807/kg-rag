@@ -8,6 +8,7 @@ const ERROR_HINTS: Record<string, string> = {
   rate_limited: "· 稍等片刻后重试",
   timeout: "· 点击重试，或换用响应更快的模型",
   service_unavailable: "· 检查 AI 服务是否正常运行",
+  network_error: "· 检查网络后重新发送",
   unknown_error: "· 联系管理员查看后端日志",
 };
 
@@ -16,6 +17,7 @@ const ERROR_TITLES: Record<string, string> = {
   rate_limited: "请求过于频繁",
   timeout: "模型响应超时",
   service_unavailable: "AI 服务暂时不可用",
+  network_error: "网络连接异常",
 };
 
 interface Props {
@@ -39,10 +41,16 @@ export function MessageError({ errorInfo, isAdmin, onRetry }: Props) {
         <div className="mb-3 px-3 py-2 bg-amber-900/30 border border-amber-700/40 rounded-lg text-xs text-amber-300/70 space-y-1">
           <div className="font-medium text-amber-400 mb-1">管理员信息</div>
           {errorInfo.status_code && (
-            <div>HTTP 状态码：<span className="font-mono">{errorInfo.status_code}</span></div>
+            <div>
+              HTTP 状态码：
+              <span className="font-mono">{errorInfo.status_code}</span>
+            </div>
           )}
           {errorInfo.endpoint && (
-            <div>端点：<span className="font-mono break-all">{errorInfo.endpoint}</span></div>
+            <div>
+              端点：
+              <span className="font-mono break-all">{errorInfo.endpoint}</span>
+            </div>
           )}
           {errorInfo.code === "quota_exceeded" && (
             <div className="mt-1 space-y-0.5">
@@ -67,7 +75,7 @@ export function MessageError({ errorInfo, isAdmin, onRetry }: Props) {
             className="mt-2 px-3 py-1 text-xs bg-amber-800/40 hover:bg-amber-700/50
                        border border-amber-600/50 rounded-lg text-amber-300 transition-colors"
           >
-            重试
+            重新发送
           </button>
         )}
       </div>
