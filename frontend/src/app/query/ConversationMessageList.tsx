@@ -4,6 +4,7 @@ import { CausalChainPanel } from "./CausalChainPanel";
 import MessageBubble from "./MessageBubble";
 import type {
   AgentStepInfo,
+  AnswerImage,
   ClarificationInfo,
   SourcePanelFilters,
   SourceSection,
@@ -25,6 +26,7 @@ interface Props {
       metrics?: import("./types").QueryMetrics;
       clarification?: ClarificationInfo;
       agentSteps?: AgentStepInfo[];
+      answerImages?: AnswerImage[];
     }[];
   };
   streaming: boolean;
@@ -34,7 +36,12 @@ interface Props {
   favoritedChunkIds: Set<string>;
   activeSourceFilters: SourcePanelFilters;
   strategy: Strategy;
-  setInput: (v: string) => void;
+  onFollowUpSelect: (q: string, sourceDocIds?: string[]) => void;
+  onRetryMessage: (
+    q: string,
+    images?: string[],
+    replaceFromIndex?: number,
+  ) => void;
   onLowScoreRetry?: (q: string) => void;
   onSourceClick: (chunkId: string) => void;
   onQuoteSource: (source: SourceSection) => void;
@@ -63,7 +70,8 @@ export function ConversationMessageList({
   favoritedChunkIds,
   activeSourceFilters,
   strategy,
-  setInput,
+  onFollowUpSelect,
+  onRetryMessage,
   onLowScoreRetry,
   onSourceClick,
   onQuoteSource,
@@ -114,6 +122,17 @@ export function ConversationMessageList({
             followUpQuestions={
               msg.role === "assistant" ? msg.followUpQuestions : undefined
             }
+            followUpDocIds={
+              msg.role === "assistant"
+                ? Array.from(
+                    new Set(
+                      (msg.sources ?? [])
+                        .map((s) => s.doc_id)
+                        .filter((doc_id): doc_id is string => Boolean(doc_id)),
+                    ),
+                  )
+                : undefined
+            }
             expansionInfo={
               msg.role === "assistant" ? msg.expansionInfo : undefined
             }
@@ -133,18 +152,24 @@ export function ConversationMessageList({
                 ? () => onBranch(i)
                 : undefined
             }
-            onFollowUp={(q) => setInput(q)}
+            onFollowUp={(q, sourceDocIds) => onFollowUpSelect(q, sourceDocIds)}
             onRetry={
               msg.role === "assistant" && msg.errorInfo
                 ? () => {
                     const prev = activeConv.messages[i - 1];
-                    if (prev?.role === "user") setInput(prev.content);
+                    if (prev?.role === "user")
+                      onRetryMessage(prev.content, prev.images, i - 1);
                   }
                 : undefined
             }
             onEditQuestion={
               msg.role === "user"
                 ? () => onEditQuestion(i, msg.content)
+                : undefined
+            }
+            onResend={
+              msg.role === "user" && activeConv.messages[i + 1]?.errorInfo
+                ? () => onRetryMessage(msg.content, msg.images, i)
                 : undefined
             }
             isEditing={msg.role === "user" && editingMessageIndex === i}
@@ -181,6 +206,9 @@ export function ConversationMessageList({
               msg.role === "assistant" ? msg.clarification : undefined
             }
             agentSteps={msg.role === "assistant" ? msg.agentSteps : undefined}
+            answerImages={
+              msg.role === "assistant" ? msg.answerImages : undefined
+            }
             onClarificationSelect={
               msg.role === "assistant"
                 ? (option) =>

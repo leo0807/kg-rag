@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, PencilLine, X } from "lucide-react";
+import { Check, PencilLine, RotateCcw, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef } from "react";
 
@@ -8,6 +8,7 @@ interface Props {
   content: string;
   images?: string[];
   onEditQuestion?: () => void;
+  onResend?: () => void;
   isEditing?: boolean;
   editValue?: string;
   onEditChange?: (v: string) => void;
@@ -19,6 +20,7 @@ export function UserMessageBubble({
   content,
   images,
   onEditQuestion,
+  onResend,
   isEditing,
   editValue,
   onEditChange,
@@ -86,17 +88,30 @@ export function UserMessageBubble({
   return (
     <div className="mb-6 flex justify-end">
       <div className="relative group flex max-w-[75%] flex-col items-end gap-2">
-        {onEditQuestion && (
-          <button
-            type="button"
-            onClick={onEditQuestion}
-            className="absolute right-2 top-2 rounded-full border border-gray-800 bg-gray-950 p-1.5 text-gray-500 opacity-0 shadow-lg transition-all hover:border-indigo-500 hover:text-indigo-300 group-hover:opacity-100"
-            title="编辑重答"
-            aria-label="编辑重答"
-          >
-            <PencilLine size={12} />
-          </button>
-        )}
+        <div className="absolute right-2 top-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onResend && (
+            <button
+              type="button"
+              onClick={onResend}
+              className="rounded-full border border-red-800/60 bg-gray-950 p-1.5 text-red-400 shadow-lg transition-colors hover:border-red-500 hover:text-red-300"
+              title="重新发送"
+              aria-label="重新发送"
+            >
+              <RotateCcw size={12} />
+            </button>
+          )}
+          {onEditQuestion && (
+            <button
+              type="button"
+              onClick={onEditQuestion}
+              className="rounded-full border border-gray-800 bg-gray-950 p-1.5 text-gray-500 shadow-lg transition-colors hover:border-indigo-500 hover:text-indigo-300"
+              title="编辑重答"
+              aria-label="编辑重答"
+            >
+              <PencilLine size={12} />
+            </button>
+          )}
+        </div>
         {images && images.length > 0 && (
           <div className="flex flex-wrap justify-end gap-2">
             {images.map((src, i) => (

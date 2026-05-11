@@ -3,6 +3,7 @@
 import { AssistantMessageBubble } from "./AssistantMessageBubble";
 import type {
   AgentStepInfo,
+  AnswerImage,
   ClarificationInfo,
   LLMErrorInfo,
   QueryMetrics,
@@ -18,6 +19,7 @@ interface Props {
   images?: string[];
   streaming?: boolean;
   followUpQuestions?: string[];
+  followUpDocIds?: string[];
   errorInfo?: LLMErrorInfo;
   expansionInfo?: string[];
   metrics?: QueryMetrics;
@@ -26,12 +28,13 @@ interface Props {
   onQuoteSource?: (source: SourceSection) => void;
   onBranch?: () => void;
   onEditQuestion?: () => void;
+  onResend?: () => void;
   isEditing?: boolean;
   editValue?: string;
   onEditChange?: (v: string) => void;
   onEditSubmit?: () => void;
   onEditCancel?: () => void;
-  onFollowUp?: (q: string) => void;
+  onFollowUp?: (q: string, sourceDocIds?: string[]) => void;
   onRetry?: () => void;
   onFavoriteSection?: (s: SourceSection) => void;
   favoritedChunkIds?: Set<string>;
@@ -43,6 +46,7 @@ interface Props {
   clarification?: ClarificationInfo;
   onClarificationSelect?: (option: string) => void;
   agentSteps?: AgentStepInfo[];
+  answerImages?: AnswerImage[];
 }
 
 export default function MessageBubble({
@@ -52,6 +56,7 @@ export default function MessageBubble({
   images,
   streaming,
   followUpQuestions,
+  followUpDocIds,
   errorInfo,
   expansionInfo,
   metrics,
@@ -60,6 +65,7 @@ export default function MessageBubble({
   onQuoteSource,
   onBranch,
   onEditQuestion,
+  onResend,
   isEditing,
   editValue,
   onEditChange,
@@ -75,6 +81,7 @@ export default function MessageBubble({
   clarification,
   onClarificationSelect,
   agentSteps,
+  answerImages,
 }: Props) {
   if (role === "user") {
     return (
@@ -82,6 +89,7 @@ export default function MessageBubble({
         content={content}
         images={images}
         onEditQuestion={onEditQuestion}
+        onResend={onResend}
         isEditing={isEditing}
         editValue={editValue}
         onEditChange={onEditChange}
@@ -97,6 +105,7 @@ export default function MessageBubble({
       sources={sources}
       streaming={streaming}
       followUpQuestions={followUpQuestions}
+      followUpDocIds={followUpDocIds}
       errorInfo={errorInfo}
       expansionInfo={expansionInfo}
       metrics={metrics}
@@ -114,6 +123,7 @@ export default function MessageBubble({
       clarification={clarification}
       onClarificationSelect={onClarificationSelect}
       agentSteps={agentSteps}
+      answerImages={answerImages}
     />
   );
 }
