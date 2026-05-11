@@ -15,6 +15,7 @@ from ...db.models import User
 from .models import QueryRequest
 from .core import do_retrieval
 from .context_utils import build_llm_context, reorder_sources_for_llm
+from ...services.retrieval.compare_query import run_compare_query
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,28 @@ STRATEGY_LABELS = {
 async def _run_strategy(driver: Driver, question: str, strategy: str, top_k: int) -> dict:
     t0 = time.time()
     try:
+        doc_ids = [doc_id for doc_id in dict.fromkeys(__import__("re").findall(r"CPS\d{3,4}", question.upper()))]
+        if len(doc_ids) >= 2:
+            compare_result = await run_compare_query(driver, question, strategy, top_k)
+            if compare_result:
+                return {
+                    "strategy": strategy,
+                    "label": STRATEGY_LABELS[strategy],
+                    "answer": compare_result.get("answer", ""),
+                    "sources": [
+                        {
+                            "chunk_id": s["chunk_id"],
+                            "doc_id": s["doc_id"],
+                            "number": s.get("number") or "",
+                            "title": s.get("title") or "",
+                            "score": round(float(s.get("score") or 0.0), 4),
+                        }
+                        for s in compare_result.get("sections", [])
+                    ],
+                    "images": compare_result.get("images", []),
+                    "latency_ms": int((time.time() - t0) * 1000),
+                    "error": None,
+                }
         if strategy == "multi_hop":
             from ...services.retrieval.multi_hop import multi_hop_query
             answer, sections, _ = await asyncio.to_thread(
@@ -81,6 +104,7 @@ async def _run_strategy(driver: Driver, question: str, strategy: str, top_k: int
             "label":      STRATEGY_LABELS[strategy],
             "answer":     answer,
             "sources":    sources,
+            "images":     [],
             "latency_ms": int((time.time() - t0) * 1000),
             "error":      None,
         }
@@ -92,6 +116,7 @@ async def _run_strategy(driver: Driver, question: str, strategy: str, top_k: int
             "label":      STRATEGY_LABELS[strategy],
             "answer":     None,
             "sources":    [],
+            "images":     [],
             "latency_ms": int((time.time() - t0) * 1000),
             "error": {
                 "code":        llm_err.code        if llm_err else "unknown_error",
