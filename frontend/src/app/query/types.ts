@@ -21,6 +21,18 @@ export interface SourceSection {
   row_data?: Record<string, string>;
 }
 
+export interface AnswerImage {
+  image_id: string;
+  doc_id: string;
+  page_num?: number;
+  caption?: string;
+  description?: string;
+  url?: string | null;
+  minio_path?: string;
+  figure_label?: string | null;
+  figure_labels?: string[];
+}
+
 export type SourceFilterType = "fulltext" | "vector" | "graph" | "gnn";
 
 export interface SourcePanelFilters {
@@ -65,6 +77,7 @@ export interface Message {
   content: string;
   sources?: SourceSection[];
   images?: string[]; // base64 data URIs (user messages only)
+  answerImages?: AnswerImage[];
   causalChain?: CausalChainData;
   followUpQuestions?: string[];
   errorInfo?: LLMErrorInfo;

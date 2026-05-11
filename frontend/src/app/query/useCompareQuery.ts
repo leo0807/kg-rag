@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { fetchApi } from "@/lib/api";
-import type { LLMErrorInfo, SourceSection } from "./types";
+import type { AnswerImage, LLMErrorInfo, SourceSection } from "./types";
 
 export interface CompareResult {
   strategy: string;
   label: string;
   answer: string | null;
   sources: SourceSection[];
+  images?: AnswerImage[];
   latency_ms: number;
   error: LLMErrorInfo | null;
 }
