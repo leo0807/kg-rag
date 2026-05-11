@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
-import type { GraphNode, Limits, RenderMode } from "./constants";
+import type { EdgeFilter, GraphNode, Limits, NodeFilter, RenderMode } from "./constants";
 import { type GraphTheme, MAX_SCALE, MIN_SCALE } from "./constants";
 import { GraphLegend } from "./GraphLegend";
 import { GraphLimitsPanel } from "./GraphLimitsPanel";
@@ -33,8 +33,8 @@ interface Props {
   zoomIn: () => void;
   zoomOut: () => void;
   zoomReset: () => void;
-  setNodeFilter: (v: string) => void;
-  setEdgeFilter: (v: string) => void;
+  setNodeFilter: Dispatch<SetStateAction<NodeFilter>>;
+  setEdgeFilter: Dispatch<SetStateAction<EdgeFilter>>;
   showLimits: boolean;
   limits: Limits;
   setLimits: Dispatch<SetStateAction<Limits>>;
