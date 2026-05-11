@@ -2,27 +2,21 @@
 非流式查询接口
 """
 import logging
-import re
 import time
 from fastapi import Depends, HTTPException, Request
 from neo4j import Driver
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_driver
-from ...core.config import settings
 from ...services.ai.llm import clean_llm_response
 from ...services.ai.llm_service import get_llm_service
 from ...services.infra.cache import get_cached_result, set_cached_result
 from ...services.runtime.model_settings import load_effective_settings, use_runtime_settings
+from ...services.context_utils import resolve_retrieval_doc_id
+from ...services.query_count import maybe_build_total_cps_count_response
 from ...db.models import User, PipelineConfig
-from .query_utils import (
-    emit_generation_record,
-    extract_numeric_answer,
-    finalize_answer_text,
-    log_source_doc_ids,
-    sections_to_sources,
-)
-from .models import QueryRequest, QueryResponse, QueryMetrics, SourceSection
+from .query_utils import emit_generation_record, extract_numeric_answer, finalize_answer_text, log_source_doc_ids, sections_to_sources
+from .models import QueryRequest, QueryResponse, QueryMetrics
 from .core   import do_retrieval
 from .clarification_utils import build_clarification_payload, detect_clarification
 from .context_utils import build_llm_context, reorder_sources_for_llm
@@ -65,9 +59,8 @@ async def query_sync(
         raise HTTPException(status_code=400, detail="question 不能为空")
     effective_settings = await load_effective_settings(db, current_user.id if current_user else None)
     with use_runtime_settings(effective_settings):
-        top_k      = req.top_k or 5
-        user_id    = current_user.id         if current_user else ""
-        department = current_user.department if current_user else ""
+        top_k = req.top_k or 5
+        user_id = current_user.id if current_user else ""; department = current_user.department if current_user else ""
     clarification = await detect_clarification(
         req.question,
         driver,
@@ -75,6 +68,9 @@ async def query_sync(
     )
     if clarification.get("needs_clarification"):
         return QueryResponse(**build_clarification_payload(req.question, clarification))
+    count_response = await maybe_build_total_cps_count_response(req.question, req.strategy, top_k, driver, user_id, department)
+    if count_response:
+        return count_response
     cached = get_cached_result(req.question, req.strategy, top_k)
     if cached:
         return QueryResponse(**cached)
@@ -176,8 +172,58 @@ async def query_sync(
         except Exception as e:
             logger.warning("Agent 推理失败，降级到标准检索: %s", e)
 
+    if req.strategy in ("parallel", "parallel_rrf", "hybrid_es", "sequential", "gnn", "graph_augmented"):
+        try:
+            from ...services.retrieval.compare_query import run_compare_query
+
+            compare_result = await run_compare_query(
+                driver,
+                req.question,
+                req.strategy,
+                top_k,
+                req.use_hyde,
+                req.hyde_alpha,
+            )
+            if compare_result:
+                sources = sections_to_sources(compare_result.get("sections", []), compare_result.get("ft_score_map", {}))
+                answer = finalize_answer_text(compare_result.get("answer", ""), compare_result.get("sections", []), req.question)
+                log_source_doc_ids("Compare", compare_result.get("sections", []))
+                latency_ms = int((time.time() - start) * 1000)
+                emit_generation_record(
+                    strategy=req.strategy,
+                    question=req.question,
+                    answer=answer,
+                    latency_ms=latency_ms,
+                    user_id=user_id,
+                    department=department,
+                    model_name=get_llm_service().model_name,
+                )
+                set_cached_result(
+                    req.question,
+                    req.strategy,
+                    top_k,
+                    {
+                        "answer": answer,
+                        "sources": [s.model_dump() for s in sources],
+                        "images": compare_result.get("images", []),
+                    },
+                )
+                return QueryResponse(
+                    answer=answer,
+                    sources=sources,
+                    images=compare_result.get("images", []),
+                )
+        except Exception as e:
+            logger.warning("比较题专用检索失败，回退到通用检索: %s", e)
+
     t_retrieval = time.time()
-    sections, ft_score_map, expansion_info = do_retrieval(driver, req.question, req.strategy, top_k)
+    sections, ft_score_map, expansion_info = do_retrieval(
+        driver,
+        req.question,
+        req.strategy,
+        top_k,
+        doc_id=resolve_retrieval_doc_id(req.question, req.doc_hints),
+    )
     retrieval_ms = int((time.time() - t_retrieval) * 1000)
 
     # 注入规范冲突仲裁注释
