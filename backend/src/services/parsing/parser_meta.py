@@ -31,15 +31,36 @@ def clean_ocr_artifacts(text: str) -> str:
     # 使用 \b 词边界：在零件编号（如 CETR0001D08）中字母与数字相邻，无词边界，不会匹配
     text = re.sub(r'\b(\d+)D(\d+)\b', r'\1.\2', text)
 
-    # 'isis' 被误识别为 '00'；'is' 被误识别为 '0'
-    text = re.sub(r'isis', '00', text)
-    text = re.sub(r'\bis\b(?=\d)', '0', text)
-    text = re.sub(r'(?<=\d)\bis\b', '0', text)
+    # ── is / N 误识别清理 ──────────────────────────────────
+    # 所有规则都要求"is/N"出现在数字上下文中，避免误伤合法英文文本。
 
-    # 第二遍单位空格修复（处理 isis→00 等替换后产生的新的数字+单位连接）
+    # 连续 is/N 长序列（≥3）→ 空（"isisN..." 等只在数字段出现）
+    text = re.sub(r'(?:is|N){3,}', '', text)
+
+    # 'isis' → '00'（两个连续 is）
+    text = re.sub(r'isis', '00', text)
+
+    # 'isN' / 'isn' → '00'（仅在数字附近成立）
+    text = re.sub(r'(?<=\d)is[Nn]', '00', text)
+    text = re.sub(r'is[Nn](?=\d)', '00', text)
+
+    # 数字后紧跟 is → 0（如 "5is" → "50"）
+    text = re.sub(r'(\d)is(?!\w)', r'\g<1>0', text)
+
+    # is 后紧跟数字 → 0+数字（如 "is5" → "05"）
+    text = re.sub(r'(?<!\w)is(\d)', r'0\1', text)
+
+    # 数字间夹 N（如 "5N6" → "56"）
+    text = re.sub(r'(\d)N(\d)', r'\1\2', text)
+
+    # 重复标点 / 多余空行
+    text = re.sub(r'([。，、；：！？])\1+', r'\1', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    # 第二遍单位空格修复（处理替换后产生的新数字+单位连接）
     text = re.sub(r'(\d)\s*(MPa|kPa|℃|mm|min|kg)', r'\1 \2', text)
 
-    return text
+    return text.strip()
 
 
 def extract_refs(sections: list[dict]) -> list[str]:

@@ -22,7 +22,11 @@ def clean_stream_chunk(chunk: str | None) -> str:
         return ""
     if any(marker in chunk for marker in ("user##", "##assistant", "<|user|>", "<|im_start|>")):
         return ""
-    return chunk.replace("\ufffd", "")
+    chunk = chunk.replace("\ufffd", "")
+    chunk = re.sub(r'(?:is){3,}', '', chunk)
+    chunk = re.sub(r'N{3,}', '', chunk)
+    chunk = re.sub(r'isis[Nn]*', '', chunk)
+    return chunk
 
 
 def estimate_answer_max_tokens(question: str, context: str, cap: int = 800) -> int:
