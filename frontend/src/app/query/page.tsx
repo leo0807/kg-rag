@@ -42,6 +42,7 @@ export default function QueryPage() {
     toggleCompareMode,
     handleSubmit,
     handleBranch,
+    handleRetryQuestion,
     handleSourceClick,
     handleQuoteSource,
     exportConversation,
@@ -53,6 +54,10 @@ export default function QueryPage() {
     cancelEditQuestion,
     submitEditedQuestion,
     handleClarificationSelect,
+    handleFollowUpSelect,
+    queuedQuestion,
+    handleQueueQuestion,
+    handleCancelQueue,
   } = chat;
 
   const historyLen = activeConv?.messages.length ?? 0;
@@ -123,6 +128,8 @@ export default function QueryPage() {
           onEditCancel={cancelEditQuestion}
           onEditSubmit={submitEditedQuestion}
           onClarificationSelect={handleClarificationSelect}
+          onFollowUpSelect={handleFollowUpSelect}
+          onRetryMessage={handleRetryQuestion}
         />
 
         <ConversationInput
@@ -145,6 +152,9 @@ export default function QueryPage() {
           useHyde={useHyde}
           onHydeToggle={setUseHyde}
           historyLen={historyLen}
+          queuedQuestion={queuedQuestion}
+          onQueueQuestion={handleQueueQuestion}
+          onCancelQueue={handleCancelQueue}
         />
       </div>
     </div>

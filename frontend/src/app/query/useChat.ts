@@ -26,7 +26,12 @@ export function useChat() {
     updateConversation,
   } = conversations;
 
-  const [input, setInput] = useState("");
+  const [input, _setInput] = useState("");
+  const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
+  const queuedQuestionRef = useRef<string | null>(null);
+  const [pendingFollowUpDocHints, setPendingFollowUpDocHints] = useState<
+    string[]
+  >([]);
   const [strategy, setStrategy] = useState<Strategy>("parallel");
   const [useHyde, setUseHyde] = useState(false);
   const hydeAlpha = 0.5;
@@ -112,6 +117,25 @@ export function useChat() {
 
   const compareQuery = useCompareQuery();
 
+  // Keep ref in sync so the effect below can read the latest queued value
+  useEffect(() => { queuedQuestionRef.current = queuedQuestion; }, [queuedQuestion]);
+
+  // When the current conversation finishes, auto-submit queued question
+  useEffect(() => {
+    if (currentConversationBusy || !queuedQuestionRef.current) return;
+    const q = queuedQuestionRef.current;
+    queuedQuestionRef.current = null;
+    setQueuedQuestion(null);
+    if (compareMode) void compareQuery.compare(q);
+    else void stream.submit(q, [], { skipClarification: false, docHints: [] });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentConversationBusy]);
+
+  const setInput = useCallback((value: string) => {
+    _setInput(value);
+    setPendingFollowUpDocHints([]);
+  }, []);
+
   useEffect(() => {
     activeIdRef.current = activeId;
   });
@@ -188,18 +212,27 @@ export function useChat() {
     setInput("");
     setPendingImages([]);
     setQuoteSource(null);
-    await submitQuestion(question, images);
+    await submitQuestion(question, images, {
+      docHints: pendingFollowUpDocHints,
+    });
+    setPendingFollowUpDocHints([]);
   }
 
   async function submitQuestion(
     question: string,
     images: string[],
-    options?: { skipClarification?: boolean },
+    options?: {
+      skipClarification?: boolean;
+      docHints?: string[];
+      replaceFromIndex?: number;
+    },
   ) {
     if (compareMode) await compareQuery.compare(question);
     else {
       await stream.submit(question, images, {
+        replaceFromIndex: options?.replaceFromIndex,
         skipClarification: options?.skipClarification ?? false,
+        docHints: options?.docHints ?? [],
       });
     }
   }
@@ -219,9 +252,43 @@ export function useChat() {
     option: string,
   ) {
     const refined = `请介绍${option}的工艺要求`;
-    setInput(refined);
+    _setInput(refined);
+    setPendingFollowUpDocHints([]);
     await submitQuestion(refined, [], { skipClarification: true });
+    _setInput("");
+  }
+
+  function handleQueueQuestion(text: string) {
+    setQueuedQuestion(text);
+    queuedQuestionRef.current = text;
     setInput("");
+  }
+
+  function handleCancelQueue() {
+    setQueuedQuestion(null);
+    queuedQuestionRef.current = null;
+  }
+
+  async function handleRetryQuestion(
+    question: string,
+    images?: string[],
+    replaceFromIndex?: number,
+  ) {
+    await submitQuestion(question, images ?? [], {
+      skipClarification: false,
+      ...(replaceFromIndex !== undefined ? { replaceFromIndex } : {}),
+    });
+  }
+
+  function handleFollowUpSelect(question: string, sourceDocIds?: string[]) {
+    _setInput(question);
+    setPendingFollowUpDocHints(
+      Array.from(
+        new Set(
+          (sourceDocIds ?? []).map((docId) => docId.trim()).filter(Boolean),
+        ),
+      ),
+    );
   }
 
   async function handleBranch(upToIndex: number) {
@@ -340,6 +407,11 @@ export function useChat() {
     cancelEditQuestion,
     submitEditedQuestion,
     handleClarificationSelect,
+    handleFollowUpSelect,
+    handleRetryQuestion,
     showNetToast,
+    queuedQuestion,
+    handleQueueQuestion,
+    handleCancelQueue,
   };
 }

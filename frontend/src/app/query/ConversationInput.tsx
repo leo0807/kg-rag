@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef } from "react";
+import { X } from "lucide-react";
 import { useFavorites } from "@/app/favorites/useFavorites";
 import { ConversationInputComposer } from "./ConversationInputComposer";
 import { ConversationInputStatusBars } from "./ConversationInputStatusBars";
@@ -24,6 +25,9 @@ interface Props {
   useHyde: boolean;
   onHydeToggle: (v: boolean) => void;
   historyLen: number;
+  queuedQuestion?: string | null;
+  onQueueQuestion?: (text: string) => void;
+  onCancelQueue?: () => void;
 }
 
 export default function ConversationInput({
@@ -44,6 +48,9 @@ export default function ConversationInput({
   useHyde,
   onHydeToggle,
   historyLen,
+  queuedQuestion,
+  onQueueQuestion,
+  onCancelQueue,
 }: Props) {
   const { getFavoriteId, addFavorite, removeFavorite } = useFavorites();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -57,9 +64,12 @@ export default function ConversationInput({
   }, [quoteSource]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey && !loading && !streaming) {
-      e.preventDefault();
+    if (e.key !== "Enter" || e.shiftKey) return;
+    e.preventDefault();
+    if (!loading && !streaming) {
       onSubmit();
+    } else if (value.trim() && onQueueQuestion && !queuedQuestion) {
+      onQueueQuestion(value.trim());
     }
   }
 
@@ -102,6 +112,15 @@ export default function ConversationInput({
 
   return (
     <div className="border-t border-gray-800 bg-gray-950 px-4 py-4 relative">
+      {queuedQuestion && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg border border-indigo-800/40 bg-indigo-950/30 px-3 py-1.5 text-xs text-indigo-300">
+          <div className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-indigo-400" />
+          <span className="truncate flex-1">排队中：{queuedQuestion}</span>
+          <button type="button" onClick={onCancelQueue} className="shrink-0 text-gray-500 hover:text-gray-300" title="取消排队">
+            <X size={12} />
+          </button>
+        </div>
+      )}
       <ConversationInputStatusBars
         quoteSource={quoteSource}
         pendingImages={pendingImages}
