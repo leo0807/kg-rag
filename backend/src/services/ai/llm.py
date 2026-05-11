@@ -9,8 +9,9 @@ LLM 调用薄包装层 — 所有实现已迁移到 LLMService。
 """
 import logging
 import re
+from ..answer_humanizer import humanize_answer_text
 from .llm_service import get_llm_service
-from ..context_utils import trim_conversation_history
+from ..context_utils import trim_conversation_history_for_question
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,16 @@ _SYSTEM_PROMPT = (
 def clean_llm_response(text: str | None) -> str:
     if not text:
         return ""
+    text = text.replace("```", "")
     text = text.replace("\ufffd", "")
+    text = re.sub(r"(?<=[\u4e00-\u9fff])(?![Cc][Pp][Ss])[A-Za-z]{2,12}(?=[\u4e00-\u9fff])", "", text)
+    text = re.sub(r"(?<=[\u4e00-\u9fff])(?![Cc][Pp][Ss])[A-Za-z]{2,12}(?=\s*[0-9])", "", text)
+    text = re.sub(r"(?m)^(#{1,6})(\S)", r"\1 \2", text)
+    text = re.sub(r"(#{1,6}\s+[^#\n]+)#{2,}", r"\1\n\n", text)
+    text = re.sub(r"([。！？；:：])\s*(?=(?:###|-\s|\d{1,3}\.))", r"\1\n\n", text)
+    text = re.sub(r"(?<!\n)(\d{1,3}\.\s*)(?=[^\d])", r"\n\1", text)
+    text = re.sub(r"(?<!\n)([-•]\s+)", r"\n\1", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"([。，、；：！？])\1+", r"\1", text)
     text = re.sub(r"。+", "。", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
@@ -55,13 +65,16 @@ _ANSWER_TMPL = """\
 6. 如果来源中出现 "soft and ductile paste"、"solid and elastic rubber" 之类表述，可直接概括为"粘性和弹性"
 7. 回答要简洁清晰，重点突出，尤其要优先提取温度、压力、时间等数值参数
 8. 引用具体章节时请标注章节号
+9. 如果是比较两个或多个规范，不要因为某一份规范未检到内容就下结论说“并无区别”；
+   应明确写出“当前检索结果未找到该规范的直接相关内容”，并避免用其他规范的内容替代。
+10. 不要自行补全、猜测或编造不存在的规范编号，规范编号必须和来源完全一致
 
 请回答："""
 
 
 def _build_messages(question: str, context: str, history: list[dict] | None = None) -> list[dict]:
     msgs: list[dict] = [{"role": "system", "content": _SYSTEM_PROMPT}]
-    for h in trim_conversation_history(history, max_rounds=3):
+    for h in trim_conversation_history_for_question(question, history, max_rounds=3):
         role    = h.get("role", "user")
         content = h.get("content", "")
         if content.strip():
@@ -82,7 +95,7 @@ def generate_answer(
     llm = get_llm_service()
     logger.info("调用 LLM model=%s", llm.model_name)
     try:
-        return clean_llm_response(llm.chat(_build_messages(question, context)))
+        return humanize_answer_text(clean_llm_response(llm.chat(_build_messages(question, context))), question)
     except Exception as e:
         logger.error("LLM 调用失败: %s", e)
         return f"LLM 服务暂不可用（{e}），以下是检索到的相关章节：\n\n{context[:2000]}"
@@ -103,7 +116,7 @@ def generate_answer_with_usage(
     logger.info("调用 LLM model=%s", llm.model_name)
     try:
         answer, usage = llm.chat_with_usage(_build_messages(question, context, history))
-        return clean_llm_response(answer), usage
+        return humanize_answer_text(clean_llm_response(answer), question), usage
     except Exception as e:
         logger.error("LLM 调用失败: %s", e)
         return (

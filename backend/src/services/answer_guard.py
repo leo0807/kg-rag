@@ -5,7 +5,9 @@ import re
 
 logger = logging.getLogger(__name__)
 
-_CPS_RE = re.compile(r"\bCPS\d{3,4}\b")
+_CPS_RE = re.compile(r"(?<![A-Z0-9])CPS\d{3,4}(?![A-Z0-9])", re.IGNORECASE)
+_CPS_NOISY_RE = re.compile(r"(?i)(?<![A-Z0-9])CPS[a-z0-9._\-]{1,12}")
+_COMPARE_HINT_RE = re.compile(r"(不同|差异|区别|比较|对比)")
 
 
 def _source_doc_ids(sources: list[dict] | None) -> set[str]:
@@ -22,6 +24,18 @@ def validate_answer(answer: str | None, sources: list[dict] | None, question: st
     source_refs = _source_doc_ids(sources)
     if not source_refs:
         return text
+
+    question_refs = {ref for ref in _CPS_RE.findall(question or "")}
+    if question_refs and (_COMPARE_HINT_RE.search(question or "") or len(question_refs) >= 1):
+        source_refs = source_refs & question_refs or question_refs
+    question_single_ref = next(iter(question_refs), "") if len(question_refs) == 1 else ""
+    source_single_ref = next(iter(source_refs), "") if len(source_refs) == 1 else ""
+    primary_ref = question_single_ref or source_single_ref
+    if primary_ref and not _COMPARE_HINT_RE.search(question or ""):
+        text = _CPS_NOISY_RE.sub(
+            lambda match: primary_ref if match.group(0).upper() != primary_ref else match.group(0),
+            text,
+        )
 
     answer_refs = set(_CPS_RE.findall(text))
     hallucinated = sorted(answer_refs - source_refs)
@@ -44,6 +58,7 @@ def validate_answer(answer: str | None, sources: list[dict] | None, question: st
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"\s+([,，。；;：:])", r"\1", text)
     text = re.sub(r"([,，。；;：:])\1+", r"\1", text)
+    text = re.sub(r"^[和与及,，。；;：:\s]+", "", text)
     text = text.strip()
     if not text:
         text = "根据当前检索结果，未能找到足够信息进行回答，请尝试更具体的问题描述。"

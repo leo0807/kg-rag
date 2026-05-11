@@ -5,6 +5,7 @@ import re
 
 from ...core.observability import send_generation
 from ...services.answer_guard import validate_answer
+from ...services.answer_humanizer import humanize_answer_text
 from ...services.ai.llm import clean_llm_response
 from .models import SourceSection
 
@@ -76,7 +77,7 @@ def log_source_doc_ids(label: str, sources: list[dict]) -> None:
 
 
 def finalize_answer_text(answer: str, sources: list[dict], question: str | None = None) -> str:
-    return validate_answer(clean_llm_response(answer), sources, question)
+    return humanize_answer_text(validate_answer(clean_llm_response(answer), sources, question), question)
 
 
 def emit_generation_record(
