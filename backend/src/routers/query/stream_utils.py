@@ -7,6 +7,8 @@ import re
 import time
 
 from ...services.ai.llm_service import get_llm_service, LLMError
+from ...services.answer_humanizer import humanize_answer_text
+from ...services.agent.agent_helpers import extract_compare_doc_ids
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +92,7 @@ async def stream_semantic_cache_hit(
     sim = hit.get("similarity", 0)
     yield f"data: {json.dumps({'type': 'status', 'content': f'⚡ 语义缓存命中（相似度 {sim:.3f}）'}, ensure_ascii=False)}\n\n"
     yield f"data: {json.dumps({'type': 'sources', 'content': hit.get('sources', [])}, ensure_ascii=False)}\n\n"
-    cached_answer = clean_llm_response(hit.get("answer", ""))
+    cached_answer = humanize_answer_text(clean_llm_response(hit.get("answer", "")))
     for char in cached_answer:
         yield f"data: {json.dumps({'type': 'delta', 'content': char}, ensure_ascii=False)}\n\n"
     yield "data: [DONE]\n\n"
@@ -134,12 +136,52 @@ def _format_section_ref(section: dict) -> str:
     return f"[{doc_id} §{number}{page_text}] {title}"
 
 
-async def _emit_follow_ups(question: str, answer: str):
+def _build_follow_up_fallback(question: str, allowed_doc_ids: list[str]) -> list[str]:
+    compare_words = ("不同", "差异", "区别", "比较", "对比")
+    doc_ids: list[str] = []
+    for doc_id in extract_compare_doc_ids(question) + [doc_id for doc_id in allowed_doc_ids if doc_id]:
+        if doc_id not in doc_ids:
+            doc_ids.append(doc_id)
+    if len(doc_ids) >= 2 and any(word in question for word in compare_words):
+        return [
+            f"继续查看 {doc_ids[0]} 的安装要求",
+            f"继续查看 {doc_ids[1]} 的安装要求",
+            "进一步对比两份规范的检验标准",
+        ]
+    if len(doc_ids) == 1:
+        return [
+            f"查看 {doc_ids[0]} 的相关章节",
+            f"继续追问 {doc_ids[0]} 的安装要求",
+            f"查看 {doc_ids[0]} 的检验标准",
+        ]
+    return []
+
+
+async def _emit_follow_ups(question: str, answer: str, allowed_doc_ids: list[str] | None = None):
     """生成并 yield 追问建议 SSE 事件；失败静默跳过。"""
+    question_doc_ids = extract_compare_doc_ids(question)
+    allowed_doc_ids = [doc_id for doc_id in (allowed_doc_ids or []) if doc_id]
+    primary_doc_ids = question_doc_ids or allowed_doc_ids
+    allowed_set = set(primary_doc_ids)
     try:
+        allowed_text = "、".join(primary_doc_ids) if primary_doc_ids else "当前回答涉及的来源"
         msgs = [
-            {"role": "system", "content": "只输出一个 JSON 数组，格式：[\"问题1\",\"问题2\",\"问题3\"]，每条不超过30字，不要其他内容。"},
-            {"role": "user",   "content": f"用户问题：{question}\n系统答案（节选）：{answer[:400]}\n\n请生成3条追问建议："},
+            {
+                "role": "system",
+                "content": (
+                    "只输出一个 JSON 数组，格式：[\"问题1\",\"问题2\",\"问题3\"]，每条不超过30字，不要其他内容。"
+                    "只允许围绕已知来源规范生成追问，不得引入不存在的规范编号。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"用户问题：{question}\n"
+                    f"系统答案（节选）：{answer[:400]}\n"
+                    f"可引用的规范编号：{allowed_text}\n\n"
+                    "请生成3条追问建议："
+                ),
+            },
         ]
         raw = await asyncio.wait_for(
             asyncio.to_thread(get_llm_service().chat, msgs), timeout=8.0
@@ -147,11 +189,26 @@ async def _emit_follow_ups(question: str, answer: str):
         m = re.search(r'\[.*?\]', raw, re.DOTALL)
         if m:
             items = json.loads(m.group())
-            questions = [str(q).strip() for q in items if str(q).strip()][:3]
+            questions = []
+            for q in items:
+                text = str(q).strip()
+                if not text:
+                    continue
+                cps_refs = set(re.findall(r"CPS\d{3,4}", text.upper()))
+                if cps_refs and allowed_set and not cps_refs.issubset(allowed_set):
+                    continue
+                if "CPS111" in text.upper():
+                    continue
+                questions.append(text)
+                if len(questions) >= 3:
+                    break
             if questions:
                 return json.dumps({"type": "follow_up", "content": questions}, ensure_ascii=False)
     except Exception as _e:
         logger.debug("追问建议生成失败（跳过）: %s", _e)
+    fallback = _build_follow_up_fallback(question, primary_doc_ids)
+    if fallback:
+        return json.dumps({"type": "follow_up", "content": fallback[:3]}, ensure_ascii=False)
     return None
 
 

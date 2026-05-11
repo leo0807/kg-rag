@@ -2,9 +2,7 @@
 流式查询接口，支持多轮对话
 """
 from __future__ import annotations
-import asyncio
-import json
-import logging
+import asyncio, json, logging
 from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -14,41 +12,25 @@ from ...core.database import get_driver
 from ...db.models import User
 from ...services.ai.llm import clean_llm_response
 from ...services.ai.llm_service import get_llm_service
-from ...services.context_utils import trim_conversation_history
+from ...services.context_utils import resolve_retrieval_doc_id, trim_conversation_history_for_question
+from ...services.query_count import maybe_build_total_cps_count_events
 from ...services.runtime.model_settings import load_effective_settings, use_runtime_settings
 from .query_utils import finalize_answer_text, log_source_doc_ids, emit_generation_record
 from .models import QueryRequest
 from .core   import do_retrieval
 from .clarification_utils import build_clarification_event, detect_clarification
 from .context_utils import build_llm_context, reorder_sources_for_llm
+from .stream_compare import build_compare_stream_events
 from .stream_agent import stream_agent_query
-from .stream_utils import (
-    _error_event,
-    _emit_follow_ups,
-    clean_stream_chunk,
-    emit_status_event,
-    estimate_answer_max_tokens,
-    serialize_sources,
-    stream_semantic_cache_hit,
-    try_semantic_cache_lookup,
-    stream_with_first_token_logging,
-)
+from .stream_utils import _error_event, _emit_follow_ups, clean_stream_chunk, emit_status_event, estimate_answer_max_tokens, serialize_sources, stream_semantic_cache_hit, try_semantic_cache_lookup, stream_with_first_token_logging
 logger = logging.getLogger(__name__)
 
-
-async def query_stream(
-    request:      Request,
-    req:          QueryRequest,
-    driver:       Driver = Depends(get_driver),
-    current_user: Optional[User] = None,
-    db:           AsyncSession | None = None,
-):
+async def query_stream(request: Request, req: QueryRequest, driver: Driver = Depends(get_driver), current_user: Optional[User] = None, db: AsyncSession | None = None):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question 不能为空")
     top_k = req.top_k or 5
     effective_settings = await load_effective_settings(db, current_user.id if current_user else None)
-    user_id    = current_user.id         if current_user else ""
-    department = current_user.department if current_user else ""
+    user_id = current_user.id if current_user else ""; department = current_user.department if current_user else ""
     async def generate():
         import time
         with use_runtime_settings(effective_settings):
@@ -64,6 +46,10 @@ async def query_stream(
                 if clarification.get("needs_clarification"):
                     yield build_clarification_event(req.question, clarification)
                     yield "data: [DONE]\n\n"
+                    return
+                if count_events := await maybe_build_total_cps_count_events(req.question, req.strategy, top_k, driver, user_id, department):
+                    for event in count_events:
+                        yield event
                     return
                 _q_emb: list[float] | None = None
                 try:
@@ -97,7 +83,7 @@ async def query_stream(
                         latency_ms = int((time.time() - t_start) * 1000)
                         full_answer = finalize_answer_text(full_answer, mh_sources, req.question)
                         emit_generation_record(strategy="multi_hop", question=req.question, answer=full_answer, latency_ms=latency_ms, user_id=user_id, department=department, model_name=get_llm_service().model_name)
-                        fu = await _emit_follow_ups(req.question, full_answer)
+                        fu = await _emit_follow_ups(req.question, full_answer, [s.get("doc_id") for s in mh_sources if s.get("doc_id")])
                         if fu:
                             yield f"data: {fu}\n\n"
                         yield "data: [DONE]\n\n"
@@ -121,7 +107,7 @@ async def query_stream(
                             req.question, driver, top_k=top_k
                         )
                         if req.history:
-                            history_msgs = trim_conversation_history(req.history, max_rounds=3)
+                            history_msgs = trim_conversation_history_for_question(req.question, req.history, max_rounds=3)
                             cf_messages = [cf_messages[0]] + history_msgs + [cf_messages[-1]]
                         yield f"data: {json.dumps({'type': 'causal_chain', 'content': causal_chain}, ensure_ascii=False)}\n\n"
                         sources_cf = [
@@ -152,20 +138,40 @@ async def query_stream(
                         latency_ms = int((time.time() - t_start) * 1000)
                         full_answer = finalize_answer_text(full_answer, cf_sections, req.question)
                         emit_generation_record(strategy="counterfactual", question=req.question, answer=full_answer, latency_ms=latency_ms, user_id=user_id, department=department, model_name=get_llm_service().model_name)
-                        fu = await _emit_follow_ups(req.question, full_answer)
+                        fu = await _emit_follow_ups(req.question, full_answer, [s.get("doc_id") for s in cf_sections if s.get("doc_id")])
                         if fu:
                             yield f"data: {fu}\n\n"
                         yield "data: [DONE]\n\n"
                         return
                     except Exception as e:
                         logger.exception("反事实查询失败，降级到标准检索")
+                if req.strategy in ("parallel", "parallel_rrf", "hybrid_es", "sequential", "gnn", "graph_augmented"):
+                    try:
+                        compare_events = await build_compare_stream_events(
+                            question=req.question,
+                            driver=driver,
+                            top_k=top_k,
+                            t_start=t_start,
+                            user_id=user_id,
+                            department=department,
+                            strategy=req.strategy,
+                            use_hyde=req.use_hyde,
+                            hyde_alpha=req.hyde_alpha,
+                        )
+                        if compare_events:
+                            for event in compare_events:
+                                yield event
+                            return
+                    except Exception as e:
+                        logger.warning("比较题专用检索失败，回退到通用检索: %s", e)
                 if req.use_hyde:
                     yield emit_status_event("增强模式：生成假设答案...")
                 _t_retrieval = time.time()
+                retrieval_doc_id = resolve_retrieval_doc_id(req.question, req.doc_hints)
                 sections, ft_score_map, expansion_info = await asyncio.to_thread(
                     do_retrieval,
                     driver, req.question, req.strategy, top_k,
-                    req.use_hyde, req.hyde_alpha, "", True,
+                    req.use_hyde, req.hyde_alpha, retrieval_doc_id, True,
                 )
                 _retrieval_ms = int((time.time() - t_start) * 1000)
                 logger.info("[timing] 检索完成 t=%.2fs", time.time() - t_start)
@@ -203,7 +209,7 @@ async def query_stream(
                         ),
                     }
                 ]
-                for h in trim_conversation_history(req.history, max_rounds=3):
+                for h in trim_conversation_history_for_question(req.question, req.history, max_rounds=3):
                     messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
                 user_text = f"## 相关规范内容\n\n{context}\n\n## 问题\n\n{req.question}"
                 if req.images:
@@ -275,7 +281,7 @@ async def query_stream(
                     "candidates_after_rerank": len(sources),
                 }
                 yield f"data: {json.dumps({'type': 'metrics', 'content': _metrics}, ensure_ascii=False)}\n\n"
-                fu = await _emit_follow_ups(req.question, full_answer)
+                fu = await _emit_follow_ups(req.question, full_answer, [s.get("doc_id") for s in sections if s.get("doc_id")])
                 if fu:
                     yield f"data: {fu}\n\n"
                 yield "data: [DONE]\n\n"

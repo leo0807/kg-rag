@@ -114,6 +114,6 @@ async def stream_agent_query(
         },
     )
     yield f"data: {json.dumps({'type': 'metrics', 'content': {'total_ms': latency_ms, 'stages': {}, 'tokens': {}, 'cost_usd': 0.0, 'candidates_retrieved': len(sources), 'candidates_after_rerank': len(sources)}}, ensure_ascii=False)}\n\n"
-    if followups := await _emit_follow_ups(question, answer):
+    if followups := await _emit_follow_ups(question, answer, [s.get("doc_id") for s in sources if s.get("doc_id")]):
         yield f"data: {followups}\n\n"
     yield "data: [DONE]\n\n"

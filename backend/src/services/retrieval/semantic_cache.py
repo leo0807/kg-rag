@@ -20,7 +20,7 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
-CACHE_COLLECTION = "semantic_cache_v1"
+CACHE_COLLECTION = "semantic_cache_v2"
 DIM = 1024
 DEFAULT_THRESHOLD = 0.95
 DEFAULT_TTL       = 86400   # 24 小时

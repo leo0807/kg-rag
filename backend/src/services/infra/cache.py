@@ -11,7 +11,7 @@ from ...core.config import settings
 
 logger = logging.getLogger(__name__)
 
-QUERY_CACHE_VERSION = "v38"
+QUERY_CACHE_VERSION = "v43"
 
 
 @lru_cache(maxsize=1)
