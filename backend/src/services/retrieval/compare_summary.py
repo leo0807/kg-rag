@@ -225,7 +225,10 @@ async def summarize_compare_answer(
                 return _fallback_compare_answer(question, sections, images)
             if not allowed_ids.issubset(answer_ids):
                 return _fallback_compare_answer(question, sections, images)
-        if images and "### 相关图示" not in answer:
+        # Strip any echoed context section (LLM sometimes copies the ## 相关图示 header
+        # from the context block verbatim); we'll re-append a canonical ### version below.
+        answer = re.sub(r"(?m)^#{1,4}\s*相关图示\s*\n((?:(?!^#).*\n)*)", "", answer).strip()
+        if images:
             answer = f"{answer}\n\n{_render_images_section(images)}"
         return answer
     except Exception:
