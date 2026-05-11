@@ -69,7 +69,7 @@ async def _run_strategy(driver: Driver, question: str, strategy: str, top_k: int
                 for s in sections
             ]
         else:
-            sections, ft_score_map = await asyncio.to_thread(
+            sections, ft_score_map, _ = await asyncio.to_thread(
                 do_retrieval, driver, question, strategy, top_k
             )
             sources = [

@@ -274,7 +274,7 @@ def run_harness_query(
 ) -> dict[str, Any]:
     plan = build_execution_plan(question, doc_id=doc_id, strategy=strategy)
     do_retrieval = _get_do_retrieval()
-    sections, ft_score_map = do_retrieval(
+    sections, ft_score_map, _ = do_retrieval(
         driver,
         question,
         plan["strategy"],

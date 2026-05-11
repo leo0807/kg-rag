@@ -87,7 +87,7 @@ async def graph_tour(
 
         loop = asyncio.get_running_loop()
         try:
-            sections, _ = await loop.run_in_executor(
+            sections, _, _ = await loop.run_in_executor(
                 None,
                 lambda: do_retrieval(driver, req.topic, "graph_augmented", top_k=10),
             )

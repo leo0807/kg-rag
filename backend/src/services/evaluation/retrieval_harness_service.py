@@ -54,7 +54,7 @@ async def _run_task(
 
             row_strategy = row["strategy"] or strategy
             do_retrieval = _get_do_retrieval()
-            sections, _ = await asyncio.to_thread(
+            sections, _, _ = await asyncio.to_thread(
                 do_retrieval,
                 driver,
                 row["question"],

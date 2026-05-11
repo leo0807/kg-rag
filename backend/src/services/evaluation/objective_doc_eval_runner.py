@@ -102,7 +102,7 @@ def retrieve_objective_sections(
         retrieval_plans.append((_build_objective_retrieval_query(question, options), "parallel", True, 0.6))
 
     for query, plan_strategy, use_hyde, hyde_alpha in retrieval_plans:
-        sections, local_scores = do_retrieval(driver, query, plan_strategy, candidate_k, use_hyde=use_hyde, hyde_alpha=hyde_alpha)
+        sections, local_scores, _ = do_retrieval(driver, query, plan_strategy, candidate_k, use_hyde=use_hyde, hyde_alpha=hyde_alpha)
         merged_sections = _merge_unique_sections(merged_sections, sections)
         for chunk_id, score in local_scores.items():
             ft_score_map[chunk_id] = max(ft_score_map.get(chunk_id, float("-inf")), score)

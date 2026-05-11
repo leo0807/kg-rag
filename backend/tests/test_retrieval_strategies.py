@@ -103,7 +103,7 @@ class TestParallelStrategy:
                 {"chunk_id": "doc1_1", "score": 0.9},
                 {"chunk_id": "doc1_2", "score": 0.8},
             ]
-            sections, ft_map = do_retrieval(driver, "液压导管安装", "parallel", top_k=5)
+            sections, ft_map, _ = do_retrieval(driver, "液压导管安装", "parallel", top_k=5)
 
         assert isinstance(sections, list)
         assert isinstance(ft_map, dict)
@@ -117,7 +117,7 @@ class TestSequentialStrategy:
 
         with patch("src.routers.query.core.search_sections_es") as mock_es:
             mock_es.return_value = [{"chunk_id": "doc1_1", "score": 0.9}]
-            sections, ft_map = do_retrieval(driver, "扳手规格", "sequential", top_k=5)
+            sections, ft_map, _ = do_retrieval(driver, "扳手规格", "sequential", top_k=5)
 
         assert isinstance(sections, list)
 
@@ -139,7 +139,7 @@ class TestGraphAugmentedStrategy:
              patch("src.routers.query.core.embed_query", return_value=[0.1] * 512), \
              patch("src.routers.query.core.search_sections", return_value=[]):
             mock_es.return_value = [{"chunk_id": "doc1_1", "score": 0.9}]
-            sections, _ = do_retrieval(driver, "安装步骤", "graph_augmented", top_k=5)
+            sections, _, _ = do_retrieval(driver, "安装步骤", "graph_augmented", top_k=5)
 
         assert isinstance(sections, list)
 
