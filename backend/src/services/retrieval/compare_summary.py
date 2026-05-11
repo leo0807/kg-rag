@@ -74,7 +74,7 @@ def _build_context(question: str, sections: list[dict], images: list[dict] | Non
     doc_ids = requested_ids or list(grouped.keys())
     lines = []
     for doc_id in doc_ids[:2]:
-        lines.append(f"## {doc_id}")
+        lines.append(f"【来源规范：{doc_id}】")
         items = sorted(
             grouped.get(doc_id, []),
             key=lambda item: (-_section_relevance(question, item, doc_id), str(item.get("number") or "")),
@@ -90,7 +90,7 @@ def _build_context(question: str, sections: list[dict], images: list[dict] | Non
                 lines.append(f"- {header}")
         lines.append("")
     if images:
-        lines.append("## 相关图示")
+        lines.append("【参考图示】")
         for img in images:
             fig = _figure_label(img.get("figure_label") or (img.get("figure_labels") or [None])[0])
             if not fig:
@@ -120,7 +120,7 @@ def _build_context(question: str, sections: list[dict], images: list[dict] | Non
             if caption:
                 lines.append(f"  {caption}")
         lines.append("")
-    lines.append(f"## 问题\n{question}")
+    lines.append(f"【问题】\n{question}")
     return "\n".join(lines).strip()
 
 
@@ -218,6 +218,9 @@ async def summarize_compare_answer(
         answer = clean_llm_response(answer)
         if not answer:
             raise ValueError("empty compare summary")
+        # Fix '# # X' / '## # X' headings that LLM generates when it mixes context
+        # structure with the output template — convert to canonical ## / ### levels.
+        answer = re.sub(r"(?m)^(#{1,4}) # ", r"\1# ", answer)
         allowed_ids = set(extract_compare_doc_ids(question))
         answer_ids = set(re.findall(r"CPS\d{3,4}", answer.upper()))
         if allowed_ids:
