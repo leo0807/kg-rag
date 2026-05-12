@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from neo4j import Driver
 from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_driver
+from ...core.config import settings as app_settings
 from ...db.models import User
 from ...services.ai.llm import clean_llm_response
 from ...services.ai.llm_service import get_llm_service
@@ -22,9 +23,9 @@ from .clarification_utils import build_clarification_event, detect_clarification
 from .context_utils import build_llm_context, reorder_sources_for_llm
 from .stream_compare import build_compare_stream_events
 from .stream_agent import stream_agent_query
-from .stream_utils import _error_event, _emit_follow_ups, clean_stream_chunk, emit_status_event, estimate_answer_max_tokens, serialize_sources, stream_semantic_cache_hit, try_semantic_cache_lookup, stream_with_first_token_logging
+from .mcq_utils import maybe_answer_mcq_stream
+from .stream_utils import _error_event, _emit_follow_ups, build_metrics_event, clean_stream_chunk, emit_status_event, estimate_answer_max_tokens, get_question_handler_for, serialize_sources, stream_semantic_cache_hit, try_semantic_cache_lookup, stream_with_first_token_logging
 logger = logging.getLogger(__name__)
-
 async def query_stream(request: Request, req: QueryRequest, driver: Driver = Depends(get_driver), current_user: Optional[User] = None, db: AsyncSession | None = None):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question 不能为空")
@@ -63,6 +64,11 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                         return
                 except Exception as _e:
                     logger.debug("语义缓存查找异常（跳过）: %s", _e)
+                mcq_events = await maybe_answer_mcq_stream(req.question, req.strategy, top_k, driver, user_id, department, t_start, req.doc_hints, _q_emb)
+                if mcq_events:
+                    for event in mcq_events:
+                        yield event
+                    return
                 if req.strategy == "multi_hop":
                     try:
                         from ...services.retrieval.multi_hop import multi_hop_query_stream
@@ -123,7 +129,7 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                         yield f"data: {json.dumps({'type': 'status', 'content': '推理中...'}, ensure_ascii=False)}\n\n"
                         full_answer = ""
                         try:
-                            async for delta in get_llm_service().stream_chat(cf_messages, timeout=90):
+                            async for delta in get_llm_service().stream_chat(cf_messages, timeout=int(getattr(app_settings, "LLM_STREAM_TIMEOUT", 120))):
                                 delta = clean_stream_chunk(delta)
                                 if not delta:
                                     continue
@@ -196,6 +202,8 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                 llm_sections = reorder_sources_for_llm(sections, req.question)
                 context = build_llm_context(llm_sections)
                 answer_max_tokens = estimate_answer_max_tokens(req.question, context)
+                _qtype, _handler, _type_label = get_question_handler_for(req.question)
+                if _type_label: yield emit_status_event(_type_label)
                 messages = [
                     {
                         "role":    "system",
@@ -206,12 +214,13 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                             "如果来源中出现 'soft and ductile paste'、'solid and elastic rubber' 之类表述，可直接概括为'粘性和弹性'。"
                             "重要：规范编号必须与来源章节完全一致，不得自行修改或补全。"
                             "如果问题与之前的对话相关，请结合上下文回答。"
+                            + (" " + _handler.system_addon() if _handler.system_addon() else "")
                         ),
                     }
                 ]
                 for h in trim_conversation_history_for_question(req.question, req.history, max_rounds=3):
                     messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
-                user_text = f"## 相关规范内容\n\n{context}\n\n## 问题\n\n{req.question}"
+                user_text = f"## 相关规范内容\n\n{context}\n\n## 问题\n\n{req.question}" + _handler.user_suffix()
                 if req.images:
                     user_content: list = [{"type": "text", "text": user_text}]
                     for img_uri in req.images:
@@ -227,7 +236,8 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                     async for delta in stream_with_first_token_logging(
                         get_llm_service(),
                         messages,
-                        timeout=answer_max_tokens,
+                        timeout=int(getattr(app_settings, "LLM_STREAM_TIMEOUT", 120)),
+                        max_tokens=answer_max_tokens,
                         t_start=t_start,
                         logger=logger,
                     ):
@@ -273,14 +283,7 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                         )
                     except Exception as _se:
                         logger.debug("语义缓存写入失败（跳过）: %s", _se)
-                _llm_ms = max(0, latency_ms - _retrieval_ms); _metrics = {
-                    "total_ms": latency_ms,
-                    "stages": {"检索": _retrieval_ms, "LLM生成": _llm_ms},
-                    "tokens": {}, "cost_usd": 0.0,
-                    "candidates_retrieved": len(sections),
-                    "candidates_after_rerank": len(sources),
-                }
-                yield f"data: {json.dumps({'type': 'metrics', 'content': _metrics}, ensure_ascii=False)}\n\n"
+                yield build_metrics_event(latency_ms, _retrieval_ms, len(sections), len(sources))
                 fu = await _emit_follow_ups(req.question, full_answer, [s.get("doc_id") for s in sections if s.get("doc_id")])
                 if fu:
                     yield f"data: {fu}\n\n"
@@ -294,4 +297,4 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                     return
                 yield _error_event(e)
                 yield "data: [DONE]\n\n"
-    return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
