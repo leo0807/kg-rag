@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 import SkeletonCard from "@/components/SkeletonCard";
 import CompareGrid from "./CompareGrid";
 import { ConversationMessageList } from "./ConversationMessageList";
+import { ProgressIndicator } from "./ProgressIndicator";
 import { ReasoningChain } from "./ReasoningChain";
 import type {
   AgentStepInfo,
@@ -35,6 +36,8 @@ interface Props {
   streaming: boolean;
   streamingMsgId: string | null;
   streamingText: string;
+  streamPhase: import("./ProgressIndicator").StreamPhase;
+  retrievedCount: number | null;
   reasoningSteps: unknown[];
   causalChain: unknown;
   compareMode: boolean;
@@ -77,6 +80,8 @@ export function ConversationMessages({
   streaming,
   streamingMsgId,
   streamingText,
+  streamPhase,
+  retrievedCount,
   reasoningSteps,
   compareMode,
   compareLoading,
@@ -144,6 +149,10 @@ export function ConversationMessages({
           </div>
         ) : (
           <>
+            <ProgressIndicator
+              phase={streamPhase}
+              retrievedCount={retrievedCount}
+            />
             <ReasoningChain
               steps={
                 reasoningSteps as Parameters<typeof ReasoningChain>[0]["steps"]

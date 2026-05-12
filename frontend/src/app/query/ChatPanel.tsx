@@ -25,6 +25,8 @@ interface Props {
   streaming: boolean;
   streamingMsgId: string | null;
   streamingText: string;
+  streamPhase: import("./ProgressIndicator").StreamPhase;
+  retrievedCount: number | null;
   reasoningSteps: unknown[];
   causalChain: unknown;
   compareMode: boolean;

@@ -118,7 +118,9 @@ export function useChat() {
   const compareQuery = useCompareQuery();
 
   // Keep ref in sync so the effect below can read the latest queued value
-  useEffect(() => { queuedQuestionRef.current = queuedQuestion; }, [queuedQuestion]);
+  useEffect(() => {
+    queuedQuestionRef.current = queuedQuestion;
+  }, [queuedQuestion]);
 
   // When the current conversation finishes, auto-submit queued question
   useEffect(() => {
@@ -128,8 +130,12 @@ export function useChat() {
     setQueuedQuestion(null);
     if (compareMode) void compareQuery.compare(q);
     else void stream.submit(q, [], { skipClarification: false, docHints: [] });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentConversationBusy]);
+  }, [
+    currentConversationBusy,
+    compareMode,
+    compareQuery.compare,
+    stream.submit,
+  ]);
 
   const setInput = useCallback((value: string) => {
     _setInput(value);
@@ -385,6 +391,7 @@ export function useChat() {
     bottomRef,
     activeSourceFilters,
     stream,
+    streamPhase: stream.streamPhase,
     currentConversationLoading,
     currentConversationStreaming,
     currentConversationBusy,

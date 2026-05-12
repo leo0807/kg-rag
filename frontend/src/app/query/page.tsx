@@ -35,6 +35,8 @@ export default function QueryPage() {
     bottomRef,
     activeSourceFilters,
     stream,
+    streamPhase,
+    retrievedCount,
     currentConversationLoading,
     currentConversationStreaming,
     compareQuery,
@@ -101,6 +103,8 @@ export default function QueryPage() {
           streamingMsgId={stream.streamingMsgId}
           reasoningSteps={stream.reasoningSteps}
           causalChain={stream.causalChain}
+          streamPhase={streamPhase}
+          retrievedCount={retrievedCount}
           compareMode={compareMode}
           compareLoading={compareQuery.loading}
           compareQuestion={compareQuery.question}

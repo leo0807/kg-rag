@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { NetToastType } from "@/components/NetToast";
 import { getApiBaseUrl, getAuthHeaders } from "@/lib/api";
+import type { StreamPhase } from "./ProgressIndicator";
 import type { ReasoningStep } from "./ReasoningChain";
 import type {
   AgentStepInfo,
@@ -74,6 +75,8 @@ export function useStreamQuery({
   const [streaming, setStreaming] = useState(false);
   const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
+  const [streamPhase, setStreamPhase] = useState<StreamPhase>("idle");
+  const [retrievedCount, setRetrievedCount] = useState<number | null>(null);
   const [, setStreamAnswerImages] = useState<AnswerImage[]>([]);
   const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
   const [causalChain, setCausalChain] = useState<CausalChainData | null>(null);
@@ -130,11 +133,21 @@ export function useStreamQuery({
     setReasoningSteps([]);
     setCausalChain(null);
     setStreamingText("");
+    setStreamPhase("searching");
+    setRetrievedCount(null);
     setStreamAnswerImages([]);
     answerRef.current = "";
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    let requestTimedOut = false;
+    let requestTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    const clearRequestTimeout = () => {
+      if (requestTimeoutId) {
+        clearTimeout(requestTimeoutId);
+        requestTimeoutId = null;
+      }
+    };
 
     const history = prevMsgs.map((m) => ({
       role: m.role,
@@ -206,18 +219,25 @@ export function useStreamQuery({
           setStreamingText("");
           streamAgentSteps = [];
           currentAnswerImages = [];
+          setRetrievedCount(null);
           setStreamAnswerImages([]);
           showNetToast("reconnecting", "正在重连…");
         }
 
         let streamDone = false;
         try {
+          requestTimedOut = false;
+          requestTimeoutId = setTimeout(() => {
+            requestTimedOut = true;
+            controller.abort();
+          }, 120000);
           sources = [];
           streamCausalChain = null;
           streamFollowUps = [];
           streamError = null;
           streamExpansionInfo = [];
           currentAnswerImages = [];
+          setRetrievedCount(null);
           setStreamAnswerImages([]);
           const headers = await getAuthHeaders({
             "Content-Type": "application/json",
@@ -272,11 +292,14 @@ export function useStreamQuery({
                     const event = JSON.parse(data);
                     if (event.type === "sources") {
                       sources = [...sources, ...event.content];
+                      setRetrievedCount(sources.length);
                     } else if (event.type === "sources_update") {
                       sources = Array.isArray(event.content)
                         ? event.content
                         : sources;
+                      setRetrievedCount(sources.length);
                     } else if (event.type === "delta") {
+                      setStreamPhase("generating");
                       answerRef.current = normalizeAnswerText(
                         answerRef.current + event.content,
                       );
@@ -310,6 +333,11 @@ export function useStreamQuery({
                       syncAssistantMessage(answerRef.current);
                     } else if (event.type === "status") {
                       showNetToast("online", event.content, 2000);
+                      if (String(event.content).includes("检索")) {
+                        setStreamPhase("searching");
+                      } else if (String(event.content).includes("生成")) {
+                        setStreamPhase("generating");
+                      }
                     } else if (event.type === "causal_chain") {
                       streamCausalChain = event.content;
                       setCausalChain(event.content);
@@ -349,10 +377,12 @@ export function useStreamQuery({
                 const event = JSON.parse(data);
                 if (event.type === "sources") {
                   sources = [...sources, ...event.content];
+                  setRetrievedCount(sources.length);
                 } else if (event.type === "sources_update") {
                   sources = Array.isArray(event.content)
                     ? event.content
                     : sources;
+                  setRetrievedCount(sources.length);
                 } else if (event.type === "clarification_needed") {
                   streamClarification = {
                     message:
@@ -363,6 +393,7 @@ export function useStreamQuery({
                   };
                   answerRef.current = streamClarification.message;
                 } else if (event.type === "delta") {
+                  setStreamPhase("generating");
                   answerRef.current = normalizeAnswerText(
                     answerRef.current + event.content,
                   );
@@ -396,6 +427,11 @@ export function useStreamQuery({
                   syncAssistantMessage(answerRef.current);
                 } else if (event.type === "status") {
                   showNetToast("online", event.content, 2000);
+                  if (String(event.content).includes("检索")) {
+                    setStreamPhase("searching");
+                  } else if (String(event.content).includes("生成")) {
+                    setStreamPhase("generating");
+                  }
                 } else if (event.type === "causal_chain") {
                   streamCausalChain = event.content;
                   setCausalChain(event.content);
@@ -416,9 +452,42 @@ export function useStreamQuery({
               } catch {}
             }
           }
+          clearRequestTimeout();
           if (!streamDone) throw new Error("流式响应异常结束");
         } catch (error) {
+          clearRequestTimeout();
           if (controller.signal.aborted || isAbortError(error)) {
+            if (requestTimedOut) {
+              const timeoutErrorInfo: LLMErrorInfo = {
+                code: "timeout",
+                message: "请求超时，请重试或换一个更简单的问题",
+                status_code: null,
+                endpoint: "",
+              };
+              streamError = timeoutErrorInfo;
+              clearInterval(intervalId);
+              await updateConversation(
+                convId,
+                newMsgs.map((m) =>
+                  m.id === aiMsgId
+                    ? {
+                        ...m,
+                        content: timeoutErrorInfo.message,
+                        errorInfo: timeoutErrorInfo,
+                      }
+                    : m,
+                ),
+              );
+              if (requestSeq === requestSeqRef.current) {
+                setStreamPhase("done");
+                setLoading(false);
+                setStreaming(false);
+                setStreamingMsgId(null);
+                setStreamingConvId(null);
+                abortRef.current = null;
+              }
+              return;
+            }
             streamDone = true;
             break;
           }
@@ -439,6 +508,7 @@ export function useStreamQuery({
       }
 
       clearInterval(intervalId);
+      setStreamPhase("done");
       const persistedAnswer = normalizeAnswerText(answerRef.current);
       const finalMsgs = newMsgs.map((m) =>
         m.id === aiMsgId
@@ -514,6 +584,7 @@ export function useStreamQuery({
             : newMsgs.slice(0, -1),
         );
         if (requestSeq === requestSeqRef.current) {
+          setStreamPhase("done");
           setLoading(false);
           setStreaming(false);
           setStreamingMsgId(null);
@@ -538,6 +609,7 @@ export function useStreamQuery({
         ),
       );
       if (requestSeq === requestSeqRef.current) {
+        setStreamPhase("done");
         setLoading(false);
         setStreaming(false);
         setStreamingMsgId(null);
@@ -552,6 +624,8 @@ export function useStreamQuery({
     streaming,
     streamingMsgId,
     streamingText,
+    streamPhase,
+    retrievedCount,
     streamingConvId,
     reasoningSteps,
     causalChain,
