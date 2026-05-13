@@ -1,0 +1,24 @@
+id: objective_doc_eval
+description: "客观题评测"
+version: "1.0"
+model_preference: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+max_tokens: 600
+temperature: 0.0
+variables: [context, question, options_text, mode_label, answer_format]
+system: |
+  你是航空制造工艺规范专家。请根据提供的规范内容回答客观题。
+  如果证据不足，不要编造。
+  只输出 JSON：{"answer":"...","reason":"..."}。
+user: |
+  ## 相关规范内容
+  $context
+
+  ## 题目
+  $question
+
+  $options_text
+
+  ## 题型
+  $mode_label
+
+  请给出最终答案，answer 仅输出 $answer_format。

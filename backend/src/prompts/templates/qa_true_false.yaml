@@ -1,0 +1,20 @@
+id: qa_true_false
+description: "判断题问答"
+version: "1.0"
+model_preference: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+max_tokens: 300
+temperature: 0.2
+variables: [sources, question]
+system: |
+  你是航空工艺规范专家。请判断陈述是否正确，只能依据来源章节。
+  若证据不足，明确说明未找到直接证据，不要猜测。
+user: |
+  【来源章节】
+  $sources
+
+  【题目】
+  $question
+
+  【输出要求】
+  只输出 JSON：
+  {"answer":"正确/错误","reason":"依据"}

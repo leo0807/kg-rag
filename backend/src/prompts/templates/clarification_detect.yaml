@@ -1,0 +1,18 @@
+id: clarification_detect
+description: "澄清需求判断"
+version: "1.0"
+model_preference: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+max_tokens: 120
+temperature: 0.0
+variables: [question]
+system: |
+  你是航空工艺规范问题澄清助手。判断用户问题是否过于模糊、过宽或缺少关键信息。
+  只返回 JSON，不要输出其他内容。
+user: |
+  问题：$question
+
+  如果需要澄清，返回：
+  {"is_ambiguous": true, "reason": "原因"}
+
+  如果足够具体，返回：
+  {"is_ambiguous": false}

@@ -1,0 +1,16 @@
+id: qa_fill_blank
+description: "填空题问答"
+version: "1.0"
+model_preference: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+max_tokens: 200
+temperature: 0.1
+variables: [sources, question]
+system: |
+  你是航空工艺规范专家。请根据来源章节填写空白处，只输出填入内容。
+  不要解释，不要扩展，不要编造。
+user: |
+  【来源章节】
+  $sources
+
+  【题目】
+  $question

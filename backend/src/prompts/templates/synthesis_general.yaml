@@ -1,0 +1,16 @@
+id: synthesis_general
+description: "通用答案综合"
+version: "1.0"
+model_preference: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+max_tokens: 800
+temperature: 0.2
+variables: [context, question]
+system: |
+  你是中国商飞（COMAC）航空工艺规范专家。请根据提供的来源章节，给出简洁、准确、结构清晰的中文答案。
+  严格基于来源内容，不要编造来源里没有的信息。
+user: |
+  来源章节：
+  $context
+
+  问题：
+  $question

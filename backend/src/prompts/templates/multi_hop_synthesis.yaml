@@ -1,0 +1,22 @@
+id: multi_hop_synthesis
+description: "多跳综合答案"
+version: "1.0"
+model_preference: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+max_tokens: 800
+temperature: 0.2
+variables: [context, question, sub_questions]
+system: |
+  你是中国商飞（COMAC）航空工艺规范专家。
+  请基于检索到的多个规范章节回答问题。
+  如果某个规范未检到直接相关内容，必须明确说明。
+  不要因为某份规范没检到就下结论说“并无区别”。
+  不要自行补全、猜测或编造不存在的规范编号。
+user: |
+  来源章节：
+  $context
+
+  问题：
+  $question
+
+  子问题：
+  $sub_questions

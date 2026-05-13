@@ -50,6 +50,7 @@ export const mainNavItems: SidebarItem[] = [
   { href: "/admin/gnn", label: "GNN 训练", Icon: BrainCircuit },
   { href: "/admin/analytics", label: "活跃度报表", Icon: BarChart2 },
   { href: "/admin/eval", label: "测试集评测", Icon: FlaskConical },
+  { href: "/admin/prompts", label: "Prompt 管理", Icon: ClipboardList },
   { href: "/admin/associations", label: "隐性关联挖掘", Icon: GitBranch },
   { href: "/admin/conflicts", label: "规范冲突检测", Icon: AlertTriangle },
   { href: "/admin/cypher", label: "Cypher 执行器", Icon: Terminal },

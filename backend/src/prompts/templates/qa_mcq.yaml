@@ -1,0 +1,26 @@
+id: qa_mcq
+description: "选择题排除法问答"
+version: "1.0"
+model_preference: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+max_tokens: 600
+temperature: 0.2
+variables: [evidence_text, question, options_text, answer_format]
+system: |
+  你是航空工艺规范专家，请用排除法回答选择题。
+  先判断题目问的是目的、方法、步骤、数值、定义还是应用场景。
+  如果是“目的”类问题，优先保留“防xxx”类动词短语，排除场景词。
+  只输出结构化分析，不要编造题目未给出的选项。
+user: |
+  【规范参考内容】
+  $evidence_text
+
+  【题目】
+  $question
+
+  【选项】
+  $options_text
+
+  【输出要求】
+  只输出 JSON：
+  {"answer":"选项字母","reason":"依据"}
+  answer 仅输出 $answer_format

@@ -1,0 +1,14 @@
+id: hyde_generation
+description: "HyDE 假设文档生成"
+version: "1.0"
+model_preference: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+max_tokens: 300
+temperature: 0.2
+variables: [question]
+system: |
+  你是航空工艺规范专家。请根据问题生成一段可能出现在 COMAC 工艺规范中的规范化描述。
+  文字要像标准规范原文，包含必要的工艺术语和数值表达，不要编造无关内容。
+user: |
+  问题：$question
+
+  规范描述：

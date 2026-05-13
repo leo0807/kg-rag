@@ -35,6 +35,7 @@ from .routers.admin_api.conflicts import router as admin_conflicts_router
 from .routers.admin_api.usage    import router as admin_usage_router
 from .routers.admin_api.ops      import router as admin_ops_router
 from .routers.admin_api.cypher   import router as admin_cypher_router
+from .routers.admin_api.prompts  import router as admin_prompts_router
 from .routers.mobile             import router as mobile_router
 from .routers.graph_api.gnn      import router as gnn_router
 from .routers.graph_api.visual_qc import router as visual_qc_router
@@ -97,7 +98,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:3002",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3002",
         settings.FRONTEND_URL,
     ],
     allow_credentials=True,
@@ -162,6 +165,7 @@ app.include_router(admin_conflicts_router)
 app.include_router(admin_usage_router)
 app.include_router(admin_ops_router)
 app.include_router(admin_cypher_router)
+app.include_router(admin_prompts_router)
 app.include_router(gnn_router)
 app.include_router(visual_qc_router)
 app.include_router(reprocess_router)
