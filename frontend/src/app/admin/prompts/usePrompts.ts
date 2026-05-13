@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError, fetchApi } from "@/lib/api";
 
 export type PromptVersionInfo = {
@@ -130,6 +130,48 @@ export function usePrompts() {
   const [comparing, setComparing] = useState(false);
   const [error, setError] = useState("");
 
+  const loadDetail = useCallback(
+    async (templateId: string, version: string) => {
+      return fetchApi<PromptDetail>(
+        `/api/admin/prompts/${encodeURIComponent(templateId)}${version ? `?version=${encodeURIComponent(version)}` : ""}`,
+      );
+    },
+    [],
+  );
+
+  async function renderComparison(
+    templateId: string,
+    leftVersion: string,
+    rightVersion: string,
+    variablesPayload: Record<string, unknown>,
+  ) {
+    const [left, right] = await Promise.all([
+      fetchApi<PromptRender>(
+        `/api/admin/prompts/${encodeURIComponent(templateId)}/render`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: leftVersion,
+            variables: variablesPayload,
+          }),
+        },
+      ),
+      fetchApi<PromptRender>(
+        `/api/admin/prompts/${encodeURIComponent(templateId)}/render`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: rightVersion,
+            variables: variablesPayload,
+          }),
+        },
+      ),
+    ]);
+    setComparison({ left, right });
+  }
+
   useEffect(() => {
     let alive = true;
     fetchApi<{ templates: PromptSummary[] }>("/api/admin/prompts")
@@ -154,9 +196,7 @@ export function usePrompts() {
     if (!selectedId) return;
     let alive = true;
     setDetail(null);
-    fetchApi<PromptDetail>(
-      `/api/admin/prompts/${encodeURIComponent(selectedId)}${selectedVersion ? `?version=${encodeURIComponent(selectedVersion)}` : ""}`,
-    )
+    loadDetail(selectedId, selectedVersion)
       .then((data) => {
         if (!alive) return;
         setDetail(data);
@@ -182,7 +222,7 @@ export function usePrompts() {
     return () => {
       alive = false;
     };
-  }, [selectedId, selectedVersion]);
+  }, [selectedId, selectedVersion, loadDetail]);
 
   function selectTemplate(id: string, version: string) {
     setSelectedId(id);
@@ -201,26 +241,45 @@ export function usePrompts() {
     setSaving(true);
     setError("");
     try {
-      await fetchApi(`/api/admin/prompts/${encodeURIComponent(selectedId)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          version: selectedVersion || undefined,
-          active_version: selectedVersion || undefined,
-          description: draft.description,
-          model_preference: draft.model_preference,
-          max_tokens: draft.max_tokens,
-          temperature: draft.temperature,
-          system: draft.system,
-          user: draft.user,
-          variables: draft.variables
-            .split(",")
-            .map((item) => item.trim())
-            .filter(Boolean),
-          weight: draft.weight,
-        }),
-      });
+      const updated = await fetchApi<PromptDetail>(
+        `/api/admin/prompts/${encodeURIComponent(selectedId)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: selectedVersion || undefined,
+            active_version: selectedVersion || undefined,
+            description: draft.description,
+            model_preference: draft.model_preference,
+            max_tokens: draft.max_tokens,
+            temperature: draft.temperature,
+            system: draft.system,
+            user: draft.user,
+            variables: draft.variables
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean),
+            weight: draft.weight,
+          }),
+        },
+      );
       await refreshTemplates();
+      setDetail(updated);
+      const nextVersion =
+        updated.selected_version || updated.active_version || "";
+      setDraft(toDraft(updated));
+      if (comparison) {
+        const leftVersion = nextVersion || selectedVersion || "";
+        const rightVersion = compareVersion || updated.active_version || "";
+        if (leftVersion && rightVersion && leftVersion !== rightVersion) {
+          await renderComparison(
+            selectedId,
+            leftVersion,
+            rightVersion,
+            parseVariables(variablesText),
+          );
+        }
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "保存失败");
     } finally {
@@ -265,26 +324,12 @@ export function usePrompts() {
     setComparing(true);
     setError("");
     try {
-      const payload = parseVariables(variablesText);
-      const [left, right] = await Promise.all([
-        fetchApi<PromptRender>(
-          `/api/admin/prompts/${encodeURIComponent(selectedId)}/render`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ version: leftVersion, variables: payload }),
-          },
-        ),
-        fetchApi<PromptRender>(
-          `/api/admin/prompts/${encodeURIComponent(selectedId)}/render`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ version: rightVersion, variables: payload }),
-          },
-        ),
-      ]);
-      setComparison({ left, right });
+      await renderComparison(
+        selectedId,
+        leftVersion,
+        rightVersion,
+        parseVariables(variablesText),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "版本对比失败");
     } finally {
