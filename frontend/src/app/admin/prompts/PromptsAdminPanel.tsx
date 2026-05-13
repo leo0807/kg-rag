@@ -30,12 +30,17 @@ export function PromptsAdminPanel() {
         variablesText={prompts.variablesText}
         setVariablesText={prompts.setVariablesText}
         rendered={prompts.rendered}
+        comparison={prompts.comparison}
+        compareVersion={prompts.compareVersion}
+        setCompareVersion={prompts.setCompareVersion}
         saving={prompts.saving}
         testing={prompts.testing}
+        comparing={prompts.comparing}
         error={prompts.error}
         onVersionChange={prompts.setSelectedVersion}
         onSave={prompts.saveTemplate}
         onTest={prompts.renderTemplate}
+        onCompare={prompts.compareTemplate}
       />
     </div>
   );

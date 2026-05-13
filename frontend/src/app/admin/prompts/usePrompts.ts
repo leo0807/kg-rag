@@ -48,6 +48,11 @@ export type PromptRender = {
   temperature: number;
 };
 
+export type PromptComparison = {
+  left: PromptRender;
+  right: PromptRender;
+};
+
 export type PromptDraft = {
   description: string;
   model_preference: string;
@@ -117,9 +122,12 @@ export function usePrompts() {
   });
   const [variablesText, setVariablesText] = useState(SAMPLE_VARIABLES);
   const [rendered, setRendered] = useState<PromptRender | null>(null);
+  const [comparison, setComparison] = useState<PromptComparison | null>(null);
+  const [compareVersion, setCompareVersion] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [comparing, setComparing] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -131,6 +139,7 @@ export function usePrompts() {
         setTemplates(items);
         setSelectedId((prev) => prev || items[0]?.id || "");
         setSelectedVersion((prev) => prev || items[0]?.active_version || "");
+        setCompareVersion((prev) => prev || items[0]?.active_version || "");
       })
       .catch((err) =>
         setError(err instanceof Error ? err.message : "加载模板失败"),
@@ -152,8 +161,20 @@ export function usePrompts() {
         if (!alive) return;
         setDetail(data);
         setSelectedVersion(data.selected_version || data.active_version);
+        const versionNames = data.versions.map((version) => version.name);
+        const currentVersion =
+          data.selected_version || data.active_version || "";
+        setCompareVersion((prev) => {
+          if (prev && versionNames.includes(prev) && prev !== currentVersion)
+            return prev;
+          const fallback = versionNames.find(
+            (version) => version !== currentVersion,
+          );
+          return fallback || currentVersion;
+        });
         setDraft(toDraft(data));
         setRendered(null);
+        setComparison(null);
       })
       .catch((err) =>
         setError(err instanceof Error ? err.message : "加载模板详情失败"),
@@ -232,12 +253,54 @@ export function usePrompts() {
     }
   }
 
+  async function compareTemplate() {
+    if (!selectedId || !detail) return;
+    const leftVersion =
+      selectedVersion || detail.selected_version || detail.active_version || "";
+    const rightVersion = compareVersion || detail.active_version || "";
+    if (!leftVersion || !rightVersion || leftVersion === rightVersion) {
+      setError("请选择两个不同版本后再对比");
+      return;
+    }
+    setComparing(true);
+    setError("");
+    try {
+      const payload = parseVariables(variablesText);
+      const [left, right] = await Promise.all([
+        fetchApi<PromptRender>(
+          `/api/admin/prompts/${encodeURIComponent(selectedId)}/render`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ version: leftVersion, variables: payload }),
+          },
+        ),
+        fetchApi<PromptRender>(
+          `/api/admin/prompts/${encodeURIComponent(selectedId)}/render`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ version: rightVersion, variables: payload }),
+          },
+        ),
+      ]);
+      setComparison({ left, right });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "版本对比失败");
+    } finally {
+      setComparing(false);
+    }
+  }
+
   return {
     templates,
     selectedId,
     selectedVersion,
     detail,
     draft,
+    comparison,
+    compareVersion,
+    comparing,
     setDraft,
     variablesText,
     setVariablesText,
@@ -248,7 +311,9 @@ export function usePrompts() {
     error,
     selectTemplate,
     setSelectedVersion,
+    setCompareVersion,
     saveTemplate,
     renderTemplate,
+    compareTemplate,
   };
 }
