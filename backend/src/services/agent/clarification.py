@@ -7,6 +7,7 @@ import re
 from collections import OrderedDict
 
 from ...core.config import settings
+from ...prompts import registry
 from ...services.ai.llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
@@ -137,22 +138,12 @@ class ClarificationDetector:
         ]
 
     async def _llm_check_ambiguity(self, question: str) -> dict:
-        prompt = f"""判断以下航空工艺问题是否模糊：
-问题：{question}
-
-如果问题涉及多个可能的规范或工艺领域，返回：
-{{"is_ambiguous": true, "reason": "原因"}}
-
-如果问题足够具体，返回：
-{{"is_ambiguous": false}}
-
-只返回JSON。"""
+        prompt_data = registry.render("clarification_detect", question=question)
         try:
             response = await asyncio.to_thread(
                 self.llm.chat,
-                [{"role": "user", "content": prompt}],
-                "",
-                max_tokens=100,
+                prompt_data["messages"],
+                max_tokens=prompt_data["max_tokens"],
             )
             if not response:
                 return {"is_ambiguous": False}

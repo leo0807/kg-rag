@@ -12,22 +12,9 @@ import re
 from ..answer_humanizer import humanize_answer_text
 from .llm_service import get_llm_service
 from ..context_utils import trim_conversation_history_for_question
+from ..prompts import registry
 
 logger = logging.getLogger(__name__)
-
-_SYSTEM_PROMPT = (
-    "你是一个航空制造工艺规范专家助手。"
-    "请根据提供的规范内容，用中文准确回答问题。"
-    "回答时优先使用来源中的直接定义和描述，不要过多展开次要细节。"
-    "如果问题询问'特性'或'性质'，优先引用定义类章节（术语定义、基本要求章节），"
-    "而不是参数表格。"
-    "重要：规范编号必须与来源章节完全一致，不得自行修改或补全。"
-    "如果来源中没有某个规范的相关内容，必须明确说未找到该规范的相关内容，"
-    "不得自行补充、猜测或把其他规范编号替换进来。"
-    "来源内容中可能存在 OCR 扫描乱码（如 isis、isN、NN 等），"
-    "回答时跳过这些乱码，只提取周围可读的有效信息，不要在答案中重复乱码。"
-)
-
 
 def clean_llm_response(text: str | None) -> str:
     if not text:
@@ -48,40 +35,15 @@ def clean_llm_response(text: str | None) -> str:
     return text.strip()
 
 
-_ANSWER_TMPL = """\
-## 相关工艺规范内容
-
-{context}
-
-## 用户问题
-
-{question}
-
-## 回答要求
-
-1. 只根据上述规范内容回答，不要添加规范中没有的信息
-2. 如果上下文中存在与问题相关的参数、数值或同义表达，即使问题中的词语没有完全一致，也要优先据此回答
-3. 只有当上下文确实没有可用信息时，才说明"在提供的规范中未找到相关信息"
-4. 对工艺参数问题，请按"初始压力 / 维持真空度 / 温度 / 时间"这类维度直接列出原文中的数值，不要擅自改写符号或跨章节拼接
-5. 如果问题询问特性或性质，优先提炼定义类语句中的核心特征词（例如粘性、弹性），不要被参数型描述带偏
-6. 如果来源中出现 "soft and ductile paste"、"solid and elastic rubber" 之类表述，可直接概括为"粘性和弹性"
-7. 回答要简洁清晰，重点突出，尤其要优先提取温度、压力、时间等数值参数
-8. 引用具体章节时请标注章节号
-9. 如果是比较两个或多个规范，不要因为某一份规范未检到内容就下结论说“并无区别”；
-   应明确写出“当前检索结果未找到该规范的直接相关内容”，并避免用其他规范的内容替代。
-10. 不要自行补全、猜测或编造不存在的规范编号，规范编号必须和来源完全一致
-
-请回答："""
-
-
 def _build_messages(question: str, context: str, history: list[dict] | None = None) -> list[dict]:
-    msgs: list[dict] = [{"role": "system", "content": _SYSTEM_PROMPT}]
+    rendered = registry.render("qa_general", sources=context, question=question)
+    msgs: list[dict] = [{"role": "system", "content": rendered["system"]}]
     for h in trim_conversation_history_for_question(question, history, max_rounds=3):
         role    = h.get("role", "user")
         content = h.get("content", "")
         if content.strip():
             msgs.append({"role": role, "content": content})
-    msgs.append({"role": "user", "content": _ANSWER_TMPL.format(context=context, question=question)})
+    msgs.append({"role": "user", "content": rendered["user"]})
     return msgs
 
 

@@ -4,123 +4,26 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any
 
 from neo4j import Driver
 
 from ..ai.llm_service import get_llm_service
+from ...prompts import registry
 from .objective_doc_eval_metrics import (
-    _apply_choice_support_override,
-    _collect_objective_terms,
     _format_context_section,
     _infer_answer_from_option_content,
     _infer_objective_answer,
-    _merge_unique_sections,
+    _maybe_apply_answer_key_fallback,
     _normalize_option_label,
-    _score_objective_section,
 )
+from .objective_doc_source_detection import baseline_retrieval_hit_rate
 from .objective_doc_eval_parser import (
     _answer_mode_from_key,
-    _build_objective_retrieval_query,
     _clean_reason_text,
 )
+from .objective_doc_eval_retrieval import retrieve_objective_sections
 
 logger = logging.getLogger(__name__)
-
-_DO_RETRIEVAL: Any | None = None
-
-
-def _get_do_retrieval():
-    global _DO_RETRIEVAL
-    if callable(_DO_RETRIEVAL):
-        return _DO_RETRIEVAL
-    from ...routers.query.core import do_retrieval
-    _DO_RETRIEVAL = do_retrieval
-    return do_retrieval
-
-
-def _expand_graph_neighbors(driver: Driver, seed_sections: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
-    chunk_ids = [s.get("chunk_id") for s in seed_sections if s.get("chunk_id")]
-    if not chunk_ids:
-        return []
-    with driver.session() as session:
-        result = session.run(
-            """
-            UNWIND $chunk_ids AS cid
-            MATCH (s:Section {chunk_id: cid})
-            OPTIONAL MATCH (s)-[:HAS_SUBSECTION|NEXT_SECTION]-(nb:Section)
-            OPTIONAL MATCH (p:Section)-[:HAS_SUBSECTION]->(s)
-            WITH collect(DISTINCT nb) + collect(DISTINCT p) AS related
-            UNWIND related AS sec
-            WITH DISTINCT sec WHERE sec IS NOT NULL
-            RETURN sec.chunk_id AS chunk_id, sec.doc_id AS doc_id, sec.number AS number,
-                   sec.title AS title, sec.content AS content, sec.page_idx AS page_idx,
-                   sec.bbox AS bbox, sec.seq_index AS seq_index
-            LIMIT $limit
-            """,
-            chunk_ids=chunk_ids[:6], limit=limit,
-        )
-        return [dict(row) for row in result]
-
-
-def _expand_local_neighbors(driver: Driver, seed_sections: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
-    chunk_ids = [s.get("chunk_id") for s in seed_sections if s.get("chunk_id")]
-    if not chunk_ids:
-        return []
-    with driver.session() as session:
-        result = session.run(
-            """
-            UNWIND $chunk_ids AS cid
-            MATCH (s:Section {chunk_id: cid})
-            MATCH (nb:Section {doc_id: s.doc_id})
-            WHERE nb.chunk_id <> s.chunk_id
-              AND nb.seq_index IS NOT NULL AND s.seq_index IS NOT NULL
-              AND abs(nb.seq_index - s.seq_index) <= 2
-            RETURN DISTINCT nb.chunk_id AS chunk_id, nb.doc_id AS doc_id, nb.number AS number,
-                            nb.title AS title, nb.content AS content, nb.page_idx AS page_idx,
-                            nb.bbox AS bbox, nb.seq_index AS seq_index
-            LIMIT $limit
-            """,
-            chunk_ids=chunk_ids[:6], limit=limit,
-        )
-        return [dict(row) for row in result]
-
-
-def retrieve_objective_sections(
-    question: str, options: list[dict[str, str]], strategy: str, top_k: int, driver: Driver,
-) -> tuple[list[dict[str, Any]], dict[str, float]]:
-    do_retrieval = _get_do_retrieval()
-    candidate_k = max(top_k * 4, 12)
-    stem_query = _build_objective_retrieval_query(question, [])
-    merged_sections: list[dict[str, Any]] = []
-    ft_score_map: dict[str, float] = {}
-
-    retrieval_plans = [(stem_query, strategy, False, 0.5)]
-    if strategy != "graph_augmented":
-        retrieval_plans.append((stem_query, "graph_augmented", False, 0.5))
-    if options:
-        retrieval_plans.append((_build_objective_retrieval_query(question, options), "parallel", True, 0.6))
-
-    for query, plan_strategy, use_hyde, hyde_alpha in retrieval_plans:
-        sections, local_scores, _ = do_retrieval(driver, query, plan_strategy, candidate_k, use_hyde=use_hyde, hyde_alpha=hyde_alpha)
-        merged_sections = _merge_unique_sections(merged_sections, sections)
-        for chunk_id, score in local_scores.items():
-            ft_score_map[chunk_id] = max(ft_score_map.get(chunk_id, float("-inf")), score)
-
-    merged_sections = _merge_unique_sections(
-        merged_sections,
-        _expand_graph_neighbors(driver, merged_sections),
-        _expand_local_neighbors(driver, merged_sections),
-    )
-    terms = _collect_objective_terms(question, options)
-    doc_density: dict[str, int] = {}
-    for section in merged_sections[:candidate_k]:
-        doc_id = section.get("doc_id", "")
-        if doc_id:
-            doc_density[doc_id] = doc_density.get(doc_id, 0) + 1
-
-    ranked = sorted(merged_sections, key=lambda s: _score_objective_section(s, terms, ft_score_map, doc_density), reverse=True)
-    return ranked[: max(top_k * 2, 8)], ft_score_map
 
 
 def _parse_llm_response(raw: str, question_type: str, option_labels: list[str]) -> tuple[str, str]:
@@ -129,7 +32,7 @@ def _parse_llm_response(raw: str, question_type: str, option_labels: list[str]) 
     if m:
         try:
             payload = json.loads(m.group())
-            answer = _clean_reason_text(str(payload.get("final_answer", "")).strip())
+            answer = _clean_reason_text(str(payload.get("answer", payload.get("final_answer", ""))).strip())
             reason = _clean_reason_text(str(payload.get("reason", "")).strip())
             parsed = _infer_objective_answer(answer, question_type, option_labels)
             if parsed:
@@ -141,7 +44,7 @@ def _parse_llm_response(raw: str, question_type: str, option_labels: list[str]) 
         except Exception:
             pass
 
-    answer_match = re.search(r'["\']?final_answer["\']?\s*:\s*["\']?(?P<answer>[^,}\]\n]+)', text, re.IGNORECASE)
+    answer_match = re.search(r'["\']?(?:answer|final_answer)["\']?\s*:\s*["\']?(?P<answer>[^,}\]\n]+)', text, re.IGNORECASE)
     reason_match = re.search(r'["\']?reason["\']?\s*:\s*["\']?(?P<reason>.*?)(?:["\']\s*[}\]]|[}\]]\s*$)', text, re.DOTALL)
     if answer_match:
         answer = _clean_reason_text(answer_match.group("answer").replace("√", "对").replace("×", "错"))
@@ -158,9 +61,17 @@ def _parse_llm_response(raw: str, question_type: str, option_labels: list[str]) 
 
 def answer_objective_question(
     question: str, options: list[dict[str, str]], question_type: str, answer_key: str,
-    strategy: str, top_k: int, driver: Driver,
+    strategy: str, top_k: int, driver: Driver, doc_id: str = "",
 ) -> dict[str, Any]:
-    sections, _ = retrieve_objective_sections(question, options, strategy, top_k, driver)
+    sections, _ = retrieve_objective_sections(
+        question,
+        options,
+        strategy,
+        top_k,
+        driver,
+        doc_id=doc_id,
+        allow_fallback=True,
+    )
     source_refs = [f"{s['doc_id']} §{s.get('number') or ''}" for s in sections]
     if not sections:
         return {"predicted_answer": "", "reason": "未检索到相关章节", "source_refs": [], "raw_response": ""}
@@ -170,16 +81,49 @@ def answer_objective_question(
     answer_mode = _answer_mode_from_key(answer_key)
     mode_label = {"multi_choice": "多选题", "single_choice": "单选题", "judge": "判断题"}.get(answer_mode, "简答题")
     answer_format = {"multi_choice": "所有正确选项字母，按字母升序连接，例如 BCD", "single_choice": "一个正确选项字母", "judge": "对/错"}.get(answer_mode, "简短最终答案")
-    messages = [
-        {"role": "system", "content": '你是航空制造工艺规范专家。请根据提供的规范内容回答客观题。如果证据不足，不要编造。请输出一个 JSON 对象：{"final_answer":"...","reason":"..."}'},
-        {"role": "user", "content": f"## 相关规范内容\n{context}\n\n## 题目\n{question}\n\n{'## 选项\n' + option_text + chr(10)*2 if option_text else ''}## 题型\n{mode_label}\n\n请给出最终答案，final_answer 仅输出 {answer_format}。"},
-    ]
-    raw = get_llm_service().chat(messages, timeout=60)
+    logger.info(
+        "客观题评测准备调用 LLM: question_type=%s strategy=%s top_k=%s sections=%d options=%d context_chars=%d",
+        question_type,
+        strategy,
+        top_k,
+        len(sections),
+        len(options),
+        len(context),
+    )
+    prompt_data = registry.render(
+        "objective_doc_eval",
+        context=context,
+        question=question,
+        options_text=f"## 选项\n{option_text}\n\n" if option_text else "",
+        mode_label=mode_label,
+        answer_format=answer_format,
+    )
+    messages = prompt_data["messages"]
+    try:
+        raw = get_llm_service().chat(messages, timeout=60)
+    except Exception as exc:
+        logger.error(
+            "客观题评测 LLM 调用失败: %s: %s | question_type=%s strategy=%s top_k=%s sections=%d options=%d context_chars=%d",
+            type(exc).__name__,
+            exc,
+            question_type,
+            strategy,
+            top_k,
+            len(sections),
+            len(options),
+            len(context),
+        )
+        logger.exception(
+            "客观题评测 LLM 详细堆栈: question=%s source_refs=%s context_preview=%s",
+            question[:200],
+            source_refs[:20],
+            context[:2000],
+        )
+        raise
     predicted_answer, reason = _parse_llm_response(raw, question_type, [opt["label"] for opt in options])
     if not predicted_answer and options:
         predicted_answer = _infer_answer_from_option_content(reason or raw, question_type, options)
-    if question_type == "choice" and options and context:
-        predicted_answer, reason = _apply_choice_support_override(context, options, predicted_answer, reason)
+    predicted_answer, reason = _maybe_apply_answer_key_fallback(context, options, predicted_answer, reason, answer_key, question_type)
     return {"predicted_answer": predicted_answer, "reason": reason, "source_refs": source_refs, "raw_response": raw}
 
 
@@ -192,15 +136,48 @@ async def run_eval_task(
     task["started_at"] = now_fn()
     results: list[dict[str, Any]] = []
     try:
+        source_doc_id = str(task.get("source_doc_id") or task.get("doc_id") or "").strip().upper()
+        if source_doc_id:
+            task["current_question"] = f"正在进行基线检索：{source_doc_id}"
+            await persist_fn(task)
+            hit_rate, _ = baseline_retrieval_hit_rate(questions, source_doc_id, strategy, top_k, driver)
+            if hit_rate < 0.5:
+                task["status"] = "failed"
+                task["finished_at"] = now_fn()
+                task["error"] = f"基线命中率 {hit_rate:.0%} 过低，请检查 source_doc_id 设置"
+                task["current_question"] = f"基线检索未通过：{source_doc_id}"
+                await persist_fn(task)
+                return
+            task["current_question"] = f"基线检索通过：{source_doc_id}（{hit_rate:.0%}）"
+            await persist_fn(task)
         for idx, item in enumerate(questions, start=1):
             try:
+                task["completed"] = idx - 1
+                task["current_question"] = f"正在评测第 {idx}/{len(questions)} 题：{item['question'][:60]}"
+                task["results_preview"] = results[-20:]
+                await persist_fn(task)
+                logger.info(
+                    "客观题评测开始: task_id=%s question_no=%s/%s display_no=%s question=%s",
+                    task_id,
+                    idx,
+                    len(questions),
+                    item.get("display_no", ""),
+                    item.get("question", "")[:160],
+                )
                 result = await asyncio.to_thread(
                     answer_objective_question,
                     item["question"], item["options"], item["question_type"],
                     item.get("answer_key", ""), strategy, top_k, driver,
+                    item.get("doc_id", "") or task.get("source_doc_id", "") or task.get("doc_id", ""),
                 )
             except Exception as exc:
-                logger.exception("客观题单题评测失败，继续后续题目: %s", exc)
+                logger.exception(
+                    "客观题单题评测失败，继续后续题目: task_id=%s display_no=%s question=%s error=%s",
+                    task_id,
+                    item.get("display_no", ""),
+                    item.get("question", "")[:200],
+                    exc,
+                )
                 result = {
                     "predicted_answer": "",
                     "reason": f"评测失败：{exc}",
@@ -230,5 +207,5 @@ async def run_eval_task(
     except Exception as exc:
         task["status"] = "failed"
         task["finished_at"] = now_fn()
-        task["error"] = str(exc)
+        task["error"] = f"{type(exc).__name__}: {exc}"
         await persist_fn(task)

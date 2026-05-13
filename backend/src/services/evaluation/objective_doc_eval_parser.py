@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import os
 import re
-import subprocess
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -10,14 +8,21 @@ from typing import Any
 from xml.etree import ElementTree as ET
 import logging
 
+from .objective_doc_eval_parse_utils import (
+    _DOC_ID_RE,
+    _OPTION_LETTERS,
+    _OPTION_RE,
+    convert_legacy_word_to_docx,
+    normalize_option_label,
+    parse_options_from_text,
+)
+
 _WORD_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-_OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 logger = logging.getLogger(__name__)
 
 _QUESTION_START_RE = re.compile(r"^\s*(\d+)[\.、．]\s*(.+?)\s*$")
 _QUESTION_SUFFIX_RE = re.compile(r"^\s*(.+?[？?：:])\s*(?:[（(][A-HＡ-Ｈ对错√×][）)])?\s*$")
 _ANSWER_KEY_RE = re.compile(r"\s*[（(]([A-HＡ-Ｈ]{1,8}|对|错|√|×)[）)]\s*$")
-_OPTION_RE = re.compile(r"^\s*([A-HＡ-Ｈ])[\s、\.．\)）]+(.+?)\s*$")
 _RETRIEVAL_BOILERPLATE = {
     "对于", "以下", "下列", "关于", "哪一项", "哪种", "哪个", "何种",
     "正确", "不正确", "错误", "描述", "说法", "方法", "方式", "表述",
@@ -26,30 +31,8 @@ _RETRIEVAL_BOILERPLATE = {
 }
 
 
-def _find_soffice() -> str | None:
-    try:
-        from ..parsing.parser import _find_soffice as _find_parser_soffice
-    except Exception:
-        return None
-    return _find_parser_soffice()
-
-
 def _convert_legacy_word_to_docx(src: Path, out_dir: Path) -> Path:
-    soffice = _find_soffice()
-    if not soffice:
-        raise ValueError("服务器未安装 LibreOffice，无法解析 DOC/WPS 客观题文档")
-
-    env = os.environ.copy()
-    env["HOME"] = "/tmp"
-    result = subprocess.run(
-        [soffice, "--headless", "--norestore", "--convert-to",
-         "docx:MS Word 2007 XML", "--outdir", str(out_dir), str(src)],
-        capture_output=True, text=True, timeout=120, env=env,
-    )
-    converted = out_dir / f"{src.stem}.docx"
-    if result.returncode != 0 or not converted.exists():
-        raise ValueError("DOC/WPS 转换失败，请确认文件能被 LibreOffice 正常打开")
-    return converted
+    return convert_legacy_word_to_docx(src, out_dir)
 
 
 def _extract_docx_paragraphs(docx_path: Path) -> list[str]:
@@ -101,16 +84,11 @@ def _strip_answer_key(text: str) -> str:
     return _ANSWER_KEY_RE.sub("", text).strip()
 
 
-def _normalize_option_label(label: str) -> str:
-    label = label.strip().upper()
-    return label.translate(str.maketrans("ＡＢＣＤＥＦＧＨ", "ABCDEFGH"))
-
-
 def _extract_answer_key(text: str) -> tuple[str, str]:
     m = _ANSWER_KEY_RE.search(text or "")
     if not m:
         return (text or "").strip(), ""
-    key = _normalize_option_label(m.group(1))
+    key = normalize_option_label(m.group(1))
     if key in {"√", "×"}:
         key = "对" if key == "√" else "错"
     return _ANSWER_KEY_RE.sub("", text or "").strip(), key
@@ -130,7 +108,7 @@ def _choice_labels(option_labels: list[str]) -> list[str]:
     labels: list[str] = []
     seen: set[str] = set()
     for label in option_labels:
-        normalized = _normalize_option_label(label)
+        normalized = normalize_option_label(label)
         if normalized in _OPTION_LETTERS and normalized not in seen:
             labels.append(normalized)
             seen.add(normalized)
@@ -141,7 +119,7 @@ def _extract_multi_choice_labels(text: str, option_labels: list[str]) -> list[st
     _CHOICE_LABEL_RE = re.compile(r"(?<![A-Z0-9Ａ-Ｈ])([A-HＡ-Ｈ]{1,8})(?![A-Z0-9Ａ-Ｈ])")
     _SINGLE_CHOICE_LABEL_RE = re.compile(r"(?<![A-Z0-9Ａ-Ｈ])([A-HＡ-Ｈ])(?![A-Z0-9Ａ-Ｈ])")
     allowed = set(_choice_labels(option_labels)) or set(_OPTION_LETTERS[:8])
-    normalized = _normalize_option_label(text or "")
+    normalized = normalize_option_label(text or "")
     matches: list[str] = []
     compact = _CHOICE_LABEL_RE.search(normalized)
     if compact:
@@ -217,6 +195,12 @@ def _parse_question_block(block: list[str], seq: int) -> dict[str, Any] | None:
     if not block:
         return None
     first = block[0]
+    doc_id = ""
+    for line in block:
+        m = _DOC_ID_RE.search(line)
+        if m:
+            doc_id = m.group(1).strip()
+            break
     match = _QUESTION_START_RE.match(first)
     if match:
         display_no = match.group(1)
@@ -229,11 +213,22 @@ def _parse_question_block(block: list[str], seq: int) -> dict[str, Any] | None:
     options: list[dict[str, str]] = []
     stem_extra: list[str] = []
     saw_labeled_option = False
+    parsed_options, prefix_text = parse_options_from_text("\n".join(rest))
+    if len(parsed_options) >= 2:
+        options = [{"label": k, "text": v} for k, v in parsed_options.items()]
+        if prefix_text:
+            stem = f"{stem} {prefix_text}".strip()
+        question_type = "choice"
+        if answer_key:
+            question_type = "multi_choice" if len(answer_key) > 1 else "choice"
+        if not answer_key and (re.search(r"(对还是错|对吗|错吗|判断|是否正确|是否错误)", stem) or not options):
+            question_type = "judge" if not options else question_type
+        return {"display_no": display_no, "question": stem, "options": options, "question_type": question_type, "answer_key": answer_key, "doc_id": doc_id}
     for line in rest:
         option_match = _OPTION_RE.match(line)
         if option_match:
             saw_labeled_option = True
-            options.append({"label": _normalize_option_label(option_match.group(1)), "text": option_match.group(2).strip()})
+            options.append({"label": normalize_option_label(option_match.group(1)), "text": option_match.group(2).strip()})
             continue
         if saw_labeled_option and options:
             options[-1]["text"] = f"{options[-1]['text']} {line}".strip()
@@ -243,7 +238,7 @@ def _parse_question_block(block: list[str], seq: int) -> dict[str, Any] | None:
     if not options and stem_extra:
         unlabeled = [item for item in stem_extra if item]
         if 2 <= len(unlabeled) <= 8:
-            options = [{"label": _OPTION_LETTERS[idx], "text": text} for idx, text in enumerate(unlabeled)]
+            options = [{"label": chr(ord("A") + idx), "text": text} for idx, text in enumerate(unlabeled)]
             stem_extra = []
     if stem_extra:
         stem = f"{stem} {' '.join(stem_extra)}".strip()
@@ -253,7 +248,7 @@ def _parse_question_block(block: list[str], seq: int) -> dict[str, Any] | None:
         question_type = "multi_choice" if len(answer_key) > 1 else "choice"
     if not options and (answer_key in {"对", "错"} or re.search(r"(对还是错|对吗|错吗|判断|是否正确|是否错误)", stem)):
         question_type = "judge"
-    return {"display_no": display_no, "question": stem, "options": options, "question_type": question_type, "answer_key": answer_key}
+    return {"display_no": display_no, "question": stem, "options": options, "question_type": question_type, "answer_key": answer_key, "doc_id": doc_id}
 
 
 def extract_objective_questions(filename: str, data: bytes) -> list[dict[str, Any]]:

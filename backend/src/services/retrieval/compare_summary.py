@@ -7,20 +7,7 @@ from collections import defaultdict
 from ..agent.agent_helpers import extract_compare_doc_ids
 from ..ai.llm import clean_llm_response
 from ..ai.service import get_llm_service
-
-_SYSTEM_PROMPT = (
-    "你是中国商飞（COMAC）航空工艺规范专家。"
-    "请基于给定的规范章节与相关图示，对两份规范做中文结构化对比。"
-    "不要逐字复述原文，不要照搬全文，不要编造来源中没有的信息。"
-    "如果问题涉及比较，请明确给出相同点、不同点和结论。"
-    "如果某份规范没有检到直接相关内容，要明确写出“未找到该规范的直接相关内容”，"
-    "不要因此直接下结论说“没有区别”。"
-    "规范编号、章节号和图号必须与来源完全一致，不得自行修改或补全。"
-    "如果来源中提到图 6-1、图 7-5 之类图号，请在回答中显式保留。"
-    "比较题的标题必须使用问题中明确出现的规范编号，如 CPS1000、CPS7251，"
-    "不要把章节号误写成规范编号。"
-)
-
+from ...prompts import registry
 
 def _clean_text(text: str | None, limit: int = 180) -> str:
     if not text:
@@ -181,39 +168,18 @@ async def summarize_compare_answer(
     requested_ids = extract_compare_doc_ids(question)
     doc_a = requested_ids[0] if len(requested_ids) > 0 else "CPSXXXX"
     doc_b = requested_ids[1] if len(requested_ids) > 1 else "CPSYYYY"
-    messages = [
-        {
-            "role": "user",
-            "content": (
-                "请根据以下来源内容，输出一个结构化的比较答案。"
-                "必须严格按下面的模板输出，不要改标题，不要添加多余说明，不要逐字抄写全文：\n\n"
-                "## 对比结果\n\n"
-                f"### {doc_a}\n"
-                "- ...\n\n"
-                f"### {doc_b}\n"
-                "- ...\n\n"
-                "### 相同点\n"
-                "- ...\n\n"
-                "### 不同点\n"
-                "- ...\n\n"
-                "### 结论\n"
-                "- ...\n\n"
-                "### 相关图示\n"
-                "- 图号 · 文档 · 页码\n"
-                "  对应说明\n\n"
-                "要求：1）只输出这个模板里的内容；2）不要把章节号写成规范编号；"
-                "3）不要出现除问题中明确给出的规范编号之外的 CPS 号；"
-                "4）若某份规范没有直接相关内容，明确写“未找到该规范的直接相关内容”；"
-                "5）若来源中存在图 6-1、图 7-5 之类图号，请在“相关图示”中显式保留。\n\n"
-                f"来源内容：\n{context}\n"
-            ),
-        }
-    ]
+    prompt_data = registry.render(
+        "agent_compare",
+        context=context,
+        question=question,
+        doc_a=doc_a,
+        doc_b=doc_b,
+    )
     try:
         answer = await asyncio.to_thread(
             get_llm_service().chat,
-            messages,
-            _SYSTEM_PROMPT,
+            prompt_data["messages"],
+            "",
         )
         answer = clean_llm_response(answer)
         if not answer:

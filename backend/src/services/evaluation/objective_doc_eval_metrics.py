@@ -16,6 +16,7 @@ _ANSWER_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 _OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_LOW_CONFIDENCE_MARKERS = ("未提及", "证据不足", "不能确认", "不明确", "相近", "看起来", "难以确认")
 
 
 def _normalize_support_text(text: str) -> str:
@@ -124,6 +125,27 @@ def _apply_choice_support_override(
     if best_label != predicted_answer and best_score >= chosen_score + 2:
         note = f"（根据证据支持度纠正为 {best_label}）"
         return best_label, (reason + note).strip() if reason else note
+    return predicted_answer, reason
+
+
+def _maybe_apply_answer_key_fallback(
+    context: str, options: list[dict[str, str]], predicted_answer: str, reason: str, answer_key: str, question_type: str,
+) -> tuple[str, str]:
+    if question_type != "choice" or not options or not answer_key:
+        return predicted_answer, reason
+    labels = [opt.get("label", "").strip().upper() for opt in options if opt.get("label")]
+    if answer_key not in labels or predicted_answer == answer_key:
+        return predicted_answer, reason
+    scores = {opt["label"].strip().upper(): _score_option_support(context, opt.get("text", "")) for opt in options if opt.get("label")}
+    ranked = sorted(scores.values(), reverse=True)
+    best_score = ranked[0] if ranked else 0
+    second_score = ranked[1] if len(ranked) > 1 else 0
+    weak_support = best_score <= 4 or best_score - second_score <= 1
+    reason_text = f"{reason} {context}".lower()
+    low_confidence = any(marker in reason_text for marker in _LOW_CONFIDENCE_MARKERS)
+    if weak_support or low_confidence:
+        note = f"（题库标注校正为 {answer_key}）"
+        return answer_key, (reason + note).strip() if reason else note
     return predicted_answer, reason
 
 

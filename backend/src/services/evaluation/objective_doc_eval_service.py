@@ -15,12 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from ...db.models import ObjectiveDocEvalTask
 from .objective_doc_eval_parser import extract_objective_questions
 from .objective_doc_eval_runner import run_eval_task
-from .objective_doc_eval_runner import _parse_llm_response as _parse_objective_llm_response
-from .objective_doc_eval_metrics import (
-    _apply_choice_support_override,
-    _infer_answer_from_option_content,
-)
-from .objective_doc_eval_parser import _build_objective_retrieval_query, _parse_question_block
+from .objective_doc_source_detection import resolve_source_doc_id
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +30,7 @@ def _task_snapshot(task: dict[str, Any]) -> dict[str, Any]:
     return {
         "task_id": task.get("task_id", ""),
         "filename": task.get("filename", ""),
+        "source_doc_id": task.get("source_doc_id", ""),
         "strategy": task.get("strategy", "parallel"),
         "top_k": int(task.get("top_k", 5) or 5),
         "status": task.get("status", "queued"),
@@ -85,6 +81,7 @@ def _task_from_row(row: ObjectiveDocEvalTask) -> dict[str, Any]:
     return {
         "task_id": row.task_id,
         "filename": row.filename,
+        "source_doc_id": row.source_doc_id or "",
         "status": row.status,
         "strategy": row.strategy,
         "top_k": row.top_k,
@@ -114,20 +111,72 @@ async def _load_task_from_db(task_id: str) -> dict[str, Any]:
         return _task_from_row(row)
 
 
+async def list_objective_task_records(limit: int = 20) -> list[dict[str, Any]]:
+    from ...db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(ObjectiveDocEvalTask)
+            .order_by(ObjectiveDocEvalTask.created_at.desc())
+            .limit(max(limit, 1))
+        )
+        rows = result.scalars().all()
+        return [_task_from_row(row) for row in rows]
+
+
 async def start_objective_doc_eval(
-    filename: str, data: bytes, strategy: str, top_k: int, driver: Driver,
+    filename: str,
+    data: bytes,
+    strategy: str,
+    top_k: int,
+    driver: Driver,
+    source_doc_id: str = "",
+    doc_id: str = "",
 ) -> dict[str, Any]:
-    questions = extract_objective_questions(filename, data)
     task_id = uuid.uuid4().hex
     _tasks[task_id] = {
         "task_id": task_id, "filename": filename, "status": "queued",
-        "strategy": strategy, "top_k": top_k, "created_at": _now(),
+        "strategy": strategy, "top_k": top_k,
+        "source_doc_id": source_doc_id or "", "doc_id": doc_id or "",
+        "created_at": _now(),
         "started_at": None, "finished_at": None,
-        "total": len(questions), "completed": 0,
-        "current_question": "", "error": "", "summary": None,
+        "total": 0, "completed": 0,
+        "current_question": "正在解析文档...", "error": "", "summary": None,
         "results_preview": [], "results": [],
     }
     await _persist_task(_tasks[task_id])
+    try:
+        questions = extract_objective_questions(filename, data)
+        resolved_source_doc_id = resolve_source_doc_id(
+            filename,
+            questions,
+            source_doc_id=source_doc_id,
+            legacy_doc_id=doc_id,
+        )
+        _tasks[task_id]["source_doc_id"] = resolved_source_doc_id
+        _tasks[task_id]["doc_id"] = resolved_source_doc_id
+        _tasks[task_id]["total"] = len(questions)
+        _tasks[task_id]["current_question"] = f"题目解析完成，准备评测 {len(questions)} 题"
+        await _persist_task(_tasks[task_id])
+        if resolved_source_doc_id:
+            from .objective_doc_source_detection import baseline_retrieval_hit_rate
+
+            hit_rate, _ = baseline_retrieval_hit_rate(questions, resolved_source_doc_id, strategy, top_k, driver)
+            if hit_rate < 0.5:
+                _tasks[task_id]["status"] = "failed"
+                _tasks[task_id]["finished_at"] = _now()
+                _tasks[task_id]["error"] = f"基线命中率 {hit_rate:.0%} 过低，请检查 source_doc_id 设置"
+                _tasks[task_id]["current_question"] = f"基线检索未通过：{resolved_source_doc_id}"
+                await _persist_task(_tasks[task_id])
+                return get_objective_task(task_id)
+    except Exception as exc:
+        _tasks[task_id]["status"] = "failed"
+        _tasks[task_id]["finished_at"] = _now()
+        _tasks[task_id]["error"] = f"{type(exc).__name__}: {exc}"
+        _tasks[task_id]["current_question"] = "文档解析失败"
+        await _persist_task(_tasks[task_id])
+        raise ValueError(str(exc)) from exc
+
     asyncio.create_task(run_eval_task(task_id, questions, strategy, top_k, driver, _tasks, _persist_task, _now))
     return get_objective_task(task_id)
 

@@ -10,29 +10,19 @@ import numpy as np
 
 from ...core.config import settings
 from ..ai.llm_service      import get_llm_service
+from ...prompts import registry
 from .embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
-
-_HYDE_PROMPT = """\
-你是航空工艺规范专家。
-请生成一段可能出现在中国商飞(COMAC)工艺规范中的标准描述。
-要求使用规范语言，包含具体数值参数。
-注意：密封胶的基本特性包括粘性和弹性，
-固化后从糊状变为橡胶状态。
-
-问题：{question}
-
-规范描述："""
 
 
 class HyDEService:
     def generate_hypothetical_answer(self, question: str) -> str:
         """同步：调用 LLM 生成假设答案段落。"""
-        prompt = _HYDE_PROMPT.format(question=question)
+        prompt_data = registry.render("hyde_generation", question=question)
         try:
             return get_llm_service().chat(
-                [{"role": "user", "content": prompt}],
+                prompt_data["messages"],
                 max_tokens=settings.LLM_MAX_TOKENS,
                 timeout=settings.LLM_TIMEOUT,
             )

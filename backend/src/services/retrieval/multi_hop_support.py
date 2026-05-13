@@ -7,6 +7,7 @@ import re
 from ..ai.llm import clean_llm_response
 from ..ai.llm_service import get_llm_service
 from ..answer_guard import validate_answer
+from ...prompts import registry
 
 logger = logging.getLogger(__name__)
 DOC_ID_RE = re.compile(r"CPS\d{4}")
@@ -15,27 +16,7 @@ MAX_HOPS = 3
 
 
 def build_decompose_prompt(question: str) -> str:
-    return f"""你是中国商飞（COMAC）航空工艺专家。
-将用户的复杂工艺问题分解为2-3个独立的子问题。
-
-规则：
-1. 每个子问题必须能通过检索工艺规范文档直接回答
-2. 如果问题涉及多个规范（如CPS1000和CPS7251），
-   每个规范单独生成一个子问题
-3. 如果问题涉及跨规范比较，
-   先分别查各规范，再生成对比子问题
-4. 子问题必须包含具体的规范编号或工艺术语
-
-示例：
-原问题：CPS1000和CPS7251对密封圈的要求有什么不同？
-分解为：
-- CPS1000中对密封圈安装的具体要求是什么？
-- CPS7251中对密封圈安装的具体要求是什么？
-
-输出格式（只输出JSON，不要其他内容）：
-{{"sub_questions": ["子问题1", "子问题2"]}}
-
-问题：{question}"""
+    return registry.render("multi_hop_decompose", question=question)["user"]
 
 
 def extract_doc_ids(question: str) -> list[str]:
@@ -173,35 +154,6 @@ def synthesize_answer(question: str, retrieved: list[dict], sub_queries: list[st
     return validate_answer(clean_llm_response(answer), unique, question), unique, []
 
 
-def synthesize_answer(question: str, retrieved: list[dict], sub_queries: list[str]) -> tuple[str, list[dict], list[dict]]:
-    if not retrieved:
-        return "在知识库中未找到相关章节，请确认文件已入库。", [], []
-
-    seen, unique = set(), []
-    for r in retrieved:
-        if r["chunk_id"] in seen:
-            continue
-        unique.append(r)
-        seen.add(r["chunk_id"])
-
-    context = "\n\n".join(
-        f"[{r['doc_id']} §{r.get('number', '')} (第{r.get('page_idx', 0)+1}页)] {r['title']}\n{r.get('content', '')}"
-        for r in unique[:6]
-    )
-    compare_hint = build_compare_hint(question)
-    prompt = build_synthesis_prompt(question, context, sub_queries)
-    if compare_hint:
-        prompt = f"{compare_hint}\n\n{prompt}"
-
-    try:
-        answer = get_llm_service().chat([{"role": "user", "content": prompt}], timeout=60)
-    except Exception as e:
-        logger.warning("多跳综合失败: %s", e)
-        answer = f"根据多步检索，找到 {len(unique)} 个相关章节：\n\n{context[:2000]}"
-
-    return validate_answer(clean_llm_response(answer), unique, question), unique, []
-
-
 def parse_sub_queries(content: str, question: str) -> list[str]:
     try:
         payload = json.loads(content)
@@ -223,26 +175,12 @@ def build_synthesis_prompt(
     context: str,
     sub_queries: list[str],
 ) -> str:
-    return f"""基于以下来自不同工艺规范的检索结果，
-回答用户问题。
-
-要求：
-- 如果问题要求比较，必须明确列出每个规范的具体要求
-- 如果某个规范未检到直接相关内容，必须明确说明“当前检索结果未找到该规范的直接相关内容”，
-  不要据此下结论说“并无区别”
-- 引用时必须标注规范编号和章节号，格式：（CPS1000 §3.1）
-- 不同规范的要求用分段或列表清晰区分
-- 如果两个规范要求相同，明确说明“两者一致”
-- 如果存在差异，用对比格式呈现
-- 不要自行补全、猜测或编造不存在的规范编号
-
-来源章节：
-{context}
-
-问题：{question}
-
-子问题：
-{chr(10).join(f"- {q}" for q in sub_queries)}"""
+    return registry.render(
+        "multi_hop_synthesis",
+        context=context,
+        question=question,
+        sub_questions=chr(10).join(f"- {q}" for q in sub_queries),
+    )["user"]
 
 
 def fallback_parallel_answer(question: str, driver, top_k: int = 5) -> tuple[str, list[dict], list[dict]]:

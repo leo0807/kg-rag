@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -13,7 +14,9 @@ from .agent_helpers import (
     is_compare_question,
     summarize_sources,
 )
+from .agent_fallback import parallel_rrf_fallback
 from ..answer_guard import validate_answer
+from ...prompts import registry
 from .tools import TOOLS
 
 logger = logging.getLogger(__name__)
@@ -27,38 +30,18 @@ class AgentExecutor:
         self.tools = tool_executor
 
     async def run(self, question: str, emit_event=None) -> dict:
+        timeout = getattr(getattr(self.llm, "_settings", None), "QUERY_AGENT_TIMEOUT", 90.0)
+        try:
+            return await asyncio.wait_for(self._run_internal(question, emit_event), timeout=timeout)
+        except TimeoutError:
+            logger.warning("[agent] 超时（%.1fs），降级到快速检索", timeout)
+            return await parallel_rrf_fallback(question, self.tools)
+
+    async def _run_internal(self, question: str, emit_event=None) -> dict:
         compare_mode = is_compare_question(question)
         compare_plan = build_compare_plan(question) if compare_mode else []
-        messages = [
-            {
-                "role": "system",
-                "content": """你是COMAC航空工艺规范专家助手。
-通过调用工具检索工艺规范，回答用户问题。
-
-工作原则：
-1. 先分析问题类型（查询/比较/追溯）
-2. 比较类问题要分别检索每个规范的章节，再综合对比
-3. 工艺操作类问题优先检索章节，必要时再查图片
-4. 答案不完整时继续调用工具补充，不要过早结束
-5. 收集足够信息后调用 final_answer
-6. 引用时必须标注规范编号和章节号
-
-比较题执行顺序：
-1. 先查第一个规范的相关章节
-2. 再查第二个规范的相关章节
-3. 如有需要再查相关图片
-4. 最后综合生成答案
-
-比较两份规范时，子查询要包含具体的工艺术语，
-如：安装要求、材料要求、检验标准、存储要求、安装前检查。
-不要只用规范名称或笼统词语。
-
-对于 CPS7251（密封圈专用规范），
-如问题涉及安装或检查，可优先精确获取 §7.5.1、§7.5.2、§7.5.3 章节。
-""",
-            },
-            {"role": "user", "content": question},
-        ]
+        prompt_data = registry.render("agent_system", question=question)
+        messages = prompt_data["messages"]
 
         all_sources: list[dict] = []
         all_images: list[dict] = []
@@ -293,8 +276,7 @@ class AgentExecutor:
                     },
             }
         if iteration == 0 and not sources:
-            return {
-                "name": "search_sections",
-                "input": {"query": question, "top_k": 5},
-            }
+            # Strip MCQ option lines to search with pure stem
+            stem = re.sub(r'(\n[A-Da-d]\s+.*|[（(][A-Da-d][）)].+)', '', question, flags=re.DOTALL).strip() or question
+            return {"name": "search_sections", "input": {"query": stem, "doc_id": doc_ids[0] if doc_ids else "", "top_k": 8}}
         return None
