@@ -37,7 +37,9 @@ interface Props {
   streamingMsgId: string | null;
   streamingText: string;
   streamPhase: import("./ProgressIndicator").StreamPhase;
+  streamStage: import("./ProgressIndicator").StreamStage | null;
   retrievedCount: number | null;
+  statusHistory: { id: number; message: string }[];
   reasoningSteps: unknown[];
   causalChain: unknown;
   compareMode: boolean;
@@ -81,7 +83,9 @@ export function ConversationMessages({
   streamingMsgId,
   streamingText,
   streamPhase,
+  streamStage,
   retrievedCount,
+  statusHistory,
   reasoningSteps,
   compareMode,
   compareLoading,
@@ -149,8 +153,21 @@ export function ConversationMessages({
           </div>
         ) : (
           <>
+            {streaming && statusHistory.length > 0 && (
+              <div className="mb-3 rounded-xl border border-cyan-900/30 bg-cyan-950/20 px-4 py-3">
+                <div className="space-y-1 text-xs text-cyan-200/80">
+                  {statusHistory.slice(-6).map((entry) => (
+                    <div key={entry.id} className="flex gap-2">
+                      <span className="text-cyan-400">•</span>
+                      <span>{entry.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <ProgressIndicator
               phase={streamPhase}
+              stage={streamStage}
               retrievedCount={retrievedCount}
             />
             <ReasoningChain

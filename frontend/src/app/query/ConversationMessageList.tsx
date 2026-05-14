@@ -27,6 +27,7 @@ interface Props {
       clarification?: ClarificationInfo;
       agentSteps?: AgentStepInfo[];
       answerImages?: AnswerImage[];
+      selectedAnswer?: string;
     }[];
   };
   streaming: boolean;
@@ -208,6 +209,9 @@ export function ConversationMessageList({
             agentSteps={msg.role === "assistant" ? msg.agentSteps : undefined}
             answerImages={
               msg.role === "assistant" ? msg.answerImages : undefined
+            }
+            selectedAnswer={
+              msg.role === "assistant" ? msg.selectedAnswer : undefined
             }
             onClarificationSelect={
               msg.role === "assistant"

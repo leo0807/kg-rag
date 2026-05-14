@@ -12,6 +12,7 @@ import type {
 
 type Props = {
   detail: PromptDetail;
+  templatesCount: number;
   selectedVersion: string;
   draft: PromptDraft;
   setDraft: React.Dispatch<React.SetStateAction<PromptDraft>>;
@@ -29,6 +30,7 @@ type Props = {
   onSave: () => void;
   onTest: () => void;
   onCompare: () => void;
+  onRetry: () => void;
 };
 
 export function PromptDetailContent({
@@ -50,6 +52,7 @@ export function PromptDetailContent({
   onSave,
   onTest,
   onCompare,
+  onRetry: _onRetry,
 }: Props) {
   return (
     <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950 p-5">

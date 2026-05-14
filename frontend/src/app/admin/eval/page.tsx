@@ -19,6 +19,10 @@ export default function AdminEvalPage() {
     datasetTask,
     datasetStarting,
     objectiveTask,
+    objectiveDocId,
+    setObjectiveDocId,
+    objectiveFileName,
+    objectiveCanStart,
     objectiveStarting,
     retrievalTask,
     retrievalStarting,
@@ -74,11 +78,13 @@ export default function AdminEvalPage() {
       {activeTab === "objective" && (
         <ObjectiveEvalTab
           task={objectiveTask}
-          strategy={strategy}
-          topK={topK}
+          docId={objectiveDocId}
+          selectedFileName={objectiveFileName}
+          canStart={objectiveCanStart}
           starting={objectiveStarting}
           error={error}
           onFileChange={setObjectiveFile}
+          onDocIdChange={setObjectiveDocId}
           onStart={startObjectiveEval}
           onRefresh={loadObjectiveTask}
           onDownloadCsv={downloadObjectiveCsv}

@@ -12,7 +12,12 @@ export type RetrievalStrategy =
   | "graph_augmented"
   | "gnn";
 
-export type EvalTabKey = "dataset" | "objective" | "retrieval" | "faithfulness" | "ab_test";
+export type EvalTabKey =
+  | "dataset"
+  | "objective"
+  | "retrieval"
+  | "faithfulness"
+  | "ab_test";
 
 export interface EvalRow {
   row_no: number;
@@ -68,6 +73,7 @@ export interface ObjectiveRow {
 export interface ObjectiveTask {
   task_id: string;
   filename: string;
+  source_doc_id: string;
   status: "queued" | "running" | "completed" | "failed";
   strategy: Strategy;
   top_k: number;

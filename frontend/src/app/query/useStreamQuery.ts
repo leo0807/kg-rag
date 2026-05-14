@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import type { NetToastType } from "@/components/NetToast";
 import { getApiBaseUrl, getAuthHeaders } from "@/lib/api";
-import type { StreamPhase } from "./ProgressIndicator";
+import type { StreamPhase, StreamStage } from "./ProgressIndicator";
 import type { ReasoningStep } from "./ReasoningChain";
 import type {
   AgentStepInfo,
@@ -41,6 +41,28 @@ function normalizeAnswerText(text: string) {
   return text.replace(/\u00A0/g, " ").replace(/[ \t]{3,}/g, " ");
 }
 
+function stageFromStatus(message: string): StreamStage | null {
+  if (message.includes("选择题")) {
+    return { name: "classify", label: "识别题型", progress: 5 };
+  }
+  if (message.includes("检索")) {
+    return { name: "retrieve", label: "检索规范", progress: 25 };
+  }
+  if (message.includes("精排") || message.includes("rerank")) {
+    return { name: "rerank", label: "精排证据", progress: 45 };
+  }
+  if (message.includes("生成") || message.includes("推理")) {
+    return { name: "reason", label: "推理选项", progress: 65 };
+  }
+  if (message.includes("校验")) {
+    return { name: "validate", label: "校验答案", progress: 95 };
+  }
+  if (message.includes("完成")) {
+    return { name: "done", label: "完成", progress: 100 };
+  }
+  return null;
+}
+
 function upsertAgentStep(
   steps: AgentStepInfo[],
   nextStep: AgentStepInfo,
@@ -50,6 +72,17 @@ function upsertAgentStep(
   const copy = [...steps];
   copy[index] = { ...copy[index], ...nextStep };
   return copy;
+}
+
+function formatStreamError(
+  status: number | null | undefined,
+  message: string,
+): string {
+  if (status === 422) return `请求参数错误：${message}`;
+  if (status === 401) return "未登录或登录已过期";
+  if (status === 503) return "AI 服务暂不可用，请稍后重试";
+  if (status && status >= 500) return message || "服务器内部错误";
+  return message || "请求失败";
 }
 
 function isAbortError(error: unknown) {
@@ -76,14 +109,22 @@ export function useStreamQuery({
   const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
   const [streamPhase, setStreamPhase] = useState<StreamPhase>("idle");
+  const [streamStage, setStreamStage] = useState<StreamStage | null>(null);
   const [retrievedCount, setRetrievedCount] = useState<number | null>(null);
+  const [statusHistory, setStatusHistory] = useState<
+    { id: number; message: string }[]
+  >([]);
   const [, setStreamAnswerImages] = useState<AnswerImage[]>([]);
+  const [selectedAnswer, setSelectedAnswer] = useState("");
   const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
   const [causalChain, setCausalChain] = useState<CausalChainData | null>(null);
   const [streamingConvId, setStreamingConvId] = useState<string | null>(null);
   const answerRef = useRef("");
   const abortRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef(0);
+  const statusHistorySeqRef = useRef(0);
+  const mcqStreamRef = useRef(false);
+  const mcqFormattedRef = useRef("");
 
   async function submit(
     question: string,
@@ -134,8 +175,14 @@ export function useStreamQuery({
     setCausalChain(null);
     setStreamingText("");
     setStreamPhase("searching");
+    setStreamStage({ name: "classify", label: "识别题型", progress: 5 });
     setRetrievedCount(null);
+    setStatusHistory([]);
+    statusHistorySeqRef.current = 0;
     setStreamAnswerImages([]);
+    setSelectedAnswer("");
+    mcqStreamRef.current = false;
+    mcqFormattedRef.current = "";
     answerRef.current = "";
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -169,6 +216,7 @@ export function useStreamQuery({
     let streamClarification: ClarificationInfo | null = null;
     let streamAgentSteps: AgentStepInfo[] = [];
     let currentAnswerImages: AnswerImage[] = [];
+    let currentSelectedAnswer = "";
 
     const syncAssistantMessage = (content: string) => {
       if (!convId) return;
@@ -220,7 +268,10 @@ export function useStreamQuery({
           streamAgentSteps = [];
           currentAnswerImages = [];
           setRetrievedCount(null);
+          setStatusHistory([]);
+          statusHistorySeqRef.current = 0;
           setStreamAnswerImages([]);
+          setSelectedAnswer("");
           showNetToast("reconnecting", "正在重连…");
         }
 
@@ -238,7 +289,13 @@ export function useStreamQuery({
           streamExpansionInfo = [];
           currentAnswerImages = [];
           setRetrievedCount(null);
+          setStatusHistory([]);
+          statusHistorySeqRef.current = 0;
           setStreamAnswerImages([]);
+          setSelectedAnswer("");
+          mcqStreamRef.current = false;
+          mcqFormattedRef.current = "";
+          setStreamStage({ name: "classify", label: "识别题型", progress: 5 });
           const headers = await getAuthHeaders({
             "Content-Type": "application/json",
           });
@@ -293,17 +350,51 @@ export function useStreamQuery({
                     if (event.type === "sources") {
                       sources = [...sources, ...event.content];
                       setRetrievedCount(sources.length);
+                      setStreamStage({
+                        name: "retrieve",
+                        label: "检索规范",
+                        progress: 25,
+                      });
                     } else if (event.type === "sources_update") {
                       sources = Array.isArray(event.content)
                         ? event.content
                         : sources;
                       setRetrievedCount(sources.length);
+                      setStreamStage({
+                        name: "rerank",
+                        label: "精排证据",
+                        progress: 45,
+                      });
+                    } else if (event.type === "stage") {
+                      const stage = event.content || {};
+                      setStreamStage(stage);
+                      if (
+                        stage.name === "classify" ||
+                        stage.name === "retrieve"
+                      ) {
+                        setStreamPhase("searching");
+                      } else if (
+                        stage.name === "rerank" ||
+                        stage.name === "reason" ||
+                        stage.name === "validate"
+                      ) {
+                        setStreamPhase("generating");
+                      } else if (stage.name === "done") {
+                        setStreamPhase("done");
+                      }
                     } else if (event.type === "delta") {
-                      setStreamPhase("generating");
-                      answerRef.current = normalizeAnswerText(
-                        answerRef.current + event.content,
-                      );
-                      setStreamingText(answerRef.current);
+                      if (!mcqStreamRef.current) {
+                        setStreamStage({
+                          name: "reason",
+                          label: "推理选项",
+                          progress: 65,
+                        });
+                        setStreamPhase("generating");
+                        answerRef.current = normalizeAnswerText(
+                          answerRef.current + event.content,
+                        );
+                        setStreamingText(answerRef.current);
+                      }
                     } else if (event.type === "steps") {
                       setReasoningSteps((prev) => [...prev, ...event.content]);
                     } else if (event.type === "images") {
@@ -312,6 +403,21 @@ export function useStreamQuery({
                         : [];
                       setStreamAnswerImages(currentAnswerImages);
                       syncAssistantMessage(answerRef.current);
+                    } else if (event.type === "mcq_answer") {
+                      const answerLetter = String(event.content || "").trim();
+                      currentSelectedAnswer = answerLetter;
+                      setSelectedAnswer(answerLetter);
+                      syncAssistantMessage(answerRef.current);
+                    } else if (event.type === "answer_meta") {
+                      const formatted = normalizeAnswerText(
+                        String(event.content?.formatted || ""),
+                      );
+                      if (formatted) {
+                        mcqFormattedRef.current = formatted;
+                        answerRef.current = formatted;
+                        setStreamingText(formatted);
+                        syncAssistantMessage(formatted);
+                      }
                     } else if (event.type === "agent_step") {
                       streamAgentSteps = upsertAgentStep(streamAgentSteps, {
                         step: Number(event.step ?? 0),
@@ -333,6 +439,36 @@ export function useStreamQuery({
                       syncAssistantMessage(answerRef.current);
                     } else if (event.type === "status") {
                       showNetToast("online", event.content, 2000);
+                      setStatusHistory((prev) => [
+                        ...prev.slice(-5),
+                        {
+                          id: ++statusHistorySeqRef.current,
+                          message: String(event.content ?? ""),
+                        },
+                      ]);
+                      const stage = stageFromStatus(
+                        String(event.content ?? ""),
+                      );
+                      if (stage) {
+                        setStreamStage(stage);
+                        if (
+                          stage.name === "classify" ||
+                          stage.name === "retrieve"
+                        ) {
+                          setStreamPhase("searching");
+                        } else if (
+                          stage.name === "rerank" ||
+                          stage.name === "reason" ||
+                          stage.name === "validate"
+                        ) {
+                          setStreamPhase("generating");
+                        } else if (stage.name === "done") {
+                          setStreamPhase("done");
+                        }
+                      }
+                      if (String(event.content).includes("选择题")) {
+                        mcqStreamRef.current = true;
+                      }
                       if (String(event.content).includes("检索")) {
                         setStreamPhase("searching");
                       } else if (String(event.content).includes("生成")) {
@@ -347,11 +483,18 @@ export function useStreamQuery({
                       streamExpansionInfo = event.content || [];
                     } else if (event.type === "metrics") {
                       streamMetrics = event.content;
+                      setStreamStage({
+                        name: "validate",
+                        label: "校验答案",
+                        progress: 95,
+                      });
                     } else if (event.type === "error") {
                       streamError = {
                         code: event.code ?? "unknown_error",
-                        message:
+                        message: formatStreamError(
+                          event.status_code ?? null,
                           event.message ?? event.content ?? "AI 服务异常",
+                        ),
                         status_code: event.status_code ?? null,
                         endpoint: event.endpoint ?? "",
                       };
@@ -378,11 +521,35 @@ export function useStreamQuery({
                 if (event.type === "sources") {
                   sources = [...sources, ...event.content];
                   setRetrievedCount(sources.length);
+                  setStreamStage({
+                    name: "retrieve",
+                    label: "检索规范",
+                    progress: 25,
+                  });
                 } else if (event.type === "sources_update") {
                   sources = Array.isArray(event.content)
                     ? event.content
                     : sources;
                   setRetrievedCount(sources.length);
+                  setStreamStage({
+                    name: "rerank",
+                    label: "精排证据",
+                    progress: 45,
+                  });
+                } else if (event.type === "stage") {
+                  const stage = event.content || {};
+                  setStreamStage(stage);
+                  if (stage.name === "classify" || stage.name === "retrieve") {
+                    setStreamPhase("searching");
+                  } else if (
+                    stage.name === "rerank" ||
+                    stage.name === "reason" ||
+                    stage.name === "validate"
+                  ) {
+                    setStreamPhase("generating");
+                  } else if (stage.name === "done") {
+                    setStreamPhase("done");
+                  }
                 } else if (event.type === "clarification_needed") {
                   streamClarification = {
                     message:
@@ -393,11 +560,18 @@ export function useStreamQuery({
                   };
                   answerRef.current = streamClarification.message;
                 } else if (event.type === "delta") {
-                  setStreamPhase("generating");
-                  answerRef.current = normalizeAnswerText(
-                    answerRef.current + event.content,
-                  );
-                  setStreamingText(answerRef.current);
+                  if (!mcqStreamRef.current) {
+                    setStreamStage({
+                      name: "reason",
+                      label: "推理选项",
+                      progress: 65,
+                    });
+                    setStreamPhase("generating");
+                    answerRef.current = normalizeAnswerText(
+                      answerRef.current + event.content,
+                    );
+                    setStreamingText(answerRef.current);
+                  }
                 } else if (event.type === "steps") {
                   setReasoningSteps((prev) => [...prev, ...event.content]);
                 } else if (event.type === "images") {
@@ -406,6 +580,21 @@ export function useStreamQuery({
                     : [];
                   setStreamAnswerImages(currentAnswerImages);
                   syncAssistantMessage(answerRef.current);
+                } else if (event.type === "mcq_answer") {
+                  const answerLetter = String(event.content || "").trim();
+                  currentSelectedAnswer = answerLetter;
+                  setSelectedAnswer(answerLetter);
+                  syncAssistantMessage(answerRef.current);
+                } else if (event.type === "answer_meta") {
+                  const formatted = normalizeAnswerText(
+                    String(event.content?.formatted || ""),
+                  );
+                  if (formatted) {
+                    mcqFormattedRef.current = formatted;
+                    answerRef.current = formatted;
+                    setStreamingText(formatted);
+                    syncAssistantMessage(formatted);
+                  }
                 } else if (event.type === "agent_step") {
                   streamAgentSteps = upsertAgentStep(streamAgentSteps, {
                     step: Number(event.step ?? 0),
@@ -427,6 +616,34 @@ export function useStreamQuery({
                   syncAssistantMessage(answerRef.current);
                 } else if (event.type === "status") {
                   showNetToast("online", event.content, 2000);
+                  setStatusHistory((prev) => [
+                    ...prev.slice(-5),
+                    {
+                      id: ++statusHistorySeqRef.current,
+                      message: String(event.content ?? ""),
+                    },
+                  ]);
+                  const stage = stageFromStatus(String(event.content ?? ""));
+                  if (stage) {
+                    setStreamStage(stage);
+                    if (
+                      stage.name === "classify" ||
+                      stage.name === "retrieve"
+                    ) {
+                      setStreamPhase("searching");
+                    } else if (
+                      stage.name === "rerank" ||
+                      stage.name === "reason" ||
+                      stage.name === "validate"
+                    ) {
+                      setStreamPhase("generating");
+                    } else if (stage.name === "done") {
+                      setStreamPhase("done");
+                    }
+                  }
+                  if (String(event.content).includes("选择题")) {
+                    mcqStreamRef.current = true;
+                  }
                   if (String(event.content).includes("检索")) {
                     setStreamPhase("searching");
                   } else if (String(event.content).includes("生成")) {
@@ -441,10 +658,18 @@ export function useStreamQuery({
                   streamExpansionInfo = event.content || [];
                 } else if (event.type === "metrics") {
                   streamMetrics = event.content;
+                  setStreamStage({
+                    name: "validate",
+                    label: "校验答案",
+                    progress: 95,
+                  });
                 } else if (event.type === "error") {
                   streamError = {
                     code: event.code ?? "unknown_error",
-                    message: event.message ?? event.content ?? "AI 服务异常",
+                    message: formatStreamError(
+                      event.status_code ?? null,
+                      event.message ?? event.content ?? "AI 服务异常",
+                    ),
                     status_code: event.status_code ?? null,
                     endpoint: event.endpoint ?? "",
                   };
@@ -480,6 +705,7 @@ export function useStreamQuery({
               );
               if (requestSeq === requestSeqRef.current) {
                 setStreamPhase("done");
+                setStreamStage({ name: "done", label: "完成", progress: 100 });
                 setLoading(false);
                 setStreaming(false);
                 setStreamingMsgId(null);
@@ -509,6 +735,7 @@ export function useStreamQuery({
 
       clearInterval(intervalId);
       setStreamPhase("done");
+      setStreamStage({ name: "done", label: "完成", progress: 100 });
       const persistedAnswer = normalizeAnswerText(answerRef.current);
       const finalMsgs = newMsgs.map((m) =>
         m.id === aiMsgId
@@ -523,6 +750,8 @@ export function useStreamQuery({
                 currentAnswerImages.length > 0
                   ? currentAnswerImages
                   : undefined,
+              selectedAnswer:
+                currentSelectedAnswer || selectedAnswer || undefined,
               causalChain: streamCausalChain ?? undefined,
               followUpQuestions:
                 streamFollowUps.length > 0 ? streamFollowUps : undefined,
@@ -567,6 +796,8 @@ export function useStreamQuery({
                         currentAnswerImages.length > 0
                           ? currentAnswerImages
                           : undefined,
+                      selectedAnswer:
+                        currentSelectedAnswer || selectedAnswer || undefined,
                       causalChain: streamCausalChain ?? undefined,
                       followUpQuestions:
                         streamFollowUps.length > 0
@@ -585,6 +816,7 @@ export function useStreamQuery({
         );
         if (requestSeq === requestSeqRef.current) {
           setStreamPhase("done");
+          setStreamStage({ name: "done", label: "完成", progress: 100 });
           setLoading(false);
           setStreaming(false);
           setStreamingMsgId(null);
@@ -604,12 +836,19 @@ export function useStreamQuery({
         convId,
         newMsgs.map((m) =>
           m.id === aiMsgId
-            ? { ...m, content: errMsg, errorInfo: networkErrorInfo }
+            ? {
+                ...m,
+                content: errMsg,
+                errorInfo: networkErrorInfo,
+                selectedAnswer:
+                  currentSelectedAnswer || selectedAnswer || undefined,
+              }
             : m,
         ),
       );
       if (requestSeq === requestSeqRef.current) {
         setStreamPhase("done");
+        setStreamStage({ name: "done", label: "完成", progress: 100 });
         setLoading(false);
         setStreaming(false);
         setStreamingMsgId(null);
@@ -625,7 +864,9 @@ export function useStreamQuery({
     streamingMsgId,
     streamingText,
     streamPhase,
+    streamStage,
     retrievedCount,
+    statusHistory,
     streamingConvId,
     reasoningSteps,
     causalChain,

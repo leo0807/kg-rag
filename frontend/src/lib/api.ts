@@ -29,6 +29,28 @@ function headersToRecord(headers?: HeadersInit): Record<string, string> {
   return { ...headers };
 }
 
+async function readErrorResponse(
+  res: Response,
+): Promise<string | { detail?: string | { msg: string }[] }> {
+  if (res.status === 204) return "";
+
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return (await res.json()) as {
+      detail?: string | { msg: string }[];
+    };
+  }
+
+  const text = await res.text();
+  if (!text.trim()) return "";
+
+  try {
+    return JSON.parse(text) as { detail?: string | { msg: string }[] };
+  } catch {
+    return text;
+  }
+}
+
 export async function getAuthHeaders(
   headers?: HeadersInit,
 ): Promise<Record<string, string>> {
@@ -59,39 +81,68 @@ export async function fetchApi<T>(
   url: string,
   options?: FetchApiOptions,
 ): Promise<T> {
-  const headers = await getAuthHeaders(options?.headers);
+  try {
+    const headers = await getAuthHeaders(options?.headers);
 
-  const res = await fetch(url, { ...options, headers });
+    const res = await fetch(url, { ...options, headers });
 
-  if (!res.ok) {
-    // token 过期或无效，跳转登录（除非调用方设置了 noLogout）
-    if (res.status === 401 && !options?.noLogout) {
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        window.location.href = "/login";
+    if (!res.ok) {
+      // token 过期或无效，跳转登录（除非调用方设置了 noLogout）
+      if (res.status === 401 && !options?.noLogout) {
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          window.location.href = "/login";
+        }
       }
+
+      let message = `请求失败 (${res.status})`;
+      try {
+        const err = await readErrorResponse(res);
+        if (typeof err === "string") {
+          if (err.trim()) message = err.trim();
+        } else if (err.detail) {
+          message =
+            typeof err.detail === "string"
+              ? err.detail
+              : JSON.stringify(err.detail);
+        }
+        console.error("[FRONTEND_ERROR_RESPONSE]", {
+          url,
+          status: res.status,
+          body: err,
+        });
+      } catch (parseError) {
+        console.error("[FRONTEND_ERROR_RESPONSE_PARSE_FAILED]", {
+          url,
+          status: res.status,
+          error: parseError instanceof Error ? parseError.message : parseError,
+        });
+      }
+      throw new ApiError(res.status, message);
     }
 
-    let message = `请求失败 (${res.status})`;
-    try {
-      const err = (await res.json()) as { detail?: string | { msg: string }[] };
-      if (err.detail) {
-        message =
-          typeof err.detail === "string"
-            ? err.detail
-            : JSON.stringify(err.detail);
-      }
-    } catch {}
-    throw new ApiError(res.status, message);
-  }
+    // 204 No Content (e.g. DELETE) has no body — skip JSON parsing
+    if (res.status === 204 || res.headers.get("content-length") === "0") {
+      return null as T;
+    }
 
-  // 204 No Content (e.g. DELETE) has no body — skip JSON parsing
-  if (res.status === 204 || res.headers.get("content-length") === "0") {
-    return null as T;
+    return res.json();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      console.error("[FRONTEND_ERROR]", {
+        url,
+        status: error.status,
+        message: error.message,
+      });
+    } else {
+      console.error("[FRONTEND_ERROR]", {
+        url,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
+    throw error;
   }
-
-  return res.json();
 }
 
 // token 过期前1小时自动刷新

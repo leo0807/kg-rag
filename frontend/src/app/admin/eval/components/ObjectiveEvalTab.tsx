@@ -1,16 +1,20 @@
 "use client";
 
 import { Download, FlaskConical, Loader2, Play, RefreshCw } from "lucide-react";
-import type { ObjectiveRow, ObjectiveTask, Strategy } from "../types";
+import type { ObjectiveRow, ObjectiveTask } from "../types";
 import { pct } from "../types";
+import { ObjectiveEvalFilePicker } from "./ObjectiveEvalFilePicker";
+import { ObjectiveEvalStageCard } from "./ObjectiveEvalStageCard";
 
 interface Props {
   task: ObjectiveTask | null;
-  strategy: Strategy;
-  topK: number;
+  docId: string;
+  selectedFileName: string | null;
+  canStart: boolean;
   starting: boolean;
   error: string | null;
   onFileChange: (file: File | null) => void;
+  onDocIdChange: (value: string) => void;
   onStart: () => void;
   onRefresh: (taskId: string) => void;
   onDownloadCsv: () => void;
@@ -18,9 +22,13 @@ interface Props {
 
 export function ObjectiveEvalTab({
   task,
+  docId,
+  selectedFileName,
+  canStart,
   starting,
   error,
   onFileChange,
+  onDocIdChange,
   onStart,
   onRefresh,
   onDownloadCsv,
@@ -36,20 +44,14 @@ export function ObjectiveEvalTab({
           <div className="text-white font-medium">无答案客观题文档测试</div>
           <div className="text-sm text-gray-500 leading-6">
             上传 `.doc/.docx/.wps`
-            客观题文档，系统自动抽题并给出预测答案、依据和来源，
-            不需要标准答案表。
+            客观题文档，系统自动抽题并给出预测答案、依据和来源，不需要标准答案表。
           </div>
-
-          <label className="block">
-            <div className="text-xs text-gray-500 mb-2">客观题文档</div>
-            <input
-              type="file"
-              accept=".doc,.docx,.wps"
-              onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-gray-300 file:mr-4 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white hover:file:bg-indigo-500"
-            />
-          </label>
-
+          <ObjectiveEvalFilePicker
+            selectedFileName={selectedFileName}
+            docId={docId}
+            onDocIdChange={onDocIdChange}
+            onFileChange={onFileChange}
+          />
           <div className="rounded-2xl border border-gray-800 bg-gray-950/70 p-4 text-sm text-gray-400 space-y-2 leading-6">
             <div>适合场景：题库 Word / WPS 只有题干和选项，没有标准答案。</div>
             <div>
@@ -63,7 +65,7 @@ export function ObjectiveEvalTab({
           <button
             type="button"
             onClick={onStart}
-            disabled={starting}
+            disabled={starting || !canStart}
             className="inline-flex items-center gap-2 px-4 h-10 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50"
           >
             {starting ? (
@@ -99,6 +101,8 @@ export function ObjectiveEvalTab({
 
           {task && (
             <>
+              <ObjectiveEvalStageCard task={task} />
+
               <div className="grid grid-cols-2 gap-3">
                 <InfoCard label="任务状态" value={task.status} />
                 <InfoCard label="总题数" value={String(task.total)} />

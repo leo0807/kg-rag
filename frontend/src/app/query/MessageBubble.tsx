@@ -47,6 +47,7 @@ interface Props {
   onClarificationSelect?: (option: string) => void;
   agentSteps?: AgentStepInfo[];
   answerImages?: AnswerImage[];
+  selectedAnswer?: string;
 }
 
 export default function MessageBubble({
@@ -82,6 +83,7 @@ export default function MessageBubble({
   onClarificationSelect,
   agentSteps,
   answerImages,
+  selectedAnswer,
 }: Props) {
   if (role === "user") {
     return (
@@ -124,6 +126,7 @@ export default function MessageBubble({
       onClarificationSelect={onClarificationSelect}
       agentSteps={agentSteps}
       answerImages={answerImages}
+      selectedAnswer={selectedAnswer}
     />
   );
 }

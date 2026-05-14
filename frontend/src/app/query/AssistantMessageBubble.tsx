@@ -43,6 +43,7 @@ interface Props {
   onClarificationSelect?: (option: string) => void;
   agentSteps?: AgentStepInfo[];
   answerImages?: AnswerImage[];
+  selectedAnswer?: string;
 }
 
 export function AssistantMessageBubble({
@@ -69,6 +70,7 @@ export function AssistantMessageBubble({
   onClarificationSelect,
   agentSteps,
   answerImages,
+  selectedAnswer,
 }: Props) {
   const sourcePanelState = useSourcePanelState(sources);
 
@@ -133,6 +135,14 @@ export function AssistantMessageBubble({
               <>
                 {agentSteps && agentSteps.length > 0 && (
                   <AgentStepsPanel steps={agentSteps} streaming={streaming} />
+                )}
+                {selectedAnswer && (
+                  <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
+                    <span className="font-medium">最终答案</span>
+                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 font-semibold text-emerald-200">
+                      {selectedAnswer}
+                    </span>
+                  </div>
                 )}
                 {!streaming && <AssistantMessageActions text={content} />}
                 <AssistantMarkdown content={content} streaming={streaming} />

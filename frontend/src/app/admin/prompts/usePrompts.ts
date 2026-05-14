@@ -130,6 +130,13 @@ export function usePrompts() {
   const [comparing, setComparing] = useState(false);
   const [error, setError] = useState("");
 
+  const loadTemplates = useCallback(async () => {
+    const data = await fetchApi<{ templates: PromptSummary[] }>(
+      "/api/admin/prompts",
+    );
+    return data.templates ?? [];
+  }, []);
+
   const loadDetail = useCallback(
     async (templateId: string, version: string) => {
       return fetchApi<PromptDetail>(
@@ -174,14 +181,14 @@ export function usePrompts() {
 
   useEffect(() => {
     let alive = true;
-    fetchApi<{ templates: PromptSummary[] }>("/api/admin/prompts")
+    loadTemplates()
       .then((data) => {
         if (!alive) return;
-        const items = data.templates ?? [];
-        setTemplates(items);
-        setSelectedId((prev) => prev || items[0]?.id || "");
-        setSelectedVersion((prev) => prev || items[0]?.active_version || "");
-        setCompareVersion((prev) => prev || items[0]?.active_version || "");
+        setError("");
+        setTemplates(data);
+        setSelectedId((prev) => prev || data[0]?.id || "");
+        setSelectedVersion((prev) => prev || data[0]?.active_version || "");
+        setCompareVersion((prev) => prev || data[0]?.active_version || "");
       })
       .catch((err) =>
         setError(err instanceof Error ? err.message : "加载模板失败"),
@@ -190,7 +197,7 @@ export function usePrompts() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [loadTemplates]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -199,6 +206,7 @@ export function usePrompts() {
     loadDetail(selectedId, selectedVersion)
       .then((data) => {
         if (!alive) return;
+        setError("");
         setDetail(data);
         setSelectedVersion(data.selected_version || data.active_version);
         const versionNames = data.versions.map((version) => version.name);
@@ -225,15 +233,43 @@ export function usePrompts() {
   }, [selectedId, selectedVersion, loadDetail]);
 
   function selectTemplate(id: string, version: string) {
+    setError("");
     setSelectedId(id);
     setSelectedVersion(version);
   }
 
   async function refreshTemplates() {
-    const data = await fetchApi<{ templates: PromptSummary[] }>(
-      "/api/admin/prompts",
-    );
-    setTemplates(data.templates ?? []);
+    const data = await loadTemplates();
+    setTemplates(data);
+  }
+
+  async function retryLoad() {
+    setError("");
+    setLoading(true);
+    try {
+      const items = await loadTemplates();
+      setTemplates(items);
+      if (!selectedId && items[0]) {
+        setSelectedId(items[0].id);
+        setSelectedVersion(items[0].active_version || "");
+        setCompareVersion(items[0].active_version || "");
+      } else if (selectedId) {
+        const current = items.find((item) => item.id === selectedId);
+        if (current?.active_version && !selectedVersion) {
+          setSelectedVersion(current.active_version);
+        }
+      }
+      if (selectedId) {
+        const version = selectedVersion || "";
+        const data = await loadDetail(selectedId, version);
+        setDetail(data);
+        setDraft(toDraft(data));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "加载模板失败");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function saveTemplate() {
@@ -360,5 +396,6 @@ export function usePrompts() {
     saveTemplate,
     renderTemplate,
     compareTemplate,
+    retryLoad,
   };
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { fetchApi, getAuthHeaders } from "@/lib/api";
+import { ApiError, fetchApi, getAuthHeaders } from "@/lib/api";
 
 import type {
   AbTestTask,
@@ -20,15 +20,46 @@ const API = "http://localhost:8000";
 
 async function postForm<T>(url: string, formData: FormData): Promise<T> {
   const headers = await getAuthHeaders();
-  const response = await fetch(url, { method: "POST", headers, body: formData });
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: "请求失败" }));
-    throw new Error(body.detail || "请求失败");
+    const detail = Array.isArray(body.detail)
+      ? body.detail[0]?.msg || JSON.stringify(body.detail)
+      : body.detail || "请求失败";
+    throw new ApiError(response.status, String(detail));
   }
   return response.json();
 }
 
-function downloadWithAuth(url: string, filename: string, onError: (message: string) => void) {
+function formatStartError(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    if (error.status === 422) {
+      return `请求参数错误：${error.message}`;
+    }
+    if (error.status === 401) {
+      return "未登录或登录已过期";
+    }
+    if (error.status === 503) {
+      return "服务暂不可用，请稍后重试";
+    }
+    if (error.status >= 500) {
+      return error.message || "服务器内部错误";
+    }
+    return error.message || fallback;
+  }
+  if (error instanceof Error) return error.message || fallback;
+  return fallback;
+}
+
+function downloadWithAuth(
+  url: string,
+  filename: string,
+  onError: (message: string) => void,
+) {
   getAuthHeaders()
     .then((headers) => fetch(url, { headers }))
     .then((response) => {
@@ -43,7 +74,9 @@ function downloadWithAuth(url: string, filename: string, onError: (message: stri
       anchor.click();
       URL.revokeObjectURL(href);
     })
-    .catch((error) => onError(error instanceof Error ? error.message : "导出失败"));
+    .catch((error) =>
+      onError(error instanceof Error ? error.message : "导出失败"),
+    );
 }
 
 export function useEvalTasks() {
@@ -56,16 +89,23 @@ export function useEvalTasks() {
   const [datasetStarting, setDatasetStarting] = useState(false);
 
   const [objectiveFile, setObjectiveFile] = useState<File | null>(null);
-  const [objectiveTask, setObjectiveTask] = useState<ObjectiveTask | null>(null);
+  const [objectiveDocId, setObjectiveDocId] = useState("");
+  const [objectiveTask, setObjectiveTask] = useState<ObjectiveTask | null>(
+    null,
+  );
   const [objectiveStarting, setObjectiveStarting] = useState(false);
 
   const [retrievalFile, setRetrievalFile] = useState<File | null>(null);
-  const [retrievalStrategy, setRetrievalStrategy] = useState<RetrievalStrategy>("parallel");
-  const [retrievalTask, setRetrievalTask] = useState<RetrievalTask | null>(null);
+  const [retrievalStrategy, setRetrievalStrategy] =
+    useState<RetrievalStrategy>("parallel");
+  const [retrievalTask, setRetrievalTask] = useState<RetrievalTask | null>(
+    null,
+  );
   const [retrievalStarting, setRetrievalStarting] = useState(false);
 
   const [faithfulnessFile, setFaithfulnessFile] = useState<File | null>(null);
-  const [faithfulnessTask, setFaithfulnessTask] = useState<FaithfulnessTask | null>(null);
+  const [faithfulnessTask, setFaithfulnessTask] =
+    useState<FaithfulnessTask | null>(null);
   const [faithfulnessStarting, setFaithfulnessStarting] = useState(false);
 
   const [abFile, setAbFile] = useState<File | null>(null);
@@ -80,41 +120,87 @@ export function useEvalTasks() {
   const faithfulnessTimerRef = useRef<number | null>(null);
   const abTimerRef = useRef<number | null>(null);
 
-  function clearTimer(timerRef: MutableRefObject<number | null>) {
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }
+  useEffect(() => {
+    if (!objectiveFile || objectiveDocId.trim()) return;
+    const match = objectiveFile.name.match(/CPS\d{4}/i);
+    if (match) setObjectiveDocId(match[0].toUpperCase());
+  }, [objectiveFile, objectiveDocId]);
+
+  const clearTimer = useCallback(
+    (timerRef: MutableRefObject<number | null>) => {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    },
+    [],
+  );
 
   async function loadDatasetTask(taskId: string) {
-    const data = await fetchApi<EvalTask>(`${API}/api/admin/eval/dataset/${taskId}`);
+    const data = await fetchApi<EvalTask>(
+      `${API}/api/admin/eval/dataset/${taskId}`,
+    );
     setDatasetTask(data);
-    if (data.status === "completed" || data.status === "failed") clearTimer(datasetTimerRef);
+    if (data.status === "completed" || data.status === "failed")
+      clearTimer(datasetTimerRef);
   }
 
   async function loadObjectiveTask(taskId: string) {
-    const data = await fetchApi<ObjectiveTask>(`${API}/api/admin/eval/objective-doc/${taskId}`);
-    setObjectiveTask(data);
-    if (data.status === "completed" || data.status === "failed") clearTimer(objectiveTimerRef);
+    try {
+      const data = await fetchApi<ObjectiveTask>(
+        `${API}/api/admin/eval/objective-doc/${taskId}`,
+      );
+      setObjectiveTask(data);
+      if (data.status === "completed" || data.status === "failed")
+        clearTimer(objectiveTimerRef);
+      return;
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 404) {
+        throw error;
+      }
+    }
+
+    try {
+      const tasks = await fetchApi<ObjectiveTask[]>(
+        `${API}/api/admin/eval/objective-doc`,
+      );
+      const matched = tasks.find((task) => task.task_id === taskId);
+      if (matched) {
+        setObjectiveTask(matched);
+        if (matched.status === "completed" || matched.status === "failed")
+          clearTimer(objectiveTimerRef);
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return;
+      throw error;
+    }
   }
 
   async function loadRetrievalTask(taskId: string) {
-    const data = await fetchApi<RetrievalTask>(`${API}/api/admin/eval/retrieval/${taskId}`);
+    const data = await fetchApi<RetrievalTask>(
+      `${API}/api/admin/eval/retrieval/${taskId}`,
+    );
     setRetrievalTask(data);
-    if (data.status === "completed" || data.status === "failed") clearTimer(retrievalTimerRef);
+    if (data.status === "completed" || data.status === "failed")
+      clearTimer(retrievalTimerRef);
   }
 
   async function loadFaithfulnessTask(taskId: string) {
-    const data = await fetchApi<FaithfulnessTask>(`${API}/api/admin/eval/faithfulness/${taskId}`);
+    const data = await fetchApi<FaithfulnessTask>(
+      `${API}/api/admin/eval/faithfulness/${taskId}`,
+    );
     setFaithfulnessTask(data);
-    if (data.status === "completed" || data.status === "failed") clearTimer(faithfulnessTimerRef);
+    if (data.status === "completed" || data.status === "failed")
+      clearTimer(faithfulnessTimerRef);
   }
 
   async function loadAbTask(taskId: string) {
-    const data = await fetchApi<AbTestTask>(`${API}/api/admin/eval/ab-test/${taskId}`);
+    const data = await fetchApi<AbTestTask>(
+      `${API}/api/admin/eval/ab-test/${taskId}`,
+    );
     setAbTask(data);
-    if (data.status === "completed" || data.status === "failed") clearTimer(abTimerRef);
+    if (data.status === "completed" || data.status === "failed")
+      clearTimer(abTimerRef);
   }
 
   useEffect(() => {
@@ -125,7 +211,7 @@ export function useEvalTasks() {
       clearTimer(faithfulnessTimerRef);
       clearTimer(abTimerRef);
     };
-  }, []);
+  }, [clearTimer]);
 
   async function startDatasetEval() {
     if (!datasetFile) {
@@ -141,7 +227,10 @@ export function useEvalTasks() {
       formData.append("strategy", strategy);
       formData.append("top_k", String(topK));
 
-      const data = await postForm<EvalTask>(`${API}/api/admin/eval/dataset`, formData);
+      const data = await postForm<EvalTask>(
+        `${API}/api/admin/eval/dataset`,
+        formData,
+      );
       setDatasetTask(data);
       setActiveTab("dataset");
       clearTimer(datasetTimerRef);
@@ -149,7 +238,7 @@ export function useEvalTasks() {
         loadDatasetTask(data.task_id);
       }, 1500);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "启动评测失败");
+      setError(formatStartError(error, "启动评测失败"));
     } finally {
       setDatasetStarting(false);
     }
@@ -168,8 +257,15 @@ export function useEvalTasks() {
       formData.append("file", objectiveFile);
       formData.append("strategy", strategy);
       formData.append("top_k", String(topK));
+      if (objectiveDocId.trim()) {
+        formData.append("source_doc_id", objectiveDocId.trim());
+        formData.append("doc_id", objectiveDocId.trim());
+      }
 
-      const data = await postForm<ObjectiveTask>(`${API}/api/admin/eval/objective-doc`, formData);
+      const data = await postForm<ObjectiveTask>(
+        `${API}/api/admin/eval/objective-doc`,
+        formData,
+      );
       setObjectiveTask(data);
       setActiveTab("objective");
       clearTimer(objectiveTimerRef);
@@ -177,7 +273,7 @@ export function useEvalTasks() {
         loadObjectiveTask(data.task_id);
       }, 1500);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "启动客观题测试失败");
+      setError(formatStartError(error, "启动客观题测试失败"));
     } finally {
       setObjectiveStarting(false);
     }
@@ -197,7 +293,10 @@ export function useEvalTasks() {
       formData.append("strategy", retrievalStrategy);
       formData.append("top_k", String(topK));
 
-      const data = await postForm<RetrievalTask>(`${API}/api/admin/eval/retrieval`, formData);
+      const data = await postForm<RetrievalTask>(
+        `${API}/api/admin/eval/retrieval`,
+        formData,
+      );
       setRetrievalTask(data);
       setActiveTab("retrieval");
       clearTimer(retrievalTimerRef);
@@ -205,33 +304,45 @@ export function useEvalTasks() {
         loadRetrievalTask(data.task_id);
       }, 1500);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "启动检索评测失败");
+      setError(formatStartError(error, "启动检索评测失败"));
     } finally {
       setRetrievalStarting(false);
     }
   }
 
   async function startFaithfulnessEval() {
-    if (!faithfulnessFile) { setError("请先选择忠实度评测文件"); return; }
+    if (!faithfulnessFile) {
+      setError("请先选择忠实度评测文件");
+      return;
+    }
     setFaithfulnessStarting(true);
     setError(null);
     try {
       const formData = new FormData();
       formData.append("file", faithfulnessFile);
-      const data = await postForm<FaithfulnessTask>(`${API}/api/admin/eval/faithfulness`, formData);
+      const data = await postForm<FaithfulnessTask>(
+        `${API}/api/admin/eval/faithfulness`,
+        formData,
+      );
       setFaithfulnessTask(data);
       setActiveTab("faithfulness");
       clearTimer(faithfulnessTimerRef);
-      faithfulnessTimerRef.current = window.setInterval(() => loadFaithfulnessTask(data.task_id), 1500);
+      faithfulnessTimerRef.current = window.setInterval(
+        () => loadFaithfulnessTask(data.task_id),
+        1500,
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "启动忠实度评测失败");
+      setError(formatStartError(e, "启动忠实度评测失败"));
     } finally {
       setFaithfulnessStarting(false);
     }
   }
 
   async function startAbTest(strategies: string[]) {
-    if (!abFile) { setError("请先选择 A/B 测试文件"); return; }
+    if (!abFile) {
+      setError("请先选择 A/B 测试文件");
+      return;
+    }
     setAbStarting(true);
     setError(null);
     try {
@@ -239,13 +350,19 @@ export function useEvalTasks() {
       formData.append("file", abFile);
       formData.append("strategies", strategies.join(","));
       formData.append("top_k", String(topK));
-      const data = await postForm<AbTestTask>(`${API}/api/admin/eval/ab-test`, formData);
+      const data = await postForm<AbTestTask>(
+        `${API}/api/admin/eval/ab-test`,
+        formData,
+      );
       setAbTask(data);
       setActiveTab("ab_test");
       clearTimer(abTimerRef);
-      abTimerRef.current = window.setInterval(() => loadAbTask(data.task_id), 1500);
+      abTimerRef.current = window.setInterval(
+        () => loadAbTask(data.task_id),
+        1500,
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "启动 A/B 测试失败");
+      setError(formatStartError(e, "启动 A/B 测试失败"));
     } finally {
       setAbStarting(false);
     }
@@ -273,6 +390,10 @@ export function useEvalTasks() {
     error,
     setDatasetFile,
     setObjectiveFile,
+    objectiveDocId,
+    setObjectiveDocId,
+    objectiveFileName: objectiveFile?.name ?? null,
+    objectiveCanStart: Boolean(objectiveFile),
     setRetrievalFile,
     setFaithfulnessFile,
     setAbFile,

@@ -85,6 +85,7 @@ export interface Message {
   metrics?: QueryMetrics;
   clarification?: ClarificationInfo;
   agentSteps?: AgentStepInfo[];
+  selectedAnswer?: string;
   timestamp: number;
 }
 
