@@ -17,16 +17,16 @@ def emit_status_event(content: str) -> str:
     return f"data: {json.dumps({'type': 'status', 'content': content}, ensure_ascii=False)}\n\n"
 
 
+def emit_stage_event(name: str, label: str, progress: int) -> str:
+    return f"data: {json.dumps({'type': 'stage', 'content': {'name': name, 'label': label, 'progress': progress}}, ensure_ascii=False)}\n\n"
+
+
 def clean_stream_chunk(chunk: str | None) -> str:
     if not chunk:
         return ""
     if any(marker in chunk for marker in ("user##", "##assistant", "<|user|>", "<|im_start|>")):
         return ""
-    chunk = chunk.replace("\ufffd", "")
-    chunk = re.sub(r'(?:is){3,}', '', chunk)
-    chunk = re.sub(r'N{3,}', '', chunk)
-    chunk = re.sub(r'isis[Nn]*', '', chunk)
-    return chunk
+    return chunk.replace("\ufffd", "")
 
 
 def estimate_answer_max_tokens(question: str, context: str, cap: int = 800) -> int:
@@ -216,15 +216,55 @@ async def _emit_follow_ups(question: str, answer: str, allowed_doc_ids: list[str
     return None
 
 
+def build_metrics_event(latency_ms: int, retrieval_ms: int, candidates: int, after_rerank: int) -> str:
+    llm_ms = max(0, latency_ms - retrieval_ms)
+    metrics = {
+        "total_ms": latency_ms,
+        "stages": {"检索": retrieval_ms, "LLM生成": llm_ms},
+        "tokens": {}, "cost_usd": 0.0,
+        "candidates_retrieved": candidates,
+        "candidates_after_rerank": after_rerank,
+    }
+    return f"data: {json.dumps({'type': 'metrics', 'content': metrics}, ensure_ascii=False)}\n\n"
+
+
+async def build_mcq_evidence(question: str, driver, doc_id: str = "", context: str = "") -> str:
+    """Verify each MCQ option against the corpus (stem content + per-option retrieval)."""
+    from ...services.qa.mcq_handler import parse_options_from_question, verify_options
+    opts = parse_options_from_question(question)
+    if not opts:
+        return ""
+    try:
+        _, evidence = await verify_options(question, opts, driver, doc_id, stem_content=context)
+        return evidence
+    except Exception as exc:
+        logger.debug("MCQ关键词验证失败（跳过）: %s", exc)
+        return ""
+
+
+def get_question_handler_for(question: str):
+    """Detect question type and return (QuestionType, handler, status_label_or_None)."""
+    from ...services.qa.mcq_handler import QuestionType, detect_question_type, get_type_label
+    from ...services.qa.question_handlers import get_question_handler
+    qt = detect_question_type(question)
+    handler = get_question_handler(qt)
+    label = f"📝 识别题型：{get_type_label(qt)}" if qt is not QuestionType.OPEN else None
+    return qt, handler, label
+
+
 async def stream_with_first_token_logging(
     llm,
     messages: list[dict],
     timeout: int,
+    max_tokens: int | None,
     t_start: float,
     logger: logging.Logger,
 ):
     first_token_logged = False
-    async for chunk in llm.stream_chat(messages, timeout=timeout):
+    stream_kwargs = {"timeout": timeout}
+    if max_tokens is not None:
+        stream_kwargs["max_tokens"] = max_tokens
+    async for chunk in llm.stream_chat(messages, **stream_kwargs):
         if not first_token_logged:
             logger.info("[timing] 首token t=%.2fs", time.time() - t_start)
             first_token_logged = True

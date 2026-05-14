@@ -131,6 +131,7 @@ class ObjectiveDocEvalTask(Base):
     id:               Mapped[int]      = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id:          Mapped[str]      = mapped_column(String(36), nullable=False)
     filename:         Mapped[str]      = mapped_column(String(255), default="")
+    source_doc_id:    Mapped[str]      = mapped_column(String(128), default="")
     strategy:         Mapped[str]      = mapped_column(String(32), default="parallel")
     top_k:            Mapped[int]      = mapped_column(Integer, default=5)
     status:           Mapped[str]      = mapped_column(String(32), default="queued")

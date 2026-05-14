@@ -10,12 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_driver
 from ...services.ai.llm import clean_llm_response
 from ...services.ai.llm_service import get_llm_service
+from ...services.ai.cost_utils import calc_cost
 from ...services.infra.cache import get_cached_result, set_cached_result
 from ...services.runtime.model_settings import load_effective_settings, use_runtime_settings
 from ...services.context_utils import resolve_retrieval_doc_id
 from ...services.query_count import maybe_build_total_cps_count_response
 from ...db.models import User, PipelineConfig
 from .query_utils import emit_generation_record, extract_numeric_answer, finalize_answer_text, log_source_doc_ids, sections_to_sources
+from .mcq_utils import maybe_answer_mcq_sync
 from .models import QueryRequest, QueryResponse, QueryMetrics
 from .core   import do_retrieval
 from .clarification_utils import build_clarification_payload, detect_clarification
@@ -74,6 +76,9 @@ async def query_sync(
     cached = get_cached_result(req.question, req.strategy, top_k)
     if cached:
         return QueryResponse(**cached)
+    mcq_response = await maybe_answer_mcq_sync(req.question, req.strategy, top_k, driver, user_id, department, req.doc_hints)
+    if mcq_response:
+        return mcq_response
     start = time.time()
     # ── 自定义链路（用户有默认 pipeline 配置时走此路径）────────────────
     if db and user_id and req.strategy == "pipeline":
@@ -105,7 +110,6 @@ async def query_sync(
                 return QueryResponse(answer=answer, sources=sources)
             except Exception as e:
                 logger.warning("自定义链路执行失败，降级到标准策略: %s", e)
-
     # ── 标准四策略路径（fallback）────────────────────────────────────────
     if req.strategy == "multi_hop":
         try:
@@ -129,7 +133,6 @@ async def query_sync(
             return QueryResponse(answer=answer, sources=sources)
         except Exception as e:
             logger.warning("多跳推理失败，降级: %s", e)
-
     if req.strategy == "agent":
         try:
             from ...services.agent.agent_executor import AgentExecutor
@@ -171,7 +174,6 @@ async def query_sync(
             )
         except Exception as e:
             logger.warning("Agent 推理失败，降级到标准检索: %s", e)
-
     if req.strategy in ("parallel", "parallel_rrf", "hybrid_es", "sequential", "gnn", "graph_augmented"):
         try:
             from ...services.retrieval.compare_query import run_compare_query
@@ -215,7 +217,6 @@ async def query_sync(
                 )
         except Exception as e:
             logger.warning("比较题专用检索失败，回退到通用检索: %s", e)
-
     t_retrieval = time.time()
     sections, ft_score_map, expansion_info = do_retrieval(
         driver,
@@ -262,7 +263,6 @@ async def query_sync(
         except Exception as e:
             logger.warning("LLM 失败: %s", e)
             answer = f"检索到 {len(sections)} 个相关章节：\n\n{context[:2000]}"
-
     sources = sections_to_sources(sections, ft_score_map)
     log_source_doc_ids("检索", sections)
     answer = finalize_answer_text(answer, sections, req.question)

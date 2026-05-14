@@ -12,7 +12,7 @@ import re
 from ..answer_humanizer import humanize_answer_text
 from .llm_service import get_llm_service
 from ..context_utils import trim_conversation_history_for_question
-from ..prompts import registry
+from ...prompts import registry
 
 logger = logging.getLogger(__name__)
 

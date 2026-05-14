@@ -53,6 +53,15 @@ def clean_ocr_artifacts(text: str) -> str:
     # 数字间夹 N（如 "5N6" → "56"）
     text = re.sub(r'(\d)N(\d)', r'\1\2', text)
 
+    # ── nis 误识别清洗（OCR 把数字 0 误识别为 nis）────────────────────
+    text = re.sub(r'(nis){3,}', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'(\d)nis', r'\g<1>0', text, flags=re.IGNORECASE)
+    text = re.sub(r'nis(\d)', r'0\1', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?<![a-zA-Z一-鿿])nis(?![a-zA-Z一-鿿])', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'([Nn]is|is|IS){3,}', '', text)
+    text = re.sub(r'\s{3,}', ' ', text)
+    text = re.sub(r'([。，、；：])\s+', r'\1', text)
+
     # 重复标点 / 多余空行
     text = re.sub(r'([。，、；：！？])\1+', r'\1', text)
     text = re.sub(r'\n{3,}', '\n\n', text)

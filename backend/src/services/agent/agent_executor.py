@@ -16,6 +16,7 @@ from .agent_helpers import (
 )
 from .agent_fallback import parallel_rrf_fallback
 from ..answer_guard import validate_answer
+from ..qa.mcq_handler import split_question_and_options
 from ...prompts import registry
 from .tools import TOOLS
 
@@ -277,6 +278,6 @@ class AgentExecutor:
             }
         if iteration == 0 and not sources:
             # Strip MCQ option lines to search with pure stem
-            stem = re.sub(r'(\n[A-Da-d]\s+.*|[（(][A-Da-d][）)].+)', '', question, flags=re.DOTALL).strip() or question
+            stem, _ = split_question_and_options(question)
             return {"name": "search_sections", "input": {"query": stem, "doc_id": doc_ids[0] if doc_ids else "", "top_k": 8}}
         return None

@@ -64,9 +64,9 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                         return
                 except Exception as _e:
                     logger.debug("语义缓存查找异常（跳过）: %s", _e)
-                mcq_events = await maybe_answer_mcq_stream(req.question, req.strategy, top_k, driver, user_id, department, t_start, req.doc_hints, _q_emb)
+                mcq_events = maybe_answer_mcq_stream(req.question, req.strategy, top_k, driver, user_id, department, t_start, req.doc_hints, _q_emb)
                 if mcq_events:
-                    for event in mcq_events:
+                    async for event in mcq_events:
                         yield event
                     return
                 if req.strategy == "multi_hop":

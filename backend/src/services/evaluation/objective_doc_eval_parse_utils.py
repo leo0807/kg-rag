@@ -9,13 +9,14 @@ from pathlib import Path
 _OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _OPTION_RE = re.compile(r"^\s*([A-HＡ-Ｈ])[\s、\.．\)）]+(.+?)\s*$")
 _OPTION_BLOCK_RE = re.compile(
-    r'(?:^|\n)\s*([ABCD])\s*[、．.）\)]\s*(.+?)(?=\n\s*[ABCD]\s*[、．.）\)]|$)',
+    r'(?:^|\n)\s*([A-HＡ-Ｈ])\s*[、．.）\)]\s*(.+?)(?=\n\s*[A-HＡ-Ｈ]\s*[、．.）\)]|$)',
     re.MULTILINE | re.DOTALL,
 )
 _OPTION_INLINE_RE = re.compile(
-    r'([ABCD])\s*[、．.）\)\s]\s*([^ABCD]+?)(?=\s+[ABCD]\s*[、．.）\)\s]|$)',
+    r'([A-HＡ-Ｈ])\s*[、．.）\)\s]\s*([^A-HＡ-Ｈ]+?)(?=\s+[A-HＡ-Ｈ]\s*[、．.）\)\s]|$)',
     re.DOTALL,
 )
+_COMBO_MARKER_RE = re.compile(r'[①②③④⑤⑥⑦⑧]|[\-→]')
 _DOC_ID_RE = re.compile(r"(?:doc_id|docid|来源|规范|文档来源)\s*[:：=]\s*(CPS\d+)", re.IGNORECASE)
 
 
@@ -28,15 +29,33 @@ def normalize_option_label(label: str) -> str:
     return label.translate(str.maketrans("ＡＢＣＤＥＦＧＨ", "ABCDEFGH"))
 
 
+def identify_answer_options(options: dict[str, str]) -> dict[str, str]:
+    if len(options) <= 4:
+        return options
+    keys = list(options.keys())
+    if len(keys) < 6 or len(keys) % 2 != 0:
+        return options
+    midpoint = len(keys) // 2
+    first_half = keys[:midpoint]
+    second_half = keys[midpoint:]
+    if not second_half or not all(_COMBO_MARKER_RE.search(options.get(letter, "") or "") for letter in second_half):
+        return options
+    if any(_COMBO_MARKER_RE.search(options.get(letter, "") or "") for letter in first_half):
+        return options
+    return {letter: options[letter] for letter in second_half}
+
+
 def parse_options_from_text(text: str) -> tuple[dict[str, str], str]:
     text = text or ""
     matches = list(_OPTION_BLOCK_RE.finditer(text))
     if len(matches) >= 2:
         options = {normalize_option_label(m.group(1)): m.group(2).strip().rstrip("，。、；;") for m in matches}
+        options = identify_answer_options(options)
         return options, text[: matches[0].start()].strip()
     matches = list(_OPTION_INLINE_RE.finditer(text))
     if len(matches) >= 2:
         options = {normalize_option_label(m.group(1)): m.group(2).strip().rstrip("，。、；;") for m in matches}
+        options = identify_answer_options(options)
         return options, text[: matches[0].start()].strip()
     return {}, ""
 

@@ -33,6 +33,7 @@ class PromptUpdateRequest(BaseModel):
 
 @router.get("")
 async def list_prompts(_: User = Depends(get_admin_user)):
+    registry.reload()
     return {"templates": registry.list_templates()}
 
 

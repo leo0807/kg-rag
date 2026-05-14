@@ -29,7 +29,7 @@ _LABELS: dict[QuestionType, str] = {
 def detect_question_type(question: str) -> QuestionType:
     q = question.strip()
     # Detect options in bracket format （A） or newline format \nA / \nA.
-    has_options = bool(re.search(r'[（(][A-Da-d][）)]|\n[A-D][\.．\s]', q))
+    has_options = bool(re.search(r'[（(][A-Ha-h][）)]|\n[A-H][\.．\s]', q))
 
     if any(kw in q for kw in ("多选", "以下哪些", "下列哪些", "哪些是")) and has_options:
         return QuestionType.MULTIPLE_SELECT
@@ -53,19 +53,90 @@ def get_type_label(qt: QuestionType) -> str:
 _OPTION_STOP: frozenset[str] = frozenset({
     "以上", "以下", "包括", "正确", "错误", "所有", "以及", "都是", "都不", "选项",
 })
+_OPTION_BLOCK_RE = re.compile(
+    r'(?:^|\n)\s*([A-Ha-h])\s*[、．.）\)]\s*(.+?)(?=\n\s*[A-Ha-h]\s*[、．.）\)]|$)',
+    re.MULTILINE | re.DOTALL,
+)
+_OPTION_INLINE_RE = re.compile(
+    r'([A-Ha-h])\s*[、．.）\)\s]\s*(.+?)(?=\s+[A-Ha-h]\s*[、．.）\)\s]|$)',
+    re.DOTALL,
+)
+_COMBO_MARKER_RE = re.compile(r'[①②③④⑤⑥⑦⑧]|[\-→]')
 
 _TOPIC_PREFIXES = ("密封", "涂层", "铆接", "焊接", "热处理", "复合材料", "粘结")
 
 
 def parse_options_from_question(question: str) -> dict[str, str]:
-    """Extract {letter: text} from bracket '（A）' or newline 'A ' style questions."""
-    # Try bracket format first
-    matches = re.findall(r'[（(]([A-Da-d])[）)]\s*(.*?)(?=[（(][A-Da-d][）)]|$)', question, re.DOTALL)
-    if matches:
-        return {m[0].upper(): m[1].strip() for m in matches}
-    # Fallback: newline-separated "A content\nB content"
-    matches = re.findall(r'\n([A-Da-d])[\.．\s]\s*(.*?)(?=\n[A-Da-d][\.．\s]|$)', question, re.DOTALL)
-    return {m[0].upper(): m[1].strip() for m in matches}
+    """Extract {letter: text} from bracket or inline options, and drop non-answer candidates."""
+    return split_question_and_options(question)[1]
+
+
+def split_question_and_options(question: str) -> tuple[str, dict[str, str]]:
+    text = question or ""
+    matches = list(_OPTION_BLOCK_RE.finditer(text))
+    if len(matches) >= 2:
+        options = {m.group(1).upper(): m.group(2).strip() for m in matches}
+        return (text[: matches[0].start()].strip() or text.strip(), identify_answer_options(options))
+    matches = list(_OPTION_INLINE_RE.finditer(text))
+    if len(matches) >= 2:
+        options = {m.group(1).upper(): m.group(2).strip() for m in matches}
+        return (text[: matches[0].start()].strip() or text.strip(), identify_answer_options(options))
+    matches = re.findall(r'[（(]([A-Ha-h])[）)]\s*(.*?)(?=[（(][A-Ha-h][）)]|$)', text, re.DOTALL)
+    if len(matches) >= 2:
+        options = {m[0].upper(): m[1].strip() for m in matches}
+        first = re.search(r'[（(]([A-Ha-h])[）)]', text)
+        stem = text[: first.start()].strip() if first else text.strip()
+        return stem or text.strip(), identify_answer_options(options)
+    return text.strip(), {}
+
+
+def identify_answer_options(options: dict[str, str]) -> dict[str, str]:
+    """Keep the real answer candidates when A-D are definitions and E-H are combinations."""
+    if len(options) <= 4:
+        return options
+    keys = list(options.keys())
+    if len(keys) < 6 or len(keys) % 2 != 0:
+        return options
+    midpoint = len(keys) // 2
+    first_half = keys[:midpoint]
+    second_half = keys[midpoint:]
+    if not second_half or not all(_COMBO_MARKER_RE.search(options.get(letter, "") or "") for letter in second_half):
+        return options
+    if any(_COMBO_MARKER_RE.search(options.get(letter, "") or "") for letter in first_half):
+        return options
+    return {letter: options[letter] for letter in second_half}
+
+
+def clean_mcq_output(text: str) -> str:
+    cleaned = (text or "").strip()
+    cleaned = cleaned.replace("```json", "").replace("```", "")
+    cleaned = cleaned.replace("\ufffd", "")
+    return cleaned.strip()
+
+
+def _normalize_option_label(label: str) -> str:
+    return label.strip().upper().translate(str.maketrans("ＡＢＣＤＥＦＧＨ", "ABCDEFGH"))
+
+
+def extract_answer_letter(llm_response: str, options: dict[str, str]) -> str:
+    text = clean_mcq_output(llm_response)
+    labels = list(options.keys())
+    m = re.search(r"(?:答案|最终答案|answer|final_answer)\s*[:：=\s]*[【\[]?([A-HＡ-Ｈ])", text, re.IGNORECASE)
+    if m:
+        letter = _normalize_option_label(m.group(1))
+        if letter in labels:
+            return letter
+    m = re.search(r'"answer"\s*:\s*"([A-HＡ-Ｈ])"', text, re.IGNORECASE)
+    if m:
+        letter = _normalize_option_label(m.group(1))
+        if letter in labels:
+            return letter
+    normalized_text = re.sub(r"\s+", "", text)
+    for letter, content in options.items():
+        candidate = re.sub(r"\s+", "", content or "")
+        if candidate and candidate in normalized_text:
+            return letter
+    return ""
 
 
 def _extract_option_keywords(text: str, max_kws: int = 4) -> list[str]:
@@ -86,7 +157,7 @@ async def verify_options(
     from ...routers.query.core import do_retrieval
 
     # Strip option text to get pure question stem
-    stem = re.sub(r'(\n[A-Da-d]\s+.*|[（(][A-Da-d][）)].+)', '', question, flags=re.DOTALL).strip() or question
+    stem, _ = split_question_and_options(question)
 
     # Retrieve stem content if not provided by caller
     if not stem_content:

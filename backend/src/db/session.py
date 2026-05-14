@@ -54,6 +54,7 @@ async def init_tables():
         await conn.run_sync(Base.metadata.create_all)
         # 增量迁移：若表已存在则补全缺失列
         for col, ctype in [
+            ("source_doc_id",     "TEXT NOT NULL DEFAULT ''"),
             ("detail",             "TEXT NOT NULL DEFAULT ''"),
             ("retrieval_score",    "INTEGER"),
             ("completeness_score", "INTEGER"),

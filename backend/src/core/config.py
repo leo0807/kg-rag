@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     LLM_API_URL:  str = "http://localhost:11434/v1"
     LLM_API_KEY:  str = "ollama"
     LLM_MODEL:    str = "qwen2.5:7b"
+    LLM_CHAT_TIMEOUT: float = 60.0
+    LLM_STREAM_TIMEOUT: float = 120.0
+    QUERY_RETRIEVAL_TIMEOUT: float = 10.0
+    QUERY_AGENT_TIMEOUT: float = 90.0
     LLM_TIMEOUT:  int = 120
     LLM_MAX_TOKENS: int = 800
 

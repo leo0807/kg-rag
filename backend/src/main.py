@@ -1,9 +1,15 @@
 import logging
-from fastapi import FastAPI, Request
+import traceback
+import uuid
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .core.config import settings
+from .core.logging_config import setup_logging
 from .startup import lifespan
 from .routers.docs.files         import router as document_files_router
 from .routers.docs.analysis      import router as document_analysis_router
@@ -73,6 +79,8 @@ from slowapi.errors import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
+setup_logging()
+
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     lifespan=lifespan,
@@ -110,6 +118,78 @@ app.add_middleware(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    error_id = str(uuid.uuid4())[:8]
+    stack_text = "".join(traceback.format_stack(limit=20))
+    logger.error(
+        "[%s] 请求校验失败: %s %s\n错误详情: %s\n完整堆栈:\n%s",
+        error_id,
+        request.method,
+        request.url.path,
+        exc.errors(),
+        stack_text,
+    )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error_id": error_id,
+            "type": type(exc).__name__,
+            "message": "请求参数错误",
+            "detail": exc.errors(),
+        },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    error_id = str(uuid.uuid4())[:8]
+    log_fn = logger.error if exc.status_code >= 500 else logger.warning
+    stack_text = "".join(traceback.format_stack(limit=20))
+    log_fn(
+        "[%s] HTTP异常: %s %s\n状态码: %s\n异常详情: %s\n完整堆栈:\n%s",
+        error_id,
+        request.method,
+        request.url.path,
+        exc.status_code,
+        exc.detail,
+        stack_text,
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error_id": error_id,
+            "type": type(exc).__name__,
+            "message": str(exc.detail),
+            "detail": exc.detail,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_id = str(uuid.uuid4())[:8]
+    stack_text = traceback.format_exc()
+    logger.error(
+        "[%s] 未捕获异常: %s %s\n异常类型: %s\n异常消息: %s\n完整堆栈:\n%s",
+        error_id,
+        request.method,
+        request.url.path,
+        type(exc).__name__,
+        str(exc),
+        stack_text,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error_id": error_id,
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "detail": "服务器内部错误，请查看日志",
+        },
+    )
 
 
 @app.middleware("http")

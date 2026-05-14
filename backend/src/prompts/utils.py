@@ -74,6 +74,7 @@ def choose_version(template: dict[str, Any], version: str | None = None, ab_test
 def template_summary(template_id: str, template: dict[str, Any]) -> dict[str, Any]:
     versions = template.get("versions") or {}
     version_items = []
+    selected_payload: dict[str, Any] = template
     if versions:
         selected_name = str(template.get("active_version") or next(iter(versions)))
         selected_payload = versions.get(selected_name) or next(iter(versions.values()))
@@ -88,9 +89,10 @@ def template_summary(template_id: str, template: dict[str, Any]) -> dict[str, An
                 }
             )
     else:
+        selected_version = str(template.get("version") or "1.0")
         version_items.append(
             {
-                "name": str(template.get("version") or "1.0"),
+                "name": selected_version,
                 "weight": 100,
                 "max_tokens": int(template.get("max_tokens", 800) or 800),
                 "temperature": float(template.get("temperature", 0.3) or 0.3),

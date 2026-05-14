@@ -1,26 +1,24 @@
 from __future__ import annotations
-
 """LLM service facade built on provider adapters."""
-
 import json
 import logging
 from typing import AsyncGenerator
-
 from ...services.runtime.model_settings import get_runtime_settings_namespace
 from .errors import LLMError, map_exception
 from .providers import AnthropicProvider, ErnieProvider, OpenAICompatProvider
-
+from .timeout_utils import (
+    chat_with_timeout,
+    chat_with_tools_with_timeout,
+    chat_with_usage_with_timeout,
+    stream_chat_with_timeout,
+)
 logger = logging.getLogger(__name__)
-
-
 def prepend_system(messages: list[dict], system_prompt: str) -> list[dict]:
     if not system_prompt:
         return messages
     if messages and messages[0].get("role") == "system":
         return messages
     return [{"role": "system", "content": system_prompt}] + list(messages)
-
-
 class LLMService:
     """统一 LLM 服务。"""
 
@@ -86,27 +84,34 @@ class LLMService:
             api_key=s.LLM_API_KEY,
             model=s.LLM_MODEL,
         )
-
     @property
     def model_name(self) -> str:
         return self._provider.model_name
-
     def _apply_defaults(self, kwargs: dict) -> dict:
         call_kwargs = dict(kwargs)
-        call_kwargs.setdefault("timeout", self._settings.LLM_TIMEOUT)
         call_kwargs.setdefault("max_tokens", self._settings.LLM_MAX_TOKENS)
         return call_kwargs
-
+    def _provider_endpoint(self) -> str:
+        provider = self._provider
+        if isinstance(provider, OpenAICompatProvider):
+            return f"{provider._url}/chat/completions"
+        if isinstance(provider, AnthropicProvider):
+            return "https://api.anthropic.com/v1/messages"
+        if isinstance(provider, ErnieProvider):
+            return f"https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/{provider.model_name}"
+        return ""
     def chat(self, messages: list[dict], system_prompt: str = "", **kwargs) -> str:
         msgs = prepend_system(messages, system_prompt)
         try:
-            return self._provider.chat(msgs, **self._apply_defaults(kwargs))
+            call_kwargs = self._apply_defaults(kwargs)
+            call_kwargs.pop("timeout", None)
+            timeout = kwargs.get("timeout", self._settings.LLM_CHAT_TIMEOUT)
+            return chat_with_timeout(self._provider, msgs, timeout, **call_kwargs)
         except LLMError:
             raise
         except Exception as exc:
             logger.exception("LLMService.chat 失败 provider=%s model=%s", type(self._provider).__name__, self.model_name)
-            raise map_exception(exc) from exc
-
+            raise map_exception(exc, endpoint=self._provider_endpoint()) from exc
     def chat_with_usage(
         self,
         messages: list[dict],
@@ -115,13 +120,15 @@ class LLMService:
     ) -> tuple[str, dict]:
         msgs = prepend_system(messages, system_prompt)
         try:
-            return self._provider.chat_with_usage(msgs, **self._apply_defaults(kwargs))
+            call_kwargs = self._apply_defaults(kwargs)
+            call_kwargs.pop("timeout", None)
+            timeout = kwargs.get("timeout", self._settings.LLM_CHAT_TIMEOUT)
+            return chat_with_usage_with_timeout(self._provider, msgs, timeout, **call_kwargs)
         except LLMError:
             raise
         except Exception as exc:
             logger.exception("LLMService.chat_with_usage 失败 provider=%s model=%s", type(self._provider).__name__, self.model_name)
-            raise map_exception(exc) from exc
-
+            raise map_exception(exc, endpoint=self._provider_endpoint()) from exc
     async def stream_chat(
         self,
         messages: list[dict],
@@ -130,8 +137,19 @@ class LLMService:
     ) -> AsyncGenerator[str, None]:
         msgs = prepend_system(messages, system_prompt)
         try:
-            async for chunk in self._provider.stream_chat(msgs, **self._apply_defaults(kwargs)):
+            call_kwargs = self._apply_defaults(kwargs)
+            call_kwargs.pop("timeout", None)
+            timeout = kwargs.get("timeout", self._settings.LLM_STREAM_TIMEOUT)
+            async for chunk in stream_chat_with_timeout(self._provider, msgs, timeout, **call_kwargs):
                 yield chunk
+        except TimeoutError:
+            logger.error(
+                "LLMService.stream_chat 超时 provider=%s model=%s message_count=%d",
+                type(self._provider).__name__,
+                self.model_name,
+                len(msgs),
+            )
+            yield "（响应超时，请重试）"
         except LLMError:
             raise
         except Exception as exc:
@@ -141,8 +159,7 @@ class LLMService:
                 self.model_name,
                 len(msgs),
             )
-            raise map_exception(exc) from exc
-
+            raise map_exception(exc, endpoint=self._provider_endpoint()) from exc
     async def chat_with_tools(
         self,
         messages: list[dict],
@@ -152,22 +169,14 @@ class LLMService:
     ) -> dict:
         msgs = prepend_system(messages, system_prompt)
         try:
-            if isinstance(self._provider, OpenAICompatProvider):
-                return await self._chat_with_tools_openai_compat(msgs, tools, **kwargs)
-            if isinstance(self._provider, AnthropicProvider):
-                return await self._chat_with_tools_anthropic(msgs, tools, **kwargs)
-            text = self.chat(msgs, **kwargs)
-            return {"text": text}
+            call_kwargs = self._apply_defaults(kwargs); call_kwargs.pop("timeout", None)
+            timeout = kwargs.get("timeout", self._settings.LLM_CHAT_TIMEOUT)
+            return await chat_with_tools_with_timeout(self._provider, msgs, tools, timeout, **call_kwargs)
         except LLMError:
             raise
         except Exception as exc:
-            logger.exception(
-                "LLMService.chat_with_tools 失败 provider=%s model=%s",
-                type(self._provider).__name__,
-                self.model_name,
-            )
-            raise map_exception(exc) from exc
-
+            logger.exception("LLMService.chat_with_tools 失败 provider=%s model=%s", type(self._provider).__name__, self.model_name)
+            raise map_exception(exc, endpoint=self._provider_endpoint()) from exc
     async def _chat_with_tools_openai_compat(
         self,
         messages: list[dict],
