@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export function useGlobalKeyboard() {
     const router = useRouter();
+    const [showShortcuts, setShowShortcuts] = useState(false);
 
     useEffect(() => {
         function handleKeyDown(e: KeyboardEvent) {
@@ -22,6 +23,12 @@ export function useGlobalKeyboard() {
                 router.push("/query");
             }
 
+            // ? → 快捷键帮助浮层
+            if (e.key === "?") {
+                e.preventDefault();
+                setShowShortcuts(v => !v);
+            }
+
             // g + l → 文档库
             // g + s → 搜索
             // g + q → 问答
@@ -31,4 +38,6 @@ export function useGlobalKeyboard() {
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [router]);
+
+    return { showShortcuts, setShowShortcuts };
 }

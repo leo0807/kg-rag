@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import ShortcutsModal from "@/components/ShortcutsModal";
 import { useGlobalKeyboard } from "@/hooks/useKeyboard";
 import { Menu, X } from "lucide-react";
 
@@ -19,7 +20,7 @@ export default function ConditionalLayout({
     const showSidebar = !NO_SIDEBAR_PATHS.includes(pathname);
     const [mobileOpen, setMobileOpen] = useState(false);
 
-    useGlobalKeyboard();
+    const { showShortcuts, setShowShortcuts } = useGlobalKeyboard();
 
     useEffect(() => {
         if (!showSidebar) return;
@@ -59,11 +60,20 @@ export default function ConditionalLayout({
     useEffect(() => { setMobileOpen(false); }, [pathname]);
 
     if (!showSidebar) {
-        return <div className="min-h-screen bg-gray-950">{children}</div>;
+        return (
+            <div className="min-h-screen bg-gray-950">
+                <ShortcutsModal
+                    open={showShortcuts}
+                    onClose={() => setShowShortcuts(false)}
+                />
+                {children}
+            </div>
+        );
     }
 
     return (
         <div className="flex h-screen bg-gray-950 overflow-hidden">
+            <ShortcutsModal open={showShortcuts} onClose={() => setShowShortcuts(false)} />
             {/* 桌面端侧边栏 */}
             <div className="hidden md:flex shrink-0">
                 <Sidebar />
