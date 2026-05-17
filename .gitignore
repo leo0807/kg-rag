@@ -14,6 +14,7 @@ frontend/out/
 .env
 .env.local
 *.env
+.env.test
 
 # 数据库持久化
 neo4j_data/

@@ -698,3 +698,17 @@ ls -la backend/models/gnn/
 | F107 零结果监控 | 🔴（待确认） | 🔴（坐实，数据未采集） |
 | F094 GNN | 🟢（待确认） | 🟢（坐实，权重已训练） |
 | 第八节 8 条合规功能 | 无编号 | F073、F113-F118、F119 |
+
+---
+
+## 附录二：已知的预存在不一致（待决策，不在本轮处理）
+
+审计 / 开发过程中发现的不影响当前功能、但代表潜在工程债务的发现。
+
+### DB 字段反向 gap（2026-05-17 发现）
+
+- **表**：`query_feedback`
+- **DB 中存在的列**：`source_doc_id TEXT NOT NULL DEFAULT ''`
+- **ORM 模型**（`src/routers/feedback.py`）：未声明此字段
+- **影响**：ORM 读写 `QueryFeedback` 时该列被忽略，始终保持 `DEFAULT ''`，不会报错但数据永远不会被应用层写入或读取
+- **待决策**：是补 ORM 字段（`source_doc_id: Mapped[str] = mapped_column(Text, default="")`），还是 `DROP COLUMN`（若已确认废弃）
