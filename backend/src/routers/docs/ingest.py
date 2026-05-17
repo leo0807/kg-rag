@@ -11,9 +11,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from neo4j import Driver
 
 from ...auth.deps import get_admin_user as _get_admin_user
+from ...core.config import settings
 from ...core.database import get_driver
 from ...services.graph.neo4j_writer import write_document, write_document_incremental
 from ...services.parsing.parser import parse
+from ...services.security.upload_validator import validate_upload
 from .ingest_helpers import run_image_analysis
 
 logger = logging.getLogger(__name__)
@@ -166,9 +168,9 @@ async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver, increment
 
 @router.post("/api/preview")
 async def preview(file: UploadFile = File(...)):
-    tmp_path = UPLOAD_DIR / file.filename
-    with tmp_path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
+    content  = await validate_upload(file)
+    tmp_path = UPLOAD_DIR / (file.filename or "preview.pdf")
+    tmp_path.write_bytes(content)
     return parse(tmp_path)
 
 
@@ -189,6 +191,14 @@ async def ingest(
     task_id  = uuid.uuid4().hex[:12]
     tmp_path = UPLOAD_DIR / f"{task_id}_{file.filename or 'upload'}"
     await asyncio.to_thread(_save_upload_file, file, tmp_path)
+
+    file_size = tmp_path.stat().st_size
+    if file_size > settings.MAX_UPLOAD_FILE_BYTES:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=400,
+            detail=f"文件过大（{file_size} bytes），上限 {settings.MAX_UPLOAD_FILE_BYTES} bytes",
+        )
 
     _MAGIC = {
         ".pdf":  [(0, b"%PDF-")],
