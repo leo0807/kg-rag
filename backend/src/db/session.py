@@ -60,6 +60,7 @@ async def init_tables():
             ("clarity_score",      "INTEGER"),
             ("graph_score",        "INTEGER"),
             ("comment_text",       "TEXT"),
+            ("sources_count",      "INTEGER"),
         ]:
             try:
                 await conn.execute(text(
