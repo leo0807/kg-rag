@@ -415,9 +415,12 @@
 ### F106 🟢 检索策略效果对比（GET /api/admin/analytics/strategy-stats）
 - **evidence**：`backend/src/routers/admin_api/analytics.py:188`
 
-### F107 🔴 零结果查询监控（GET /api/admin/analytics/empty-queries）
-- **evidence**：analytics.py 中搜索 `empty_queries`, `zero_result` **均无命中**
-- **notes**：README 声称已实现，代码中不存在此端点。
+### F107 🟢 零结果查询监控（GET /api/admin/analytics/empty-queries）
+- **evidence**：
+  - `backend/src/routers/feedback.py` — `QueryFeedback.sources_count` 字段新增，`submit_feedback` 时写入 `len(req.sources)`
+  - `backend/src/routers/admin_api/analytics.py` — `GET /analytics/empty-queries` 端点，按 `sources_count=0` 分组统计
+- **verified_at**：2026-05-17
+- **method**：curl smoke test 200 + 422 boundary + psql SELECT sources_count 验证写入
 
 ### F108 🟢 用户活跃度报表（GET /api/admin/analytics/user-activity）
 - **evidence**：`backend/src/routers/admin_api/activity.py:186`
