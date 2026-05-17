@@ -67,7 +67,10 @@ class AuditLog(Base):
 
 class Conversation(Base):
     __tablename__  = "conversations"
-    __table_args__ = (Index("ix_conversations_user_id", "user_id"),)
+    __table_args__ = (
+        Index("ix_conversations_user_id",   "user_id"),
+        Index("ix_conversations_created_at", "created_at"),
+    )
 
     id:         Mapped[str]      = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id:    Mapped[str]      = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
