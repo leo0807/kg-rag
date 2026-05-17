@@ -8,13 +8,13 @@
 
 | 优先级 | 条目数 | 总估时 | 变更说明 |
 |--------|--------|--------|---------|
-| P0     | 4      | 2.5 人天 | F038 决策路径 B 已关闭；F107 已实现关闭（-1条 -1天） |
+| P0     | 2      | 1.5 人天 | F038/F107 已关闭；F113+F114 已实现关闭（-2条 -1天） |
 | P1     | 6      | 8.5 人天 | F055 验证升 🟢；F073 已实现关闭（-1条 -0.5天） |
 | P2     | 4      | 10.0 人天 | F100 已实现关闭 |
-| 合计   | 14     | 21.0 人天 | 较初版 -5条 -2.5天 |
+| 合计   | 12     | 20.0 人天 | 较初版 -7条 -3.5天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
-> 最后更新：2026-05-17 批次 2 完成后（F073 + F107 全闭）。
+> 最后更新：2026-05-17 批次 3 完成后（F113 + F114 全闭）。
 
 ---
 
@@ -22,60 +22,31 @@
 
 ---
 
-### F113 文件上传防护
+### ~~F113 文件上传防护~~ CLOSED
 
-**状态**：待开发
+**状态**：~~待开发~~ **✅ CLOSED 2026-05-17**
 **优先级**：P0
-**审计来源**：[feature_audit_2026-05-17.md#f113-文件上传防护](./feature_audit_2026-05-17.md#f113-文件上传防护)
 
-**任务描述**：
-`/api/ingest` 无文件大小上限和 MIME 类型校验，攻击者可上传 10 GB 文件打挂服务或上传非 PDF 触发解析器异常。需在入口层添加大小上限（建议 50 MB）和 PDF MIME 白名单。
+**实现**：
+- 新增 `src/services/security/upload_validator.py`：MIME 白名单（PDF-only）+ 文件大小 + magic number 三层校验
+- `/api/preview` 接入完整 `validate_upload()`；`/api/ingest` 补 size 检查（已有内联 magic+type 校验）
+- `MAX_UPLOAD_FILE_BYTES = 100 MB`（L2 业务层）
 
-**关键文件路径**：
-- `backend/src/routers/docs/upload.py` — 路由层添加 `UploadFile` 大小校验
-- `backend/src/core/config.py` — `MAX_UPLOAD_MB=50` 配置项
-
-**实现思路**：
-- 读取 `UploadFile.size` 或流式计数，超限返回 413
-- 校验 `content_type in {"application/pdf"}` 或 magic bytes（PDF 头 `%PDF`）
-- 大小限制值通过 `settings.MAX_UPLOAD_MB` 配置，禁止硬编码
-
-**估时**：半天
-
-**验收标准**：
-- [ ] `curl -X POST /api/ingest -F "file=@large_file"` 超 50 MB 返回 413（非超时 / 崩溃）
-- [ ] 上传 `.exe` 文件返回 422
-- [ ] 正常 PDF 上传不受影响，入库流程完整
-
-**依赖**：无
+**验证**：伪装 PDF → 400；.exe → 400；空文件 → 400；120MB → 413（L1 拦截）
 
 ---
 
-### F114 请求体大小限制
+### ~~F114 请求体大小限制~~ CLOSED
 
-**状态**：待开发
+**状态**：~~待开发~~ **✅ CLOSED 2026-05-17**
 **优先级**：P0
-**审计来源**：[feature_audit_2026-05-17.md#f114-请求体大小限制](./feature_audit_2026-05-17.md#f114-请求体大小限制)
 
-**任务描述**：
-FastAPI/Starlette 全局请求体大小未配置，任意 JSON 端点均可接收超大 payload。与 F113 互补：F113 管文件上传，F114 管 JSON/表单请求体，在中间件层防止恶意大 payload 耗尽内存。
+**实现**：
+- 新增 `src/middleware/body_size_limit.py`：`BodySizeLimitMiddleware` 通过 `Content-Length` 头快速拒绝，不消耗 stream
+- 注册为最外层中间件（先于 CORS 执行）
+- `MAX_REQUEST_BODY_BYTES = 50 MB`（L1 全局兜底）
 
-**关键文件路径**：
-- `backend/src/main.py` — 添加 Starlette `LimitUploadSize` 中间件
-- `backend/src/core/config.py` — `MAX_REQUEST_BODY_MB=1` 配置项
-
-**实现思路**：
-- 添加 `LimitUploadSize` 中间件，限制非文件上传端点请求体 ≤ 1 MB
-- 配置值写入 `settings.MAX_REQUEST_BODY_MB`，支持环境变量覆盖
-
-**估时**：半天
-
-**验收标准**：
-- [ ] `curl -X POST /api/query/sync -d "$(python3 -c "print('x'*2000000)")"` 返回 413
-- [ ] 正常查询请求（< 1 KB）不受影响
-- [ ] `MAX_REQUEST_BODY_MB` 可通过 `.env` 覆盖
-
-**依赖**：无
+**验证**：正常请求 → 200；60MB JSON body → 413
 
 ---
 

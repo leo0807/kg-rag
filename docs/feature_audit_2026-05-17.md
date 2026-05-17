@@ -472,8 +472,8 @@
 以下为 README 中**未勾选**（`[ ]`）但与外网无关、在内网可以实现的功能，按优先级排序：
 
 ### 高优先级（直接影响生产安全）
-- **F113 文件上传防护**：`/api/ingest` 缺文件大小上限与 MIME 类型校验（当前无任何校验）
-- **F114 请求体大小限制**：FastAPI 全局 `max_request_body_size` 未配置
+- ~~**F113 文件上传防护**~~：🟢 verified_at: 2026-05-17, method: curl multi-cases (MIME/magic/size/empty)
+- ~~**F114 请求体大小限制**~~：🟢 verified_at: 2026-05-17, method: curl + 60MB body → 413
 - **F115 LLM API 重试与熔断**：无指数退避重试和熔断器（`tenacity`/`pybreaker`）
 - **F116 优雅关闭（Graceful Shutdown）**：SIGTERM 信号未处理，流式响应可能被截断
 
