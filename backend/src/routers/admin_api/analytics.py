@@ -4,7 +4,7 @@ src/routers/admin_analytics.py
 """
 import logging
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from .entities import _require_admin
 from ...db.models import User
@@ -284,4 +284,50 @@ async def strategy_stats(
     return {
         "period":     {"days": days, "since": since.isoformat()},
         "strategies": rows,
+    }
+
+
+@router.get("/analytics/empty-queries")
+async def empty_queries_report(
+    days:  int = Query(7,  ge=1, le=90),
+    limit: int = Query(50, ge=1, le=500),
+    _: User = Depends(_require_admin),
+):
+    """
+    返回最近 N 天 sources_count=0 的查询词频统计。
+    用于识别知识盲区，指导下一批 PDF 入库优先级。
+    """
+    from ...routers.feedback import QueryFeedback
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    async with AsyncSessionLocal() as db:
+        stmt = (
+            select(
+                QueryFeedback.question,
+                func.count(QueryFeedback.id).label("count"),
+                func.max(QueryFeedback.created_at).label("last_seen"),
+            )
+            .where(
+                QueryFeedback.sources_count == 0,
+                QueryFeedback.created_at >= cutoff,
+            )
+            .group_by(QueryFeedback.question)
+            .order_by(func.count(QueryFeedback.id).desc())
+            .limit(limit)
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
+
+    return {
+        "days":         days,
+        "total_unique": len(rows),
+        "items": [
+            {
+                "question": r.question,
+                "count":    r.count,
+                "last_seen": r.last_seen.isoformat() if r.last_seen else None,
+            }
+            for r in rows
+        ],
     }

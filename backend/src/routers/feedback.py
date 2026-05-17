@@ -42,6 +42,7 @@ class QueryFeedback(Base):
     clarity_score:      Mapped[int | None] = mapped_column(Integer, nullable=True)
     graph_score:        Mapped[int | None] = mapped_column(Integer, nullable=True)
     comment_text:       Mapped[str | None] = mapped_column(Text,    nullable=True)
+    sources_count:      Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class FeedbackRequest(BaseModel):
@@ -62,13 +63,14 @@ async def submit_feedback(
 ):
     import json
     feedback = QueryFeedback(
-        question = req.question,
-        answer   = req.answer,
-        sources  = json.dumps(req.sources, ensure_ascii=False),
-        rating   = req.rating,
-        strategy = req.strategy,
-        user_id  = req.user_id or user.id,
-        detail   = req.detail,
+        question      = req.question,
+        answer        = req.answer,
+        sources       = json.dumps(req.sources, ensure_ascii=False),
+        rating        = req.rating,
+        strategy      = req.strategy,
+        user_id       = req.user_id or user.id,
+        detail        = req.detail,
+        sources_count = len(req.sources),
     )
     db.add(feedback)
     await db.flush()
