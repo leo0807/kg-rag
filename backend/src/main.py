@@ -1,10 +1,14 @@
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .core.config import settings
-from .startup import lifespan
+from .core.logging_setup import setup_logging
+from .middleware.request_logging import request_logging_middleware
+from .middleware.body_size_limit import BodySizeLimitMiddleware
 from .routers.docs.files         import router as document_files_router
 from .routers.docs.analysis      import router as document_analysis_router
 from .routers.docs.backfill      import router as document_backfill_router
@@ -73,6 +77,10 @@ from slowapi.errors import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
+setup_logging(settings.LOG_LEVEL)
+
+from .startup import lifespan
+
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     lifespan=lifespan,
@@ -108,8 +116,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BODY_BYTES)
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning("422 validation error on %s: %s", request.url.path, exc.errors())
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.warning("HTTP error on %s: %s %s", request.url.path, exc.status_code, exc.detail)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception("500 unhandled on %s: %s: %s", request.url.path, type(exc).__name__, exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal error: {type(exc).__name__}"},
+    )
+
+
+@app.middleware("http")
+async def _request_logging(request: Request, call_next):
+    return await request_logging_middleware(request, call_next)
 
 
 @app.middleware("http")
