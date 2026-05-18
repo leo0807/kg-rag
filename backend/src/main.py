@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from .core.config import settings
 from .core.logging_setup import setup_logging
 from .middleware.request_logging import request_logging_middleware
+from .middleware.shutdown_gate import ShutdownGateMiddleware
 from .middleware.body_size_limit import BodySizeLimitMiddleware
 from .routers.docs.files         import router as document_files_router
 from .routers.docs.analysis      import router as document_analysis_router
@@ -155,6 +156,9 @@ async def activity_presence_middleware(request: Request, call_next):
         request.url.path,
     )
     return await call_next(request)
+
+
+app.add_middleware(ShutdownGateMiddleware)
 
 
 @app.get("/api/health")

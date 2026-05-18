@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from .core.config import settings
 from .core.database import init_db, get_driver
 from .core.logging_setup import setup_logging
+from .core.shutdown import shutdown_tracker
 from .db.session import AsyncSessionLocal, init_tables
 from .services.infra.health import health_monitor
 from .services.retrieval.embedder import get_cached_embedding
@@ -112,6 +113,10 @@ async def lifespan(app: FastAPI):
 
     print(">>> lifespan 启动：数据库连接已建立")
     yield
+    logger.info("Application shutting down, draining active streams...")
+    clean = await shutdown_tracker.drain(grace_period=settings.SHUTDOWN_GRACE_PERIOD_SECONDS)
+    if not clean:
+        logger.warning("Shutdown timed out, some streams were force-killed")
     health_monitor.stop_background_task()
     if _HAS_SCHEDULER and scheduler:
         scheduler.shutdown()
