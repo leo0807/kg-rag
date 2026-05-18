@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     # 安全限制
     MAX_REQUEST_BODY_BYTES: int = 50 * 1024 * 1024   # 50 MB  — L1 全局兜底
     MAX_UPLOAD_FILE_BYTES:  int = 100 * 1024 * 1024  # 100 MB — L2 上传端点
+    SHUTDOWN_GRACE_PERIOD_SECONDS: float = 30.0
 
     # MinIO / 对象存储
     STORAGE_ENDPOINT:   str = "http://localhost:9000"
