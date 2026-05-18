@@ -289,9 +289,9 @@
 - **evidence**：`backend/src/services/retrieval/reranker.py` 精排服务存在
 - **notes**：精排服务存在，但 sequential 策略路径（sync.py）是否调用 reranker 未直接验证。README 自身"待完善清单"原始描述指出此问题，后来被标 [x]。
 
-### F060 🟡 Reranker 内容截断优化（按 token 而非字符截断）
-- **evidence**：`backend/src/services/retrieval/reranker.py:135` `[:1024]` 字符切片，注释写"1024 chars ≈ 512 tokens for Chinese text"——明确是字符截断非 tokenizer 计数
-- **notes**：verified_at: 2026-05-17, method: grep reranker.py。确认为字符截断，F060 仍需实现。
+### F060 🟢 Reranker 内容截断优化（按 token 而非字符截断）
+- **evidence**：`backend/src/services/retrieval/reranker.py` 已改为读取本地 reranker tokenizer 上限并在 `CrossEncoder(..., max_length=8192)` 下做 token 级截断；不再使用 `[:1024]` 字符切片
+- **notes**：verified_at: 2026-05-18, method: 单测 `backend/tests/test_reranker.py` + `AutoTokenizer` smoke test。`bge-reranker-v2-m3` tokenizer `model_max_length=8192`，2000 字中文输入会被 tokenizer 级截断，非字符截断。
 
 ### F061 🟢 多跳推理迭代上限保护
 - **evidence**：`backend/src/services/retrieval/multi_hop.py` 存在；需确认是否有 max_iterations 参数。

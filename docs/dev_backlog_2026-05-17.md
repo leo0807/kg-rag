@@ -54,12 +54,12 @@
 | 优先级 | 条目数 | 总估时 | 变更说明 |
 |--------|--------|--------|---------|
 | P0     | 1      | 1.0 人天  | F038/F107/F116 已关闭；F113+F114 已实现关闭（-3条 -1.5天） |
-| P1     | 7      | 9.0 人天  | F055 验证升 🟢；F073 已实现关闭；F120 新增（+1条 +0.5天） |
+| P1     | 6      | 8.5 人天  | F055 验证升 🟢；F060 已关闭；F073 已实现关闭；F120 新增（-1条 +0.5天） |
 | P2     | 6      | 11.5 人天 | F100 已实现关闭；F121/F122 新增（+2条 +1.5天） |
 | 合计   | 14     | 21.5 人天 | 较初版 -5条 -2.0天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
-> 最后更新：2026-05-18 遗留分析（F120+F121 新增；预存在改动分类完成）。
+> 最后更新：2026-05-18（F060 已关闭；F120+F121 新增；预存在改动分类完成）。
 
 ---
 
@@ -355,26 +355,26 @@ Embedding 服务逐条 encode，入库速度是主要瓶颈（bge-m3 CPU 模式�
 
 ### F060 Reranker 内容截断改为按 token
 
-**状态**：🟡 已验证待实现（`reranker.py:135` 确认 `[:1024]` 字符截断，verified 2026-05-17）
+**状态**：🟢 已关闭（2026-05-18 验证通过）
 **优先级**：P1
 **审计来源**：[feature_audit_2026-05-17.md#f060--reranker-精排](./feature_audit_2026-05-17.md#f060--reranker-精排)
 
 **任务描述**：
-验证确认：`reranker.py:135` 使用 `[:1024]` 字符切片，注释"1024 chars ≈ 512 tokens"为估算非精确计数。中英文混合时实际 token 数超出 bge-reranker 512 token 上限，影响精排质量，需改为 tokenizer 精确计数后截断。
+`reranker.py` 已改为按 tokenizer token 级截断，不再使用字符切片。精排输入长度由本地 `bge-reranker-v2-m3` tokenizer 上限控制，避免中英文混合时字符估算带来的精排质量偏差。
 
 **关键文件路径**：
-- `backend/src/services/retrieval/reranker.py:135` — 将 `[:1024]` 改为按 tokenizer token 数截断
+- `backend/src/services/retrieval/reranker.py` — 读取本地 reranker tokenizer 上限并传入 `CrossEncoder(max_length=8192)`
 
 **实现思路**：
-- 用 `transformers.AutoTokenizer` 加载 bge-reranker tokenizer，计算真实 token 数
-- 截断时保持在 512 token 以内（tokenizer 实例复用，避免重复加载）
+- 用本地 `bge-reranker-v2-m3` tokenizer 上限驱动 `CrossEncoder` 的 `max_length`
+- 由 tokenizer 负责 pair-level token 截断，避免手工字符裁剪
 
 **估时**：半天
 
 **验收标准**：
-- [ ] 长中文 chunk（500 字）rerank 后不再出现 `Token indices sequence length` 警告日志
-- [ ] token 超 512 的 chunk 截断后 rerank 正常返回（不报错）
-- [ ] 短文本（< 100 字）不受影响
+- [x] 长中文 chunk（500 字）rerank 后不再出现 `Token indices sequence length` 警告日志
+- [x] token 超上限的 chunk 截断后 rerank 正常返回（不报错）
+- [x] 短文本（< 100 字）不受影响
 
 **依赖**：无
 
