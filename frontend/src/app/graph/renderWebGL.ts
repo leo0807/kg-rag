@@ -27,10 +27,12 @@ export async function drawGraphWebGL(
   canvasEl: HTMLCanvasElement,
   tooltipEl: HTMLDivElement,
   onScaleChange: (s: number) => void,
+  onTransformChange: (transform: d3.ZoomTransform) => void,
   onNodeClick: (node: GraphNode) => void,
   highlightedIds: Set<string>,
   heatMap: Map<string, number>,
   isDarkTheme = true,
+  initialTransform: d3.ZoomTransform = d3.zoomIdentity,
 ): Promise<{
   zoom: d3.ZoomBehavior<HTMLCanvasElement, unknown>;
   destroy: () => void;
@@ -100,7 +102,7 @@ export async function drawGraphWebGL(
   const sprites = new Map<string, PixiSprite>();
   const labels = new Map<string, PixiText>();
   const containers = new Map<string, PixiContainer>();
-  let transform = d3.zoomIdentity;
+  let transform = initialTransform;
 
   nodes.forEach((n) => {
     const nodeType = n.type || n.label;
@@ -215,6 +217,7 @@ export async function drawGraphWebGL(
         app.stage.scale.set(t.k);
       }
       onScaleChange(t.k);
+      onTransformChange(t);
 
       // Show labels only when zoomed in, and only for nodes that have label text
       const showLabels = t.k > 0.8;
@@ -224,7 +227,7 @@ export async function drawGraphWebGL(
       updateVisibility();
     });
   d3.select(canvasEl).call(zoom);
-  d3.select(canvasEl).call(zoom.transform, d3.zoomIdentity);
+  d3.select(canvasEl).call(zoom.transform, initialTransform);
   updateVisibility();
 
   d3.select(canvasEl).on("mousemove.wtooltip", (event: MouseEvent) => {

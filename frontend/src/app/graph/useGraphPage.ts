@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 import { fetchApi } from "@/lib/api";
 import type {
   EdgeFilter,
@@ -35,6 +36,30 @@ interface GraphPageRefs {
   tooltipRef: RefObject<HTMLDivElement | null>;
 }
 
+type SnapshotTransform = {
+  x: number;
+  y: number;
+  k: number;
+};
+
+function toZoomTransform(transform: SnapshotTransform) {
+  return d3.zoomIdentity.translate(transform.x, transform.y).scale(transform.k);
+}
+
+function toSnapshotTransform(transform: d3.ZoomTransform): SnapshotTransform {
+  return {
+    x: Number(transform.x.toFixed(1)),
+    y: Number(transform.y.toFixed(1)),
+    k: Number(transform.k.toFixed(3)),
+  };
+}
+
+function formatSnapshotTransform(transform: d3.ZoomTransform | null) {
+  return transform
+    ? toSnapshotTransform(transform)
+    : toSnapshotTransform(d3.zoomIdentity);
+}
+
 export function useGraphPage({
   svgRef,
   canvasRef,
@@ -51,6 +76,7 @@ export function useGraphPage({
   const searchRequestIdRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewTransformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
 
   const [renderMode, setRenderMode] = useState<RenderMode>("canvas");
   const [manualMode, setManualMode] = useState<RenderMode | null>(null);
@@ -191,6 +217,66 @@ export function useGraphPage({
       : tourData;
   }, [tourData, predictionEdges]);
 
+  const syncSnapshotUrl = useCallback(
+    (overrideTransform?: d3.ZoomTransform) => {
+      if (typeof window === "undefined") return;
+      const p = new URLSearchParams();
+      if (nodeFilter !== "全部") p.set("nf", nodeFilter);
+      if (edgeFilter !== "全部关系") p.set("ef", edgeFilter);
+      if (searchQuery) p.set("sq", searchQuery);
+      if (docFilter) p.set("df", docFilter);
+      if (limits.doc !== 100) p.set("ld", String(limits.doc));
+      if (limits.sec !== 500) p.set("ls", String(limits.sec));
+      if (limits.entity !== 200) p.set("le", String(limits.entity));
+      if (limits.tbl !== 0) p.set("lt", String(limits.tbl));
+      if (selectedNode) p.set("sn", selectedNode.id);
+      if (manualMode ?? renderMode) p.set("rm", manualMode ?? renderMode);
+      if (hideIsolated) p.set("hi", "1");
+      if (importanceMode) p.set("im", "1");
+      if (domainMode) p.set("dm", "1");
+      if (showPredictions) p.set("pr", "1");
+      const transform = formatSnapshotTransform(
+        overrideTransform ?? viewTransformRef.current,
+      );
+      if (transform.x !== 0 || transform.y !== 0 || transform.k !== 1) {
+        p.set("zx", String(transform.x));
+        p.set("zy", String(transform.y));
+        p.set("zk", String(transform.k));
+      }
+      const qs = p.toString();
+      window.history.replaceState(
+        null,
+        "",
+        qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
+      );
+    },
+    [
+      docFilter,
+      domainMode,
+      edgeFilter,
+      hideIsolated,
+      importanceMode,
+      limits.doc,
+      limits.entity,
+      limits.sec,
+      limits.tbl,
+      manualMode,
+      nodeFilter,
+      renderMode,
+      searchQuery,
+      selectedNode,
+      showPredictions,
+    ],
+  );
+
+  const handleTransformChange = useCallback(
+    (transform: d3.ZoomTransform) => {
+      viewTransformRef.current = transform;
+      syncSnapshotUrl(transform);
+    },
+    [syncSnapshotUrl],
+  );
+
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     if (p.has("nf")) setNodeFilter(p.get("nf") as NodeFilter);
@@ -205,6 +291,17 @@ export function useGraphPage({
         tbl: Number(p.get("lt") || 0),
       }));
     if (p.has("sq")) setSearchQuery(p.get("sq") || "");
+    if (p.has("rm")) setManualMode(p.get("rm") as RenderMode);
+    if (p.has("hi")) setHideIsolated(p.get("hi") === "1");
+    if (p.has("im")) setImportanceMode(p.get("im") === "1");
+    if (p.has("dm")) setDomainMode(p.get("dm") === "1");
+    if (p.has("pr")) setShowPredictions(p.get("pr") === "1");
+    const zx = Number(p.get("zx") || 0);
+    const zy = Number(p.get("zy") || 0);
+    const zk = Number(p.get("zk") || 1);
+    if (p.has("zx") || p.has("zy") || p.has("zk")) {
+      viewTransformRef.current = toZoomTransform({ x: zx, y: zy, k: zk });
+    }
     if (p.has("sn") && data) {
       const selectedId = p.get("sn") || "";
       const node = data.nodes.find((n) => n.id === selectedId);
@@ -213,23 +310,8 @@ export function useGraphPage({
   }, [data]);
 
   useEffect(() => {
-    const p = new URLSearchParams();
-    if (nodeFilter !== "全部") p.set("nf", nodeFilter);
-    if (edgeFilter !== "全部关系") p.set("ef", edgeFilter);
-    if (searchQuery) p.set("sq", searchQuery);
-    if (docFilter) p.set("df", docFilter);
-    if (limits.doc !== 100) p.set("ld", String(limits.doc));
-    if (limits.sec !== 500) p.set("ls", String(limits.sec));
-    if (limits.entity !== 200) p.set("le", String(limits.entity));
-    if (limits.tbl !== 0) p.set("lt", String(limits.tbl));
-    if (selectedNode) p.set("sn", selectedNode.id);
-    const qs = p.toString();
-    window.history.replaceState(
-      null,
-      "",
-      qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
-    );
-  }, [nodeFilter, edgeFilter, searchQuery, docFilter, limits, selectedNode]);
+    syncSnapshotUrl();
+  }, [syncSnapshotUrl]);
 
   const refreshNodeSearch = useCallback(
     (query: string, graphData: GraphData | null) => {
@@ -621,10 +703,18 @@ export function useGraphPage({
   }
 
   function shareSnapshot() {
-    navigator.clipboard.writeText(window.location.href).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    syncSnapshotUrl();
+    const shareUrl = window.location.href;
+    navigator.clipboard
+      .writeText(shareUrl)
+      .then(() => {
+        toast.success("链接已复制");
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        toast.error("复制链接失败");
+      });
   }
 
   useEffect(() => {
@@ -730,10 +820,12 @@ export function useGraphPage({
             wRef,
             tRef,
             setScale,
+            handleTransformChange,
             (node) => setSelectedNode(node),
             highlightedIds,
             heatMap,
             isDarkTheme,
+            viewTransformRef.current,
           )
             .then(({ zoom, destroy }) => {
               pixiDestroyRef.current = destroy;
@@ -756,6 +848,7 @@ export function useGraphPage({
         canvasRef.current,
         tooltipEl,
         setScale,
+        handleTransformChange,
         (node) => setSelectedNode(node),
         highlightedIds,
         heatMap,
@@ -764,6 +857,7 @@ export function useGraphPage({
         isDarkTheme,
         colorOverride.size > 0 ? colorOverride : undefined,
         userAnnotatedIds.size > 0 ? userAnnotatedIds : undefined,
+        viewTransformRef.current,
       ) as unknown as d3.ZoomBehavior<Element, unknown>;
     } else if (svgRef.current) {
       zoomRef.current = drawGraph(
@@ -771,12 +865,14 @@ export function useGraphPage({
         svgRef.current,
         tooltipEl,
         setScale,
+        handleTransformChange,
         (node) => setSelectedNode(node),
         highlightedIds,
         heatMap,
         tour.tourOpen ? tour.tourNodeIds : undefined,
         tour.tourOpen ? tour.tourCurrentId : undefined,
         isDarkTheme,
+        viewTransformRef.current,
       ) as unknown as d3.ZoomBehavior<Element, unknown>;
     }
     return () => {
@@ -806,6 +902,7 @@ export function useGraphPage({
     svgRef.current,
     webglRef.current,
     tooltipRef.current,
+    handleTransformChange,
   ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onExpandAll(

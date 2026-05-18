@@ -50,6 +50,7 @@ export function drawGraphCanvas(
   canvasEl: HTMLCanvasElement,
   tooltipEl: HTMLDivElement,
   onScaleChange: (s: number) => void,
+  onTransformChange: (transform: d3.ZoomTransform) => void,
   onNodeClick: (node: GraphNode) => void,
   highlightedIds: Set<string>,
   heatMap: Map<string, number>,
@@ -58,6 +59,7 @@ export function drawGraphCanvas(
   isDarkTheme = true,
   colorOverride?: Map<string, string>,
   userAnnotatedIds?: Set<string>,
+  initialTransform: d3.ZoomTransform = d3.zoomIdentity,
 ): d3.ZoomBehavior<HTMLCanvasElement, unknown> {
   const labelFill = isDarkTheme ? "#ffffff" : "#0f172a";
   const tooltipHint = isDarkTheme ? "#6b7280" : "#64748b";
@@ -109,7 +111,7 @@ export function drawGraphCanvas(
     .velocityDecay(0.4)
     .alphaMin(0.05);
 
-  let transform = d3.zoomIdentity;
+  let transform = initialTransform;
 
   function isVisibleNode(n: SimNode): boolean {
     if (n.x == null || n.y == null) return false;
@@ -289,12 +291,13 @@ export function drawGraphCanvas(
     .on("zoom", (event) => {
       transform = event.transform;
       onScaleChange(event.transform.k);
+      onTransformChange(event.transform);
       render();
     });
 
   const sel = d3.select(canvasEl);
   sel.call(zoom);
-  sel.call(zoom.transform, d3.zoomIdentity);
+  sel.call(zoom.transform, initialTransform);
   sel
     .style("cursor", "grab")
     .on("mousedown.cursor", () => sel.style("cursor", "grabbing"))

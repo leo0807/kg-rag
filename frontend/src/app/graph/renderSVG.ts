@@ -72,12 +72,14 @@ export function drawGraph(
     svgEl: SVGSVGElement,
     tooltipEl: HTMLDivElement,
     onScaleChange: (s: number) => void,
+    onTransformChange: (transform: d3.ZoomTransform) => void,
     onNodeClick: (node: GraphNode) => void,
     highlightedIds: Set<string>,
     heatMap: Map<string, number>,
     tourNodeIds?: Set<string>,
     tourCurrentId?: string,
     isDarkTheme = true,
+    initialTransform: d3.ZoomTransform = d3.zoomIdentity,
 ): d3.ZoomBehavior<SVGSVGElement, unknown> {
     const labelFill = isDarkTheme ? "#ffffff" : "#0f172a";
     const mutedLabelFill = isDarkTheme ? "#475569" : "#64748b";
@@ -91,9 +93,13 @@ export function drawGraph(
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([MIN_SCALE, MAX_SCALE])
-        .on("zoom", event => { container.attr("transform", event.transform); onScaleChange(event.transform.k); });
+        .on("zoom", event => {
+            container.attr("transform", event.transform);
+            onScaleChange(event.transform.k);
+            onTransformChange(event.transform);
+        });
     svg.call(zoom);
-    svg.call(zoom.transform, d3.zoomIdentity);
+    svg.call(zoom.transform, initialTransform);
     svg.style("cursor", "grab")
         .on("mousedown.cursor", () => svg.style("cursor", "grabbing"))
         .on("mouseup.cursor",   () => svg.style("cursor", "grab"));
