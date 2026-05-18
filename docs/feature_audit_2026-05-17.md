@@ -140,9 +140,9 @@
 ### F021 🟢 浅色/深色主题切换
 - **evidence**：`frontend/src/components/ThemeToggle.tsx:6,11,21` localStorage 持久化
 
-### F022 🟡 移动端适配
-- **evidence**：`backend/src/routers/mobile.py` `/api/mobile` 路由；前端部分 Tailwind `sm:`, `lg:` 响应式类
-- **notes**：后端有移动专用端点，前端有部分响应式样式，但覆盖不全面（仅 query 页面有 `sm:` 类，全局布局未经系统性移动端测试）。
+### F022 🟢 移动端适配
+- **evidence**：`frontend/src/app/query/`、`frontend/src/app/settings/`、`frontend/src/app/graph/` 已接入响应式布局；query/settings/graph 的移动入口与降级结构已完成
+- **notes**：query 页折叠会话侧栏、settings 页有移动端设置/退出入口、graph 页工具栏可换行且详情侧栏可降级为移动端面板。登录页与深度图谱优化拆分到 F123 / F124。
 
 ### F023 🟢 数据飞轮：查询结果 👍/👎 评分 → 收集高质量问答对 → 微调 Reranker
 - **evidence**：

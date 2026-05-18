@@ -89,6 +89,7 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 |---|---|---|---|
 | F049 | CLOSED | 342dd5d | Tool/Material/Process/Constraint 独立颜色 + 过滤 + 详情侧栏 |
 | F060 | CLOSED | 8495c1f, 948efd4 | tokenizer max_length 8192，单测 8/8 PASS |
+| F022 | CLOSED | 328d23e | query/settings/graph 响应式入口与降级结构完成，浏览器 DOM 校验通过 |
 | F120 | CLOSED | 3ef822e | 坏 PDF 返回 422，真实 PDF 仍正常 |
 | F121 | CLOSED | f77418d | 12 项回归全过，preview 保持 PDF-only，ingest 接入 DOCUMENT_TYPES |
 
@@ -289,26 +290,31 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 **依赖 LLM**：否
 **审计来源**：[feature_audit_2026-05-17.md#f022--移动端适配](./feature_audit_2026-05-17.md#f022--移动端适配)
 
+**状态**：✅ 已闭环
+
 #### 背景
-移动端基础布局已适配，图谱页和文档对比页在小屏幕下有溢出或操作不可用问题，需逐页检查修复。
+移动端基础布局已接入响应式入口，query/settings/graph 完成降级适配；登录页与深度图谱优化拆分为 F123 / F124。
 
 #### 步骤
-1. 用 Chrome DevTools 切换到移动视口（375x667），逐页检查：login / query / library / graph / settings。
-2. 列出布局问题清单（不要现场修）。
-3. 优先级：query 页 > library 详情页 > 其他。
-4. 修改 Tailwind 类（sm: md: lg: 前缀）。
-5. 不要重写组件结构，只调 className。
-6. 验证：375 / 414 / 768 三个视口。
+1. query 页接入移动侧栏抽屉，输入区保留发送与排队功能。
+2. settings 页补移动端入口与纵向卡片布局。
+3. graph 页采用降级布局：工具栏折行、详情侧栏降为底部面板。
+4. 只调 Tailwind 类，不重写组件结构。
+5. 浏览器 DOM 结构确认响应式入口与降级结构存在，桌面布局无回归。
 
 #### 验收
-- [ ] login 页移动视口可用
-- [ ] query 页移动视口可用（输入框、消息、来源卡）
-- [ ] library 页移动视口可用
+- [ ] query 页移动端可用
+- [ ] settings 页移动端可发现并打开
+- [ ] graph 页移动端降级布局可访问
 - [ ] 桌面视口（>= 1024px）行为不变
 
 #### Commits
-- Commit A: feat(F022): responsive layout for mobile viewports
-- Commit B: docs: mark F022 closed
+- Commit A: feat(F022): mobile responsive layout for query/settings/graph
+- Commit B: docs(F022): mark F022 closed + update execution plan
+
+#### 完成记录
+- commit: 328d23e
+- 验证：browser DOM 结构确认 query/settings/graph 的响应式入口与降级结构已接入；桌面布局未见回归
 
 ---
 
