@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut, Settings } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useFavorites } from "@/app/favorites/useFavorites";
@@ -54,7 +54,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex-shrink-0 border-r flex flex-col transition-all duration-200 ${collapsed ? "w-14" : "w-44"}`}
+      className={`flex-shrink-0 border-r flex flex-col transition-all duration-200 h-full min-h-0 ${collapsed ? "w-14" : "w-44"}`}
       style={{ background: "var(--nav-bg)", borderColor: "var(--nav-border)" }}
     >
       {/* Logo + 折叠按钮 */}
@@ -90,8 +90,29 @@ export default function Sidebar() {
         </button>
       </div>
 
+      <div
+        className="md:hidden px-2 py-2 border-b flex flex-col gap-1"
+        style={{ borderColor: "var(--nav-border)" }}
+      >
+        <SidebarLink
+          href="/settings"
+          label="设置"
+          Icon={Settings}
+          active={isActive("/settings")}
+          collapsed={false}
+        />
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10 transition-colors"
+        >
+          <LogOut size={15} />
+          退出登录
+        </button>
+      </div>
+
       {/* 导航（可滚动，flex-1 撑满剩余空间） */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
+      <nav className="flex-1 min-h-0 overflow-y-auto px-2 py-3 space-y-0.5">
         {mainNavItems.map(({ href, label, shortcut, Icon }) => {
           const active = isActive(href);
           const badge =

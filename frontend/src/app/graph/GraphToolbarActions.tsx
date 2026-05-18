@@ -57,7 +57,7 @@ function ActionButton({
       type="button"
       onClick={onClick}
       title={title}
-      className={`flex shrink-0 items-center gap-0 whitespace-nowrap px-0.5 h-4 rounded text-[10px] font-medium transition-colors ${
+      className={`flex shrink-0 items-center gap-1 whitespace-nowrap px-1.5 h-7 rounded text-[10px] font-medium transition-colors ${
         active
           ? "bg-indigo-600 text-white"
           : "text-gray-500 hover:text-gray-100 hover:bg-gray-800"
@@ -97,11 +97,11 @@ export function GraphToolbarActions({
   setShowLegend,
 }: Props) {
   return (
-    <div className="flex flex-nowrap items-center gap-0 overflow-x-auto px-1 py-0 whitespace-nowrap">
+    <div className="flex flex-wrap items-center gap-1 px-1 py-0 sm:flex-nowrap sm:overflow-x-auto sm:whitespace-nowrap">
       <select
         value={docFilter}
         onChange={(e) => setDocFilter(e.target.value)}
-        className="h-4 max-w-[80px] shrink-0 rounded border border-gray-700 bg-gray-800 px-0.5 text-[10px] text-gray-400 outline-none focus:border-indigo-500"
+        className="h-7 w-full max-w-full shrink-0 rounded border border-gray-700 bg-gray-800 px-1.5 text-[10px] text-gray-400 outline-none focus:border-indigo-500 sm:max-w-[80px]"
       >
         <option value="">全部文档</option>
         {docs.map((d) => (
@@ -127,7 +127,7 @@ export function GraphToolbarActions({
         )}
       </ActionButton>
 
-      <div className="h-3.5 w-px shrink-0 bg-gray-700" />
+      <div className="hidden h-3.5 w-px shrink-0 bg-gray-700 sm:block" />
       <ActionButton
         active={importanceMode}
         title="按节点重要性着色"
@@ -149,7 +149,7 @@ export function GraphToolbarActions({
       >
         ✦ 预测
       </ActionButton>
-      <div className="h-3.5 w-px shrink-0 bg-gray-700" />
+      <div className="hidden h-3.5 w-px shrink-0 bg-gray-700 sm:block" />
 
       <div className="flex shrink-0 items-center rounded bg-gray-800/60 px-0.5 py-0">
         {(["svg", "canvas", "webgl"] as const).map((m) => (

@@ -1,7 +1,13 @@
 "use client";
 
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
-import type { EdgeFilter, GraphNode, Limits, NodeFilter, RenderMode } from "./constants";
+import type {
+  EdgeFilter,
+  GraphNode,
+  Limits,
+  NodeFilter,
+  RenderMode,
+} from "./constants";
 import { type GraphTheme, MAX_SCALE, MIN_SCALE } from "./constants";
 import { GraphLegend } from "./GraphLegend";
 import { GraphLimitsPanel } from "./GraphLimitsPanel";
@@ -78,6 +84,8 @@ export function GraphWorkspace({
   viewStats,
   selectedNodeKey,
 }: Props) {
+  const hasSidePanel = showLimits || Boolean(selectedNode);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-h-0">
       <div className="flex-1 flex overflow-hidden min-h-0">
@@ -179,23 +187,34 @@ export function GraphWorkspace({
           <div ref={tooltipRef} className={graphTheme.tooltipClassName} />
         </div>
 
-        {(showLimits || selectedNode) && (
-          <aside className="w-80 shrink-0 flex flex-col overflow-hidden border-l border-gray-800 bg-gray-950">
-            {showLimits && (
-              <div className="p-3 border-b border-gray-800">
-                <GraphLimitsPanel limits={limits} setLimits={setLimits} />
-              </div>
-            )}
-            {selectedNode && (
-              <NodeDetailSidebar
-                key={selectedNodeKey}
-                node={selectedNode}
-                onClose={() => setSelectedNode(null)}
-                onExpandSection={expandSection}
-                expandingId={expandingId}
-              />
-            )}
-          </aside>
+        {hasSidePanel && (
+          <>
+            <button
+              type="button"
+              aria-label="关闭图谱侧栏"
+              className="fixed inset-0 z-40 bg-black/60 md:hidden"
+              onClick={() => {
+                setSelectedNode(null);
+                setShowLimits(false);
+              }}
+            />
+            <aside className="fixed inset-x-0 bottom-0 z-50 flex max-h-[78vh] flex-col overflow-hidden rounded-t-2xl border-t border-gray-800 bg-gray-950 shadow-2xl md:static md:z-auto md:h-full md:w-80 md:shrink-0 md:rounded-none md:border-l md:border-t-0 md:shadow-none">
+              {showLimits && (
+                <div className="border-b border-gray-800 p-3">
+                  <GraphLimitsPanel limits={limits} setLimits={setLimits} />
+                </div>
+              )}
+              {selectedNode && (
+                <NodeDetailSidebar
+                  key={selectedNodeKey}
+                  node={selectedNode}
+                  onClose={() => setSelectedNode(null)}
+                  onExpandSection={expandSection}
+                  expandingId={expandingId}
+                />
+              )}
+            </aside>
+          </>
         )}
       </div>
 

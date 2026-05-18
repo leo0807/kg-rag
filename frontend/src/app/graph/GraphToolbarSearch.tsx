@@ -155,7 +155,7 @@ export function GraphToolbarSearch({
         onFocus={() => setSearchFocused(true)}
         onBlur={() => window.setTimeout(() => setSearchFocused(false), 120)}
         placeholder="搜索规范编号..."
-        className="h-7 w-52 shrink-0 rounded border border-gray-700 bg-gray-800 pl-6 pr-2 text-xs text-gray-200 outline-none focus:border-indigo-500"
+        className="h-7 w-full shrink-0 rounded border border-gray-700 bg-gray-800 pl-6 pr-2 text-xs text-gray-200 outline-none focus:border-indigo-500 sm:w-52"
       />
       {dropdown}
     </div>

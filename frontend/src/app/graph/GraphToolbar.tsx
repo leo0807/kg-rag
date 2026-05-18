@@ -116,7 +116,7 @@ export function GraphToolbar({
 }: Props) {
   return (
     <div className="shrink-0 flex flex-col bg-gray-900 border-b border-gray-800 z-20">
-      <div className="flex items-center gap-2 px-3 py-2 min-h-[56px] overflow-x-auto overflow-y-visible whitespace-nowrap">
+      <div className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:gap-2 sm:min-h-[56px]">
         <GraphFilterPanel
           nodeFilter={nodeFilter}
           setNodeFilter={setNodeFilter}
@@ -126,9 +126,9 @@ export function GraphToolbar({
           onToggleTables={onToggleTables}
         />
 
-        <div className="flex-1 min-w-4" />
+        <div className="hidden flex-1 min-w-4 sm:block" />
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 sm:flex-nowrap">
           <GraphToolbarSearch
             searchQuery={searchQuery}
             handleSearch={handleSearch}

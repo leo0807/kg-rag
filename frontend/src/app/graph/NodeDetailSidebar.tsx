@@ -73,7 +73,7 @@ export function NodeDetailSidebar({
   }
 
   return (
-    <div className="w-full shrink-0 bg-gray-900 flex flex-col overflow-auto">
+    <div className="w-full shrink-0 flex flex-col overflow-auto bg-gray-900 md:flex-1 md:min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
         <span

@@ -34,8 +34,8 @@ export function StrategySelector({
   onClear,
 }: Props) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-lg p-0.5">
+    <div className="flex flex-wrap items-center gap-2 mb-3">
+      <div className="flex flex-wrap gap-1 bg-gray-900 border border-gray-800 rounded-lg p-0.5">
         {STRATEGIES.map((s) => (
           <button
             type="button"

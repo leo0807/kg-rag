@@ -35,15 +35,15 @@ export function GraphLevelControl({
   onCollapseToLevel1,
 }: Props) {
   return (
-    <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap px-3 py-1.5 border-t border-gray-800/60 bg-gray-900/80">
+    <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-800/60 bg-gray-900/80">
       <span className="text-xs text-gray-600 shrink-0">章节深度</span>
-      <div className="flex items-center gap-0.5 shrink-0">
+      <div className="flex flex-wrap items-center gap-0.5 shrink-0">
         {[0, 1, 2, 3, 4].map((lv) => (
           <button
             key={lv}
             type="button"
             onClick={() => onShowLevel(lv)}
-            className={`shrink-0 whitespace-nowrap px-2 h-6 rounded text-xs font-medium transition-colors ${
+            className={`shrink-0 whitespace-nowrap px-2 h-7 rounded text-xs font-medium transition-colors ${
               showLevel === lv
                 ? "bg-amber-500 text-gray-950 font-semibold"
                 : "text-gray-500 hover:text-gray-100 hover:bg-gray-800"
@@ -54,13 +54,13 @@ export function GraphLevelControl({
         ))}
       </div>
 
-      <div className="w-px h-4 bg-gray-700 mx-1 shrink-0" />
+      <div className="hidden w-px h-4 bg-gray-700 mx-1 shrink-0 sm:block" />
 
       <button
         type="button"
         onClick={onToggleImages}
         title={showImages ? "隐藏图片节点" : "显示图片节点"}
-        className={`flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-6 rounded text-xs transition-colors ${
+        className={`flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-7 rounded text-xs transition-colors ${
           showImages
             ? "text-pink-400 bg-pink-950/30"
             : "text-gray-600 hover:text-gray-300 hover:bg-gray-800"
@@ -73,7 +73,7 @@ export function GraphLevelControl({
         type="button"
         onClick={onToggleEntities}
         title={showEntities ? "隐藏实体节点" : "显示实体节点"}
-        className={`flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-6 rounded text-xs transition-colors ${
+        className={`flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-7 rounded text-xs transition-colors ${
           showEntities
             ? "text-emerald-400 bg-emerald-950/30"
             : "text-gray-600 hover:text-gray-300 hover:bg-gray-800"
@@ -83,12 +83,12 @@ export function GraphLevelControl({
         实体
       </button>
 
-      <div className="w-px h-4 bg-gray-700 mx-1 shrink-0" />
+      <div className="hidden w-px h-4 bg-gray-700 mx-1 shrink-0 sm:block" />
 
       <button
         type="button"
         onClick={onExpandAll}
-        className="flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-6 rounded text-xs text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors"
+        className="flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-7 rounded text-xs text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors"
       >
         <ChevronDown size={11} />
         展开全部
@@ -96,7 +96,7 @@ export function GraphLevelControl({
       <button
         type="button"
         onClick={onCollapseToLevel1}
-        className="flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-6 rounded text-xs text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors"
+        className="flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-7 rounded text-xs text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors"
       >
         <ChevronUp size={11} />
         收起到一级
@@ -105,7 +105,7 @@ export function GraphLevelControl({
       <div className="flex-1" />
 
       {graphStats && (
-        <div className="flex items-center gap-2 text-xs text-gray-600">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
           <span>文档 {graphStats.docs}</span>
           <span>·</span>
           <span>章节 {graphStats.sections}</span>

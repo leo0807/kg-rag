@@ -47,7 +47,7 @@ export function ConversationInputComposer({
   onToggleFavorite,
 }: Props) {
   return (
-    <div className="flex items-end gap-2 rounded-2xl border border-gray-700 bg-gray-900 px-3 py-3 transition-colors focus-within:border-[#1B6BB5]">
+    <div className="flex items-end gap-2 rounded-2xl border border-gray-700 bg-gray-900 px-3 py-3 transition-colors focus-within:border-[#1B6BB5] sm:px-3.5 sm:py-3.5">
       <button
         type="button"
         onClick={onFileClick}

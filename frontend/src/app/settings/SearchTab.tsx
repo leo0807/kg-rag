@@ -43,15 +43,19 @@ export function SearchTab({
   return (
     <div className="space-y-6">
       {/* Alpha slider card */}
-      <div className="bg-gray-950 border border-gray-800 rounded-xl p-6">
-        <h3 className="text-sm font-semibold text-white mb-1">混合检索权重配置</h3>
+      <div className="bg-gray-950 border border-gray-800 rounded-2xl p-4 sm:p-6">
+        <h3 className="text-sm font-semibold text-white mb-1">
+          混合检索权重配置
+        </h3>
         <p className="text-xs text-gray-500 mb-6">
-          适用于 <span className="font-mono text-indigo-400">hybrid_es</span> 策略。
-          调整 BM25 关键词检索与向量语义检索的融合比例。
+          适用于 <span className="font-mono text-indigo-400">hybrid_es</span>{" "}
+          策略。 调整 BM25 关键词检索与向量语义检索的融合比例。
         </p>
 
         {loading ? (
-          <div className="h-24 flex items-center justify-center text-gray-500 text-sm">加载中…</div>
+          <div className="h-24 flex items-center justify-center text-gray-500 text-sm">
+            加载中…
+          </div>
         ) : (
           <>
             {/* Visual bar */}
@@ -89,7 +93,7 @@ export function SearchTab({
             </div>
 
             {/* Presets */}
-            <div className="flex gap-2 mb-6">
+            <div className="flex flex-wrap gap-2 mb-6">
               {[
                 { label: "纯关键词", v: 1.0 },
                 { label: "偏关键词", v: 0.7 },
@@ -113,18 +117,23 @@ export function SearchTab({
             </div>
 
             {/* Description table */}
-            <div className="rounded-lg border border-gray-800 overflow-hidden text-xs mb-6">
-              <div className="grid grid-cols-3 bg-gray-900 text-gray-500 px-4 py-2 font-medium">
-                <span>α 值</span><span>BM25 权重</span><span>适用场景</span>
+            <div className="rounded-lg border border-gray-800 overflow-x-auto text-xs mb-6">
+              <div className="grid min-w-[420px] grid-cols-3 bg-gray-900 text-gray-500 px-4 py-2 font-medium">
+                <span>α 值</span>
+                <span>BM25 权重</span>
+                <span>适用场景</span>
               </div>
               {[
                 { a: "1.0", b: "100%", s: "精确术语、型号编号、代码检索" },
-                { a: "0.7", b: "70%",  s: "偏关键词，兼顾语义" },
-                { a: "0.5", b: "50%",  s: "均衡混合（默认推荐）" },
-                { a: "0.3", b: "30%",  s: "偏语义，容忍同义词变体" },
-                { a: "0.0", b: "0%",   s: "纯语义，近义词/跨语言场景" },
+                { a: "0.7", b: "70%", s: "偏关键词，兼顾语义" },
+                { a: "0.5", b: "50%", s: "均衡混合（默认推荐）" },
+                { a: "0.3", b: "30%", s: "偏语义，容忍同义词变体" },
+                { a: "0.0", b: "0%", s: "纯语义，近义词/跨语言场景" },
               ].map((row) => (
-                <div key={row.a} className="grid grid-cols-3 px-4 py-2 border-t border-gray-800 text-gray-400">
+                <div
+                  key={row.a}
+                  className="grid min-w-[420px] grid-cols-3 px-4 py-2 border-t border-gray-800 text-gray-400"
+                >
                   <span className="font-mono text-indigo-400">{row.a}</span>
                   <span>{row.b}</span>
                   <span>{row.s}</span>

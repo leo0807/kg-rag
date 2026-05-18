@@ -5,27 +5,30 @@ import { fetchApi } from "@/lib/api";
 import { getToken } from "./types";
 
 interface Props {
-  showMsg:   (m: string) => void;
+  showMsg: (m: string) => void;
   showError: (e: string) => void;
 }
 
 export function AlertTab({ showMsg, showError }: Props) {
-  const [dingtalk,  setDingtalk]  = useState("");
-  const [wecom,     setWecom]     = useState("");
-  const [cooldown,  setCooldown]  = useState("30");
-  const [testing,   setTesting]   = useState(false);
-  const [saving,    setSaving]    = useState(false);
+  const [dingtalk, setDingtalk] = useState("");
+  const [wecom, setWecom] = useState("");
+  const [cooldown, setCooldown] = useState("30");
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   async function handleSave() {
     setSaving(true);
     try {
       await fetchApi("/api/settings/system", {
         method: "PUT",
-        headers: { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           settings: {
-            DINGTALK_WEBHOOK:       dingtalk,
-            WECOM_WEBHOOK:          wecom,
+            DINGTALK_WEBHOOK: dingtalk,
+            WECOM_WEBHOOK: wecom,
             ALERT_COOLDOWN_MINUTES: cooldown,
           },
         }),
@@ -47,8 +50,14 @@ export function AlertTab({ showMsg, showError }: Props) {
     try {
       await fetchApi("/api/settings/alert/test", {
         method: "POST",
-        headers: { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ dingtalk_webhook: dingtalk, wecom_webhook: wecom }),
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          dingtalk_webhook: dingtalk,
+          wecom_webhook: wecom,
+        }),
       });
       showMsg("测试消息已发送，请检查对应群聊");
     } catch (e) {
@@ -60,7 +69,7 @@ export function AlertTab({ showMsg, showError }: Props) {
 
   return (
     <div className="space-y-5">
-      <div className="bg-gray-950 border border-gray-800 rounded-xl p-5 space-y-4">
+      <div className="bg-gray-950 border border-gray-800 rounded-2xl p-4 sm:p-5 space-y-4">
         <h3 className="text-sm font-semibold text-white">Webhook 配置</h3>
 
         <div className="space-y-3">
@@ -76,7 +85,9 @@ export function AlertTab({ showMsg, showError }: Props) {
           </label>
 
           <label className="block">
-            <span className="text-xs text-gray-400">企业微信机器人 Webhook</span>
+            <span className="text-xs text-gray-400">
+              企业微信机器人 Webhook
+            </span>
             <input
               value={wecom}
               onChange={(e) => setWecom(e.target.value)}
@@ -97,12 +108,14 @@ export function AlertTab({ showMsg, showError }: Props) {
               className="mt-1 w-32 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg
                          text-sm text-gray-200 outline-none focus:border-indigo-500"
             />
-            <p className="mt-1 text-xs text-gray-600">同一告警标题在冷却期内只推送一次</p>
+            <p className="mt-1 text-xs text-gray-600">
+              同一告警标题在冷却期内只推送一次
+            </p>
           </label>
         </div>
       </div>
 
-      <div className="bg-gray-950 border border-gray-800 rounded-xl p-5">
+      <div className="bg-gray-950 border border-gray-800 rounded-2xl p-4 sm:p-5">
         <h3 className="text-sm font-semibold text-white mb-3">触发场景</h3>
         <ul className="space-y-1.5 text-xs text-gray-400">
           <li>🔴 文档批量解析失败（失败数 &gt; 5）</li>
@@ -113,7 +126,7 @@ export function AlertTab({ showMsg, showError }: Props) {
         </ul>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <button
           type="button"
           onClick={handleTest}

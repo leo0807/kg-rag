@@ -1,6 +1,7 @@
 "use client";
-import { useCallback, useEffect, useRef } from "react";
+
 import { X } from "lucide-react";
+import { useCallback, useEffect, useRef } from "react";
 import { useFavorites } from "@/app/favorites/useFavorites";
 import { ConversationInputComposer } from "./ConversationInputComposer";
 import { ConversationInputStatusBars } from "./ConversationInputStatusBars";
@@ -111,12 +112,17 @@ export default function ConversationInput({
     Boolean(value.trim() || pendingImages.length > 0) && !loading && !streaming;
 
   return (
-    <div className="border-t border-gray-800 bg-gray-950 px-4 py-4 relative">
+    <div className="border-t border-gray-800 bg-gray-950 px-3 py-3 relative sm:px-4 sm:py-4">
       {queuedQuestion && (
         <div className="mb-2 flex items-center gap-2 rounded-lg border border-indigo-800/40 bg-indigo-950/30 px-3 py-1.5 text-xs text-indigo-300">
           <div className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-indigo-400" />
           <span className="truncate flex-1">排队中：{queuedQuestion}</span>
-          <button type="button" onClick={onCancelQueue} className="shrink-0 text-gray-500 hover:text-gray-300" title="取消排队">
+          <button
+            type="button"
+            onClick={onCancelQueue}
+            className="shrink-0 text-gray-500 hover:text-gray-300"
+            title="取消排队"
+          >
             <X size={12} />
           </button>
         </div>

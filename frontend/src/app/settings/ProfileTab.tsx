@@ -48,8 +48,8 @@ export function ProfileTab({ showMsg, showError }: Props) {
   if (!profile) return <div className="text-sm text-gray-500">加载中…</div>;
 
   return (
-    <div className="space-y-4 bg-gray-900 rounded-xl p-5 border border-gray-800">
-      <div className="grid grid-cols-2 gap-4">
+    <div className="space-y-4 bg-gray-900 rounded-2xl p-4 sm:p-5 border border-gray-800">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label
             htmlFor="profile-username"

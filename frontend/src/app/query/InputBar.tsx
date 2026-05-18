@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Download, GitBranch, GitCompare, PanelLeft } from "lucide-react";
+import { useEffect, useState } from "react";
 import { fetchApi } from "@/lib/api";
-import { Download, GitBranch, GitCompare } from "lucide-react";
 
 function PipelineBadge() {
   const [hasDefault, setHasDefault] = useState(false);
@@ -28,15 +28,36 @@ interface Props {
   canExport: boolean;
   onToggleCompare: () => void;
   onExport: () => void;
+  onOpenConversationSidebar?: () => void;
 }
 
-export function InputBar({ title, compareMode, canExport, onToggleCompare, onExport }: Props) {
+export function InputBar({
+  title,
+  compareMode,
+  canExport,
+  onToggleCompare,
+  onExport,
+  onOpenConversationSidebar,
+}: Props) {
   return (
-    <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800 shrink-0">
-      <div className="text-sm text-gray-400 truncate">{title}</div>
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-2 px-4 py-3 border-b border-gray-800 shrink-0 md:flex-row md:items-center md:justify-between md:px-6">
+      <div className="flex items-center gap-2 min-w-0">
+        {onOpenConversationSidebar && (
+          <button
+            type="button"
+            onClick={onOpenConversationSidebar}
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-800 px-2 py-1 text-xs text-gray-400 hover:border-indigo-500 hover:text-white md:hidden"
+          >
+            <PanelLeft size={12} />
+            会话
+          </button>
+        )}
+        <div className="text-sm text-gray-400 truncate">{title}</div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
         <PipelineBadge />
         <button
+          type="button"
           onClick={onToggleCompare}
           title="四策略对比模式"
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg transition-colors ${
@@ -49,6 +70,7 @@ export function InputBar({ title, compareMode, canExport, onToggleCompare, onExp
           {compareMode ? "对比模式 ON" : "对比模式"}
         </button>
         <button
+          type="button"
           onClick={onExport}
           disabled={!canExport}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 hover:border-gray-600 rounded-lg transition-colors disabled:opacity-30"

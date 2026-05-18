@@ -27,15 +27,15 @@ export function GraphFilterPanel({
   onToggleTables,
 }: Props) {
   return (
-    <>
-      <div className="flex items-center gap-0.5">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         {NODE_TYPES.map((type) => (
           <button
             key={type}
             type="button"
             onClick={() => setNodeFilter(type)}
             title={type}
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-1 px-2.5 h-8 rounded text-xs font-medium transition-colors whitespace-nowrap ${
               nodeFilter === type
                 ? "bg-indigo-600 text-white"
                 : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
@@ -56,7 +56,7 @@ export function GraphFilterPanel({
         type="button"
         onClick={onToggleTables}
         title={showTables ? "隐藏表格节点" : "显示表格节点（默认关闭）"}
-        className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+        className={`flex items-center gap-1 px-2.5 h-8 rounded text-xs font-medium transition-colors ${
           showTables
             ? "bg-green-600 text-white"
             : "text-gray-500 hover:text-gray-100 hover:bg-gray-800 border border-dashed border-gray-700"
@@ -69,12 +69,12 @@ export function GraphFilterPanel({
         表格
       </button>
 
-      <div className="w-px h-5 bg-gray-700 mx-0.5 shrink-0" />
+      <div className="hidden h-5 w-px shrink-0 bg-gray-700 mx-0.5 sm:block" />
 
       <select
         value={edgeFilter}
         onChange={(e) => setEdgeFilter(e.target.value as EdgeFilter)}
-        className="h-7 px-2 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300 outline-none focus:border-indigo-500 max-w-[138px]"
+        className="h-8 w-full rounded border border-gray-700 bg-gray-800 px-2 text-xs text-gray-300 outline-none focus:border-indigo-500 sm:max-w-[138px]"
       >
         {EDGE_TYPES.map((t) => (
           <option key={t} value={t}>
@@ -82,6 +82,6 @@ export function GraphFilterPanel({
           </option>
         ))}
       </select>
-    </>
+    </div>
   );
 }

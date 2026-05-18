@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import NetToast from "@/components/NetToast";
 import { ChatPanel } from "./ChatPanel";
 import ConversationInput from "./ConversationInput";
@@ -8,6 +9,7 @@ import { InputBar } from "./InputBar";
 import { useChat } from "./useChat";
 
 export default function QueryPage() {
+  const [mobileConversationOpen, setMobileConversationOpen] = useState(false);
   const chat = useChat();
   const {
     conversations,
@@ -70,7 +72,7 @@ export default function QueryPage() {
   }
 
   return (
-    <div className="flex h-full bg-gray-950">
+    <div className="relative flex h-full bg-gray-950">
       {netToast && (
         <NetToast
           type={netToast.type}
@@ -78,14 +80,46 @@ export default function QueryPage() {
           onClose={() => setNetToast(null)}
         />
       )}
-      <ConversationSidebar
-        conversations={conversations}
-        activeId={activeId}
-        onSelect={setActiveId}
-        onDelete={deleteConversation}
-        onNew={() => createConversation()}
-        disableNew={activeConv !== null && historyLen === 0}
+      <div className="hidden md:flex shrink-0">
+        <ConversationSidebar
+          conversations={conversations}
+          activeId={activeId}
+          onSelect={setActiveId}
+          onDelete={deleteConversation}
+          onNew={() => createConversation()}
+          disableNew={activeConv !== null && historyLen === 0}
+        />
+      </div>
+
+      <button
+        type="button"
+        aria-label="关闭会话列表"
+        className={`fixed inset-0 z-40 bg-black/60 transition-opacity md:hidden ${
+          mobileConversationOpen
+            ? "opacity-100"
+            : "pointer-events-none opacity-0"
+        }`}
+        onClick={() => setMobileConversationOpen(false)}
       />
+      <div
+        className={`fixed inset-y-0 left-0 z-50 transition-transform duration-200 md:hidden ${
+          mobileConversationOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <ConversationSidebar
+          mobile
+          conversations={conversations}
+          activeId={activeId}
+          onSelect={(id) => {
+            setActiveId(id);
+            setMobileConversationOpen(false);
+          }}
+          onDelete={deleteConversation}
+          onNew={() => createConversation()}
+          disableNew={activeConv !== null && historyLen === 0}
+          onClose={() => setMobileConversationOpen(false)}
+        />
+      </div>
 
       <div className="flex-1 flex flex-col min-w-0">
         <InputBar
@@ -94,6 +128,7 @@ export default function QueryPage() {
           canExport={!!activeConv && historyLen > 0}
           onToggleCompare={toggleCompareMode}
           onExport={exportConversation}
+          onOpenConversationSidebar={() => setMobileConversationOpen(true)}
         />
 
         <ChatPanel
