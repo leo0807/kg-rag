@@ -2,11 +2,11 @@
 
 ## 摘要
 - 总任务数：15
-- 已完成：4（F049、F060、F120、F121）
-- 待完成：11
-- 估算工时：28.0 人天
+- 已完成：5（F049、F060、F110、F120、F121）
+- 待完成：10
+- 估算工时：26.5 人天
 - LLM 依赖任务（GATED ON B001）：2 条
-- 当前 HEAD：f77418d
+- 当前 HEAD：3163ade
 
 ## 工作纪律（每条任务执行前必读）
 
@@ -83,12 +83,17 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 - commit: f77418d
 - 验证：`/api/preview` 6 项 + `/api/ingest` 6 项，共 12 项回归全过；`validate_upload()` 支持 `allowed_types` 白名单
 
+### F110 图谱快照 URL 分享（已闭环 ✓）
+- commit: 3163ade
+- 验证：图谱页复制分享链接后可恢复过滤、选中节点与缩放状态；既有 `nf` / `sn` URL 同步已扩展为完整 snapshot 同步
+
 ## 完成记录表
 
 | 任务 | 结果 | commit | 验证摘要 |
 |---|---|---|---|
 | F049 | CLOSED | 342dd5d | Tool/Material/Process/Constraint 独立颜色 + 过滤 + 详情侧栏 |
 | F060 | CLOSED | 8495c1f, 948efd4 | tokenizer max_length 8192，单测 8/8 PASS |
+| F110 | CLOSED | 3163ade | 图谱快照 URL 可复制分享并恢复过滤、选中节点与缩放状态 |
 | F022 | CLOSED | 328d23e | query/settings/graph 响应式入口与降级结构完成，浏览器 DOM 校验通过 |
 | F120 | CLOSED | 3ef822e | 坏 PDF 返回 422，真实 PDF 仍正常 |
 | F121 | CLOSED | f77418d | 12 项回归全过，preview 保持 PDF-only，ingest 接入 DOCUMENT_TYPES |
@@ -348,12 +353,14 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 
 ---
 
-### 任务 8：F110 图谱快照 URL 分享
+### 任务 8：F110 图谱快照 URL 分享（已闭环 ✓）
 **优先级**：P2
 **估时**：2 天
 **类型**：实施型
 **依赖 LLM**：否
 **审计来源**：[feature_audit_2026-05-17.md#f110--图谱快照与分享url-可分享快照](./feature_audit_2026-05-17.md#f110--图谱快照与分享url-可分享快照)
+
+**状态**：✅ 已闭环
 
 #### 背景
 图谱页当前状态保存在 URL（`?nf=Tool&sn=xxx`），但完整的图谱视图状态（滤镜、缩放、高亮）没有可分享的快照机制。
@@ -364,9 +371,13 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 - UI：图谱右上角加"复制分享链接"按钮
 
 #### 验收
-- [ ] 配置过滤器后点"分享"复制链接
-- [ ] 另一标签页打开链接，恢复相同视图状态
-- [ ] 链接 URL 长度可控（不超过 2KB）
+- [x] 配置过滤器后点"分享"复制链接
+- [x] 另一标签页打开链接，恢复相同视图状态
+- [x] 链接 URL 长度可控（不超过 2KB）
+
+#### 完成记录
+- commit: `3163ade`
+- 验证：图谱页可复制当前 snapshot URL，恢复过滤器、选中节点、缩放与渲染状态
 
 #### Commits
 - Commit A: feat(F110): graph snapshot URL share

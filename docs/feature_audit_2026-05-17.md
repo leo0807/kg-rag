@@ -425,9 +425,11 @@
 ### F108 🟢 用户活跃度报表（GET /api/admin/analytics/user-activity）
 - **evidence**：`backend/src/routers/admin_api/activity.py:186`
 
-### F110 🔴 图谱快照与分享（URL 可分享快照）
-- **evidence**：`useTour.ts` 中有 `snapshot` 变量但仅用于保存图谱漫游文本，非 URL 分享功能
-- **notes**：README 声称"保存为 URL 可分享的快照，团队成员打开链接可复现"，未找到实现。
+### F110 🟢 图谱快照与分享（URL 可分享快照）
+- **evidence**：`frontend/src/app/graph/useGraphPage.ts` / `renderCanvas.ts` / `renderSVG.ts` / `renderWebGL.ts`
+- **verified_at**：2026-05-18
+- **method**：图谱页选中节点后生成完整 snapshot URL，复制分享链接并在新标签页恢复过滤、选中节点和缩放状态
+- **notes**：现有 `nf` / `sn` URL 同步扩展为完整快照同步，分享按钮已可复制当前视图链接。
 
 ### F111 🟢 增量渲染与虚拟化（SVG → Canvas → WebGL）
 - **evidence**：
