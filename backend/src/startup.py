@@ -11,7 +11,7 @@ from fastapi import FastAPI
 
 from .core.config import settings
 from .core.database import init_db, get_driver
-from .core.logging import setup_logging
+from .core.logging_setup import setup_logging
 from .db.session import AsyncSessionLocal, init_tables
 from .services.infra.health import health_monitor
 from .services.retrieval.embedder import get_cached_embedding
