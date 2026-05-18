@@ -55,8 +55,8 @@
 |--------|--------|--------|---------|
 | P0     | 2      | 1.5 人天  | F038/F107 已关闭；F113+F114 已实现关闭（-2条 -1天） |
 | P1     | 7      | 9.0 人天  | F055 验证升 🟢；F073 已实现关闭；F120 新增（+1条 +0.5天） |
-| P2     | 5      | 10.5 人天 | F100 已实现关闭；F121 新增（+1条 +0.5天） |
-| 合计   | 14     | 21.0 人天 | 较初版 -5条 -2.5天 |
+| P2     | 6      | 11.5 人天 | F100 已实现关闭；F121/F122 新增（+2条 +1.5天） |
+| 合计   | 15     | 22.0 人天 | 较初版 -4条 -1.5天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
 > 最后更新：2026-05-18 遗留分析（F120+F121 新增；预存在改动分类完成）。
@@ -464,6 +464,41 @@ F049：需前端启动后目视检查 Tool / Material / Process 节点颜色 / �
 - [ ] 内联校验代码从 ingest.py 删除
 
 **依赖**：F113（已闭环）
+
+---
+
+### F122 全局长任务优雅关闭
+
+**状态**：🔴 未实现
+**优先级**：P2
+**审计来源**：F116 调研发现
+
+**任务描述**：
+SIGTERM 时，除了 SSE 流（F116 已覆盖），还有约 17 处 `asyncio.create_task()` 启动的后台长任务（PDF 入库、评测、GNN 训练、批量 OCR 等）。当前这些任务在 SIGTERM 时被直接 cancel，可能造成：
+- PDF 入库中途崩，知识库状态不一致
+- 评测任务部分结果丢失
+- GNN 训练 checkpoint 未保存
+
+**涉及位置**：
+- `backend/src/routers/docs/ingest.py:230`
+- `backend/src/routers/docs/entities.py:104`
+- `backend/src/routers/docs/reprocess.py`
+- `backend/src/routers/docs/images.py:205`
+- `backend/src/services/ingestion/backfill_runtime.py:104`
+- `backend/src/services/ingestion/batch_ingest_service.py`
+- `backend/src/services/evaluation/*`
+- `backend/src/routers/query/stream_agent.py:64`
+- `backend/src/routers/graph_api/predict.py:52`
+- `backend/src/routers/graph_api/gnn.py:109`
+- `backend/src/services/quality/conflict_scan.py:97`
+
+**设计选项**：
+- 选项 A：每类任务自己实现 checkpoint + resume（工作量大但鲁棒）
+- 选项 B：建一个全局 TaskRegistry，SIGTERM 时统一 cancel + 等待 N 秒（工作量中等，无 checkpoint 但有 grace）
+- 选项 C：依赖 Celery 接管所有长任务（依赖 F117，彻底解决但属于大重构）
+
+**估时**：1-2 周（取决于选项）
+**验收**：SIGTERM 后 30s 内，正在跑的任务要么完成，要么保存了 checkpoint 可恢复，不能“中途消失”
 
 ---
 
