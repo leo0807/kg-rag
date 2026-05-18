@@ -22,6 +22,15 @@ export function getApiBaseUrl() {
   return "";
 }
 
+function resolveApiUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("/api/") || url.startsWith("/uploads/")) {
+    const base = getApiBaseUrl();
+    return base ? `${base}${url}` : url;
+  }
+  return url;
+}
+
 function headersToRecord(headers?: HeadersInit): Record<string, string> {
   if (!headers) return {};
   if (headers instanceof Headers) return Object.fromEntries(headers.entries());
@@ -59,9 +68,10 @@ export async function fetchApi<T>(
   url: string,
   options?: FetchApiOptions,
 ): Promise<T> {
+  const resolvedUrl = resolveApiUrl(url);
   const headers = await getAuthHeaders(options?.headers);
 
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(resolvedUrl, { ...options, headers });
 
   if (!res.ok) {
     // token 过期或无效，跳转登录（除非调用方设置了 noLogout）
@@ -112,7 +122,7 @@ async function refreshToken(): Promise<void> {
   if (!token) return;
 
   try {
-    const res = await fetch("/api/auth/refresh", {
+    const res = await fetch(resolveApiUrl("/api/auth/refresh"), {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     });

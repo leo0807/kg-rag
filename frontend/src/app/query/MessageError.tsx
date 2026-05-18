@@ -8,6 +8,8 @@ const ERROR_HINTS: Record<string, string> = {
   rate_limited: "· 稍等片刻后重试",
   timeout: "· 点击重试，或换用响应更快的模型",
   service_unavailable: "· 检查 AI 服务是否正常运行",
+  stream_truncated: "· 已显示部分内容，可重新发送",
+  stream_empty: "· 请稍后重试",
   network_error: "· 检查网络后重新发送",
   unknown_error: "· 联系管理员查看后端日志",
 };
@@ -17,6 +19,8 @@ const ERROR_TITLES: Record<string, string> = {
   rate_limited: "请求过于频繁",
   timeout: "模型响应超时",
   service_unavailable: "AI 服务暂时不可用",
+  stream_truncated: "回答中断",
+  stream_empty: "服务暂时不可用",
   network_error: "网络连接异常",
 };
 

@@ -59,6 +59,233 @@ function isAbortError(error: unknown) {
   );
 }
 
+type StreamErrorKind =
+  | "network"
+  | "auth"
+  | "business"
+  | "stream_truncated"
+  | "stream_empty"
+  | "interrupted";
+
+interface StreamErrorInfo extends LLMErrorInfo {
+  kind: StreamErrorKind;
+  retryable: boolean;
+  httpStatus: number | null;
+}
+
+type StreamEvent = {
+  type: string;
+  content?: unknown;
+  message?: string;
+  options?: string[];
+  original_question?: string;
+  step?: number | string;
+  action?: string;
+  status?: string;
+  input?: unknown;
+  result_summary?: string;
+  code?: string;
+  status_code?: number | null;
+  httpStatus?: number | null;
+  error?: { code?: string; message?: string };
+};
+
+class StreamTerminalError extends Error {
+  constructor(public error: StreamErrorInfo) {
+    super(error.message);
+    this.name = "StreamTerminalError";
+  }
+}
+
+function extractErrorMessage(body: unknown, fallback: string): string {
+  if (typeof body === "string") return body.trim() || fallback;
+  if (!body || typeof body !== "object") return fallback;
+  const obj = body as {
+    detail?: string | { msg?: string }[];
+    message?: string;
+    error?: { message?: string; code?: string };
+  };
+  if (typeof obj.message === "string" && obj.message.trim()) return obj.message;
+  if (typeof obj.detail === "string" && obj.detail.trim()) return obj.detail;
+  if (Array.isArray(obj.detail)) {
+    const detailMsg = obj.detail
+      .map((item) => item?.msg)
+      .filter((msg): msg is string => typeof msg === "string" && msg.trim())
+      .join("; ");
+    if (detailMsg) return detailMsg;
+  }
+  if (
+    obj.error &&
+    typeof obj.error.message === "string" &&
+    obj.error.message.trim()
+  ) {
+    return obj.error.message;
+  }
+  return fallback;
+}
+
+function classifyHttpError(status: number, body: unknown): StreamErrorInfo {
+  const base = {
+    status_code: status,
+    endpoint: "",
+  };
+
+  if (status === 401) {
+    return {
+      ...base,
+      kind: "auth",
+      code: "unknown_error",
+      message: extractErrorMessage(body, "登录已过期，请重新登录"),
+      retryable: false,
+      httpStatus: 401,
+    };
+  }
+
+  if (status === 403) {
+    const code =
+      body && typeof body === "object"
+        ? ((body as { code?: string; error?: { code?: string } }).code ??
+          (body as { error?: { code?: string } }).error?.code)
+        : undefined;
+    if (code === "quota_exceeded") {
+      return {
+        ...base,
+        kind: "business",
+        code,
+        message: extractErrorMessage(body, "AI 服务额度不足，请联系管理员充值"),
+        retryable: false,
+        httpStatus: 403,
+      };
+    }
+    return {
+      ...base,
+      kind: "auth",
+      code: "unknown_error",
+      message: extractErrorMessage(body, "无权访问该资源"),
+      retryable: false,
+      httpStatus: 403,
+    };
+  }
+
+  if (status >= 400 && status < 500) {
+    const code =
+      body && typeof body === "object"
+        ? ((body as { code?: string; error?: { code?: string } }).code ??
+          (body as { error?: { code?: string } }).error?.code)
+        : undefined;
+    return {
+      ...base,
+      kind: "business",
+      code: code ?? "unknown_error",
+      message: extractErrorMessage(body, `请求错误 (${status})`),
+      retryable: false,
+      httpStatus: status,
+    };
+  }
+
+  if (status >= 500) {
+    return {
+      ...base,
+      kind: "business",
+      code: "service_unavailable",
+      message: extractErrorMessage(body, "服务暂时异常，请稍后重试"),
+      retryable: false,
+      httpStatus: status,
+    };
+  }
+
+  return {
+    ...base,
+    kind: "business",
+    code: "unknown_error",
+    message: `未知错误 (${status})`,
+    retryable: false,
+    httpStatus: status,
+  };
+}
+
+function classifyFetchException(err: unknown): StreamErrorInfo {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return {
+      kind: "interrupted",
+      code: "unknown_error",
+      message: "请求已取消",
+      status_code: null,
+      endpoint: "",
+      retryable: false,
+      httpStatus: null,
+    };
+  }
+  if (err instanceof TypeError) {
+    return {
+      kind: "network",
+      code: "network_error",
+      message: "网络连接失败，请检查网络后重试",
+      status_code: null,
+      endpoint: "",
+      retryable: true,
+      httpStatus: null,
+    };
+  }
+  return {
+    kind: "network",
+    code: "network_error",
+    message: err instanceof Error ? err.message : "未知网络错误",
+    status_code: null,
+    endpoint: "",
+    retryable: true,
+    httpStatus: null,
+  };
+}
+
+function classifySseError(event: {
+  code?: string;
+  status_code?: number | null;
+  httpStatus?: number | null;
+  message?: string;
+  content?: string;
+  error?: { code?: string; message?: string };
+}): StreamErrorInfo {
+  const code = event.code ?? event.error?.code;
+  const status = event.status_code ?? event.httpStatus ?? null;
+  const message =
+    event.message ?? event.error?.message ?? event.content ?? "处理失败";
+
+  if (code === "quota_exceeded") {
+    return {
+      kind: "business",
+      code,
+      message: "AI 服务额度不足，请联系管理员充值",
+      status_code: status,
+      endpoint: "",
+      retryable: false,
+      httpStatus: status,
+    };
+  }
+
+  if (status === 401 || status === 403) {
+    return {
+      kind: "auth",
+      code: "unknown_error",
+      message,
+      status_code: status,
+      endpoint: "",
+      retryable: false,
+      httpStatus: status,
+    };
+  }
+
+  return {
+    kind: "business",
+    code: code ?? "unknown_error",
+    message,
+    status_code: status,
+    endpoint: "",
+    retryable: false,
+    httpStatus: status,
+  };
+}
+
 export function useStreamQuery({
   strategy,
   useHyde,
@@ -163,12 +390,110 @@ export function useStreamQuery({
     let sources: SourceSection[] = [];
     let streamCausalChain: CausalChainData | null = null;
     let streamFollowUps: string[] = [];
-    let streamError: LLMErrorInfo | null = null;
+    let streamError: StreamErrorInfo | null = null;
     let streamExpansionInfo: string[] = [];
     let streamMetrics: QueryMetrics | null = null;
     let streamClarification: ClarificationInfo | null = null;
     let streamAgentSteps: AgentStepInfo[] = [];
     let currentAnswerImages: AnswerImage[] = [];
+
+    const handleStreamEvent = (event: StreamEvent) => {
+      if (event.type === "sources") {
+        sources = [...sources, ...event.content];
+        setRetrievedCount(sources.length);
+        return;
+      }
+      if (event.type === "sources_update") {
+        sources = Array.isArray(event.content) ? event.content : sources;
+        setRetrievedCount(sources.length);
+        return;
+      }
+      if (event.type === "clarification_needed") {
+        streamClarification = {
+          message: event.message ?? "您的问题有些宽泛，请选择您想了解的方向：",
+          options: event.options || [],
+          originalQuestion: event.original_question ?? question,
+        };
+        answerRef.current = streamClarification.message;
+        return;
+      }
+      if (event.type === "delta") {
+        receivedAnyDelta.current = true;
+        setStreamPhase("generating");
+        answerRef.current = normalizeAnswerText(
+          answerRef.current + event.content,
+        );
+        setStreamingText(answerRef.current);
+        return;
+      }
+      if (event.type === "steps") {
+        setReasoningSteps((prev) => [...prev, ...event.content]);
+        return;
+      }
+      if (event.type === "images") {
+        currentAnswerImages = Array.isArray(event.content) ? event.content : [];
+        setStreamAnswerImages(currentAnswerImages);
+        syncAssistantMessage(answerRef.current);
+        return;
+      }
+      if (event.type === "agent_step") {
+        streamAgentSteps = upsertAgentStep(streamAgentSteps, {
+          step: Number(event.step ?? 0),
+          action: String(event.action ?? ""),
+          status:
+            event.status === "failed"
+              ? "failed"
+              : event.status === "done"
+                ? "done"
+                : "running",
+          input: event.input,
+          result_summary: event.result_summary,
+        });
+        syncAssistantMessage(answerRef.current);
+        return;
+      }
+      if (event.type === "agent_steps") {
+        streamAgentSteps = Array.isArray(event.content)
+          ? event.content
+          : streamAgentSteps;
+        syncAssistantMessage(answerRef.current);
+        return;
+      }
+      if (event.type === "status") {
+        showNetToast("online", event.content, 2000);
+        if (String(event.content).includes("检索")) {
+          setStreamPhase("searching");
+        } else if (String(event.content).includes("生成")) {
+          setStreamPhase("generating");
+        }
+        return;
+      }
+      if (event.type === "causal_chain") {
+        streamCausalChain = event.content;
+        setCausalChain(event.content);
+        return;
+      }
+      if (event.type === "follow_up") {
+        streamFollowUps = event.content || [];
+        return;
+      }
+      if (event.type === "expansion") {
+        streamExpansionInfo = event.content || [];
+        return;
+      }
+      if (event.type === "metrics") {
+        streamMetrics = event.content;
+        return;
+      }
+      if (event.type === "error") {
+        const classified = classifySseError(event);
+        streamError = classified;
+        if (classified.kind === "auth" && classified.httpStatus === 401) {
+          applyAuthRedirect();
+        }
+        throw new StreamTerminalError(classified);
+      }
+    };
 
     const syncAssistantMessage = (content: string) => {
       if (!convId) return;
@@ -203,8 +528,75 @@ export function useStreamQuery({
       );
     };
 
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = 2;
     let retryDelay = 1000;
+
+    const applyAuthRedirect = () => {
+      if (typeof window === "undefined") return;
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      window.location.href = "/login";
+    };
+
+    const parseResponseBody = async (res: Response) => {
+      const text = await res.text();
+      if (!text.trim()) return null;
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { detail: text };
+      }
+    };
+
+    const persistCurrentAnswer = async (contentOverride?: string) => {
+      if (!convId) return;
+      const persistedAnswer = normalizeAnswerText(answerRef.current);
+      const finalContent =
+        contentOverride ?? streamClarification?.message ?? persistedAnswer;
+      const displayContent = finalContent || streamError?.message || "";
+      const shouldKeepAssistant =
+        Boolean(displayContent.trim()) ||
+        Boolean(streamError) ||
+        Boolean(streamClarification) ||
+        sources.length > 0 ||
+        streamAgentSteps.length > 0 ||
+        currentAnswerImages.length > 0 ||
+        Boolean(streamCausalChain) ||
+        streamFollowUps.length > 0 ||
+        streamExpansionInfo.length > 0 ||
+        Boolean(streamMetrics);
+
+      const finalMsgs = newMsgs.map((m) =>
+        m.id === aiMsgId
+          ? {
+              ...m,
+              content: displayContent,
+              sources,
+              clarification: streamClarification ?? undefined,
+              agentSteps:
+                streamAgentSteps.length > 0 ? streamAgentSteps : undefined,
+              answerImages:
+                currentAnswerImages.length > 0
+                  ? currentAnswerImages
+                  : undefined,
+              causalChain: streamCausalChain ?? undefined,
+              followUpQuestions:
+                streamFollowUps.length > 0 ? streamFollowUps : undefined,
+              errorInfo: streamError ?? undefined,
+              expansionInfo:
+                streamExpansionInfo.length > 0
+                  ? streamExpansionInfo
+                  : undefined,
+              metrics: streamMetrics ?? undefined,
+            }
+          : m,
+      );
+
+      await updateConversation(
+        convId,
+        shouldKeepAssistant ? finalMsgs : newMsgs.slice(0, -1),
+      );
+    };
 
     try {
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -225,6 +617,7 @@ export function useStreamQuery({
         }
 
         let streamDone = false;
+        const receivedAnyDelta = { current: false };
         try {
           requestTimedOut = false;
           requestTimeoutId = setTimeout(() => {
@@ -257,7 +650,14 @@ export function useStreamQuery({
               doc_hints: options?.docHints ?? [],
             }),
           });
-          if (!res.ok) throw new Error("请求失败");
+          if (!res.ok) {
+            const body = await parseResponseBody(res);
+            const httpError = classifyHttpError(res.status, body);
+            if (httpError.kind === "auth" && httpError.httpStatus === 401) {
+              applyAuthRedirect();
+            }
+            throw new StreamTerminalError(httpError);
+          }
 
           if (attempt === 0) {
             setLoading(false);
@@ -267,7 +667,17 @@ export function useStreamQuery({
           }
 
           const reader = res.body?.getReader();
-          if (!reader) throw new Error("流式响应为空");
+          if (!reader) {
+            throw new StreamTerminalError({
+              kind: "stream_empty",
+              code: "stream_empty",
+              message: "服务暂时不可用，请稍后重试",
+              status_code: null,
+              endpoint: "",
+              retryable: false,
+              httpStatus: null,
+            });
+          }
           const decoder = new TextDecoder();
           let buffer = "";
 
@@ -289,73 +699,7 @@ export function useStreamQuery({
                     break;
                   }
                   try {
-                    const event = JSON.parse(data);
-                    if (event.type === "sources") {
-                      sources = [...sources, ...event.content];
-                      setRetrievedCount(sources.length);
-                    } else if (event.type === "sources_update") {
-                      sources = Array.isArray(event.content)
-                        ? event.content
-                        : sources;
-                      setRetrievedCount(sources.length);
-                    } else if (event.type === "delta") {
-                      setStreamPhase("generating");
-                      answerRef.current = normalizeAnswerText(
-                        answerRef.current + event.content,
-                      );
-                      setStreamingText(answerRef.current);
-                    } else if (event.type === "steps") {
-                      setReasoningSteps((prev) => [...prev, ...event.content]);
-                    } else if (event.type === "images") {
-                      currentAnswerImages = Array.isArray(event.content)
-                        ? event.content
-                        : [];
-                      setStreamAnswerImages(currentAnswerImages);
-                      syncAssistantMessage(answerRef.current);
-                    } else if (event.type === "agent_step") {
-                      streamAgentSteps = upsertAgentStep(streamAgentSteps, {
-                        step: Number(event.step ?? 0),
-                        action: String(event.action ?? ""),
-                        status:
-                          event.status === "failed"
-                            ? "failed"
-                            : event.status === "done"
-                              ? "done"
-                              : "running",
-                        input: event.input,
-                        result_summary: event.result_summary,
-                      });
-                      syncAssistantMessage(answerRef.current);
-                    } else if (event.type === "agent_steps") {
-                      streamAgentSteps = Array.isArray(event.content)
-                        ? event.content
-                        : streamAgentSteps;
-                      syncAssistantMessage(answerRef.current);
-                    } else if (event.type === "status") {
-                      showNetToast("online", event.content, 2000);
-                      if (String(event.content).includes("检索")) {
-                        setStreamPhase("searching");
-                      } else if (String(event.content).includes("生成")) {
-                        setStreamPhase("generating");
-                      }
-                    } else if (event.type === "causal_chain") {
-                      streamCausalChain = event.content;
-                      setCausalChain(event.content);
-                    } else if (event.type === "follow_up") {
-                      streamFollowUps = event.content || [];
-                    } else if (event.type === "expansion") {
-                      streamExpansionInfo = event.content || [];
-                    } else if (event.type === "metrics") {
-                      streamMetrics = event.content;
-                    } else if (event.type === "error") {
-                      streamError = {
-                        code: event.code ?? "unknown_error",
-                        message:
-                          event.message ?? event.content ?? "AI 服务异常",
-                        status_code: event.status_code ?? null,
-                        endpoint: event.endpoint ?? "",
-                      };
-                    }
+                    handleStreamEvent(JSON.parse(data));
                   } catch {}
                 }
               }
@@ -374,110 +718,57 @@ export function useStreamQuery({
                 break;
               }
               try {
-                const event = JSON.parse(data);
-                if (event.type === "sources") {
-                  sources = [...sources, ...event.content];
-                  setRetrievedCount(sources.length);
-                } else if (event.type === "sources_update") {
-                  sources = Array.isArray(event.content)
-                    ? event.content
-                    : sources;
-                  setRetrievedCount(sources.length);
-                } else if (event.type === "clarification_needed") {
-                  streamClarification = {
-                    message:
-                      event.message ??
-                      "您的问题有些宽泛，请选择您想了解的方向：",
-                    options: event.options || [],
-                    originalQuestion: event.original_question ?? question,
-                  };
-                  answerRef.current = streamClarification.message;
-                } else if (event.type === "delta") {
-                  setStreamPhase("generating");
-                  answerRef.current = normalizeAnswerText(
-                    answerRef.current + event.content,
-                  );
-                  setStreamingText(answerRef.current);
-                } else if (event.type === "steps") {
-                  setReasoningSteps((prev) => [...prev, ...event.content]);
-                } else if (event.type === "images") {
-                  currentAnswerImages = Array.isArray(event.content)
-                    ? event.content
-                    : [];
-                  setStreamAnswerImages(currentAnswerImages);
-                  syncAssistantMessage(answerRef.current);
-                } else if (event.type === "agent_step") {
-                  streamAgentSteps = upsertAgentStep(streamAgentSteps, {
-                    step: Number(event.step ?? 0),
-                    action: String(event.action ?? ""),
-                    status:
-                      event.status === "failed"
-                        ? "failed"
-                        : event.status === "done"
-                          ? "done"
-                          : "running",
-                    input: event.input,
-                    result_summary: event.result_summary,
-                  });
-                  syncAssistantMessage(answerRef.current);
-                } else if (event.type === "agent_steps") {
-                  streamAgentSteps = Array.isArray(event.content)
-                    ? event.content
-                    : streamAgentSteps;
-                  syncAssistantMessage(answerRef.current);
-                } else if (event.type === "status") {
-                  showNetToast("online", event.content, 2000);
-                  if (String(event.content).includes("检索")) {
-                    setStreamPhase("searching");
-                  } else if (String(event.content).includes("生成")) {
-                    setStreamPhase("generating");
-                  }
-                } else if (event.type === "causal_chain") {
-                  streamCausalChain = event.content;
-                  setCausalChain(event.content);
-                } else if (event.type === "follow_up") {
-                  streamFollowUps = event.content || [];
-                } else if (event.type === "expansion") {
-                  streamExpansionInfo = event.content || [];
-                } else if (event.type === "metrics") {
-                  streamMetrics = event.content;
-                } else if (event.type === "error") {
-                  streamError = {
-                    code: event.code ?? "unknown_error",
-                    message: event.message ?? event.content ?? "AI 服务异常",
-                    status_code: event.status_code ?? null,
-                    endpoint: event.endpoint ?? "",
-                  };
-                }
+                handleStreamEvent(JSON.parse(data));
               } catch {}
             }
           }
           clearRequestTimeout();
-          if (!streamDone) throw new Error("流式响应异常结束");
+          if (!streamDone) {
+            if (receivedAnyDelta.current) {
+              throw new StreamTerminalError({
+                kind: "stream_truncated",
+                code: "stream_truncated",
+                message: "回答中断，已显示部分内容",
+                status_code: null,
+                endpoint: "",
+                retryable: false,
+                httpStatus: null,
+              });
+            }
+            throw new StreamTerminalError({
+              kind: "stream_empty",
+              code: "stream_empty",
+              message: "服务暂时不可用，请稍后重试",
+              status_code: null,
+              endpoint: "",
+              retryable: false,
+              httpStatus: null,
+            });
+          }
         } catch (error) {
           clearRequestTimeout();
+          if (error instanceof StreamTerminalError) {
+            streamError = error.error;
+            if (streamError.kind === "auth" && streamError.httpStatus === 401) {
+              applyAuthRedirect();
+            }
+            streamDone = true;
+            break;
+          }
           if (controller.signal.aborted || isAbortError(error)) {
             if (requestTimedOut) {
-              const timeoutErrorInfo: LLMErrorInfo = {
+              const timeoutErrorInfo: StreamErrorInfo = {
+                kind: "business",
                 code: "timeout",
                 message: "请求超时，请重试或换一个更简单的问题",
                 status_code: null,
                 endpoint: "",
+                retryable: false,
+                httpStatus: null,
               };
               streamError = timeoutErrorInfo;
               clearInterval(intervalId);
-              await updateConversation(
-                convId,
-                newMsgs.map((m) =>
-                  m.id === aiMsgId
-                    ? {
-                        ...m,
-                        content: timeoutErrorInfo.message,
-                        errorInfo: timeoutErrorInfo,
-                      }
-                    : m,
-                ),
-              );
+              await persistCurrentAnswer(timeoutErrorInfo.message);
               if (requestSeq === requestSeqRef.current) {
                 setStreamPhase("done");
                 setLoading(false);
@@ -491,54 +782,33 @@ export function useStreamQuery({
             streamDone = true;
             break;
           }
-          streamError = {
-            code: "network_error",
-            message:
-              error instanceof Error
-                ? error.message
-                : "网络异常，已达最大重试次数",
-            status_code: null,
-            endpoint: "",
-          };
-          if (attempt >= MAX_RETRIES) {
-            throw new Error("网络异常，已达最大重试次数");
+          const classified = classifyFetchException(error);
+          if (receivedAnyDelta.current && classified.kind === "network") {
+            streamError = {
+              kind: "interrupted",
+              code: "unknown_error",
+              message: "回答中断，已显示部分内容",
+              status_code: null,
+              endpoint: "",
+              retryable: false,
+              httpStatus: null,
+            };
+            streamDone = true;
+            break;
           }
+          streamError = classified;
+          if (classified.kind === "network" && attempt < MAX_RETRIES) {
+            continue;
+          }
+          streamDone = true;
+          break;
         }
         if (streamDone) break;
       }
 
       clearInterval(intervalId);
       setStreamPhase("done");
-      const persistedAnswer = normalizeAnswerText(answerRef.current);
-      const finalMsgs = newMsgs.map((m) =>
-        m.id === aiMsgId
-          ? {
-              ...m,
-              content: streamClarification?.message ?? persistedAnswer,
-              sources,
-              clarification: streamClarification ?? undefined,
-              agentSteps:
-                streamAgentSteps.length > 0 ? streamAgentSteps : undefined,
-              answerImages:
-                currentAnswerImages.length > 0
-                  ? currentAnswerImages
-                  : undefined,
-              causalChain: streamCausalChain ?? undefined,
-              followUpQuestions:
-                streamFollowUps.length > 0 ? streamFollowUps : undefined,
-              errorInfo: streamError ?? undefined,
-              expansionInfo:
-                streamExpansionInfo.length > 0
-                  ? streamExpansionInfo
-                  : undefined,
-              metrics: streamMetrics ?? undefined,
-            }
-          : m,
-      );
-      await updateConversation(
-        convId,
-        persistedAnswer.trim() ? finalMsgs : newMsgs.slice(0, -1),
-      );
+      await persistCurrentAnswer();
       if (requestSeq === requestSeqRef.current) {
         setStreaming(false);
         setStreamingMsgId(null);
@@ -548,41 +818,7 @@ export function useStreamQuery({
     } catch (e) {
       clearInterval(intervalId);
       if (isAbortError(e)) {
-        const persistedAnswer = normalizeAnswerText(answerRef.current);
-        await updateConversation(
-          convId,
-          persistedAnswer.trim()
-            ? newMsgs.map((m) =>
-                m.id === aiMsgId
-                  ? {
-                      ...m,
-                      content: streamClarification?.message ?? persistedAnswer,
-                      sources,
-                      clarification: streamClarification ?? undefined,
-                      agentSteps:
-                        streamAgentSteps.length > 0
-                          ? streamAgentSteps
-                          : undefined,
-                      answerImages:
-                        currentAnswerImages.length > 0
-                          ? currentAnswerImages
-                          : undefined,
-                      causalChain: streamCausalChain ?? undefined,
-                      followUpQuestions:
-                        streamFollowUps.length > 0
-                          ? streamFollowUps
-                          : undefined,
-                      errorInfo: streamError ?? undefined,
-                      expansionInfo:
-                        streamExpansionInfo.length > 0
-                          ? streamExpansionInfo
-                          : undefined,
-                      metrics: streamMetrics ?? undefined,
-                    }
-                  : m,
-              )
-            : newMsgs.slice(0, -1),
-        );
+        await persistCurrentAnswer();
         if (requestSeq === requestSeqRef.current) {
           setStreamPhase("done");
           setLoading(false);
@@ -593,18 +829,16 @@ export function useStreamQuery({
         }
         return;
       }
-      const errMsg = e instanceof Error ? e.message : "网络异常";
-      const networkErrorInfo: LLMErrorInfo = {
-        code: "network_error",
-        message: errMsg,
-        status_code: null,
-        endpoint: "",
-      };
+      const networkErrorInfo = classifyFetchException(e);
       await updateConversation(
         convId,
         newMsgs.map((m) =>
           m.id === aiMsgId
-            ? { ...m, content: errMsg, errorInfo: networkErrorInfo }
+            ? {
+                ...m,
+                content: networkErrorInfo.message,
+                errorInfo: networkErrorInfo,
+              }
             : m,
         ),
       );
