@@ -2,7 +2,7 @@
 流式查询接口，支持多轮对话
 """
 from __future__ import annotations
-import asyncio, json, logging
+import asyncio, json, logging, time
 from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -28,13 +28,11 @@ from .mcq_utils import maybe_answer_mcq_stream, forward_mcq_stream
 from .stream_utils import _error_event, _emit_follow_ups, build_metrics_event, clean_stream_chunk, emit_status_event, estimate_answer_max_tokens, get_question_handler_for, serialize_sources, stream_semantic_cache_hit, try_semantic_cache_lookup, stream_with_first_token_logging
 logger = logging.getLogger(__name__)
 async def query_stream(request: Request, req: QueryRequest, driver: Driver = Depends(get_driver), current_user: Optional[User] = None, db: AsyncSession | None = None):
-    if not req.question.strip():
-        raise HTTPException(status_code=400, detail="question 不能为空")
+    if not req.question.strip(): raise HTTPException(status_code=400, detail="question 不能为空")
     top_k = req.top_k or 5
     effective_settings = await load_effective_settings(db, current_user.id if current_user else None)
     user_id = current_user.id if current_user else ""; department = current_user.department if current_user else ""
     async def generate():
-        import time
         with use_runtime_settings(effective_settings):
             t_start = time.time()
             async with shutdown_tracker.track_stream():
