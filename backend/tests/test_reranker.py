@@ -99,25 +99,36 @@ class TestRerankOrder:
 
 
 class TestRerankTruncation:
-    """验证内容截断不丢失 chunk_id"""
+    """验证内容按 tokenizer 上限处理，不再做字符截断"""
+
+    def test_local_reranker_uses_model_max_length_from_config(self):
+        """本地 CrossEncoder 应显式使用模型配置里的 token 上限。"""
+        with patch("src.services.retrieval.reranker.CrossEncoder") as mock_ce:
+            from src.services.retrieval.reranker import get_reranker
+
+            get_reranker.cache_clear()
+            _ = get_reranker()
+
+            _, kwargs = mock_ce.call_args
+            assert kwargs["max_length"] == 8192
 
     @patch("src.services.retrieval.reranker._get_reranker")
-    def test_long_content_is_truncated_before_predict(self, mock_get):
-        """超长内容应被截断，避免模型 OOM"""
+    def test_long_content_is_passed_to_predict_without_char_truncation(self, mock_get):
+        """超长内容不应先按字符截断，tokenizer 负责最终截断。"""
         from src.services.retrieval.reranker import rerank
 
         mock_model = MagicMock()
         mock_model.predict.return_value = [0.5]
         mock_get.return_value = mock_model
 
-        # 4000 字符的内容
+        # 4000 字符的内容，若还在做字符截断，传入 predict 的文本会被砍到 1024
         long_section = {"chunk_id": "c1", "content": "A" * 4000}
         rerank("短查询", [long_section], top_k=1)
 
         call_args = mock_model.predict.call_args
-        # predict 收到的 pairs 中，内容长度应 <= 1024
         pairs = call_args[0][0]
-        assert len(pairs[0][1]) <= 1024
+        assert pairs[0][1].startswith("\n")
+        assert len(pairs[0][1]) == 4001
 
 
 class TestRerankQuality:

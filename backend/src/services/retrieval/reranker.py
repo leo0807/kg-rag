@@ -2,6 +2,7 @@
 src/services/reranker.py
 重排序服务，使用 BAAI/bge-reranker-v2-m3
 """
+import json
 import logging
 from functools import lru_cache
 from pathlib import Path
@@ -29,12 +30,29 @@ def _get_device() -> str:
     return "cpu"
 
 
+def _load_local_model_max_length(model_path: str) -> int | None:
+    """从本地 reranker 配置里读取 tokenizer / 模型上限。"""
+    base = Path(model_path)
+    for filename, key in (
+        ("tokenizer_config.json", "model_max_length"),
+        ("config.json", "max_position_embeddings"),
+    ):
+        try:
+            data = json.loads((base / filename).read_text())
+        except Exception:
+            continue
+        value = data.get(key)
+        if isinstance(value, int) and value > 0:
+            return value
+    return None
+
+
 @lru_cache(maxsize=4)
 def get_reranker(model_path: str | None = None) -> CrossEncoder:
     device = _get_device()
     path = model_path or str(RERANKER_PATH)
     logger.info("加载 Reranker 模型: %s (device=%s)", path, device)
-    model = CrossEncoder(path, device=device)
+    model = CrossEncoder(path, device=device, max_length=_load_local_model_max_length(path))
     logger.info("Reranker 模型加载完成")
     # 向 ModelManager 注册
     try:
@@ -130,11 +148,7 @@ def rerank(
         ).predict(query, sections)
     else:
         model = _get_reranker()
-        pairs = [
-            # 1024 chars ≈ 512 tokens for Chinese text（比原来的 512 字符更充分）
-            (query, f"{s.get('title', '')}\n{s.get('content', '')}"[:1024])
-            for s in sections
-        ]
+        pairs = [(query, f"{s.get('title', '')}\n{s.get('content', '')}") for s in sections]
         scores = model.predict(pairs)
 
     ranked = sorted(
