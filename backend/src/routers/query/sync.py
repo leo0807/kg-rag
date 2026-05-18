@@ -20,6 +20,7 @@ from .models import QueryRequest, QueryResponse, QueryMetrics
 from .core   import do_retrieval
 from .clarification_utils import build_clarification_payload, detect_clarification
 from .context_utils import build_llm_context, reorder_sources_for_llm
+from .mcq_utils import maybe_answer_mcq_sync
 logger = logging.getLogger(__name__)
 async def _get_default_pipeline(user_id: str, db: AsyncSession) -> dict | None:
     """取用户默认链路配置，无则返回 None。"""
@@ -71,6 +72,11 @@ async def query_sync(
     count_response = await maybe_build_total_cps_count_response(req.question, req.strategy, top_k, driver, user_id, department)
     if count_response:
         return count_response
+    mcq_response = await maybe_answer_mcq_sync(
+        req.question, req.strategy, top_k, driver, user_id, department, req.doc_hints
+    )
+    if mcq_response is not None:
+        return mcq_response
     cached = get_cached_result(req.question, req.strategy, top_k)
     if cached:
         return QueryResponse(**cached)
@@ -105,7 +111,6 @@ async def query_sync(
                 return QueryResponse(answer=answer, sources=sources)
             except Exception as e:
                 logger.warning("自定义链路执行失败，降级到标准策略: %s", e)
-
     # ── 标准四策略路径（fallback）────────────────────────────────────────
     if req.strategy == "multi_hop":
         try:

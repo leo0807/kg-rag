@@ -1,0 +1,53 @@
+id: mcq_order
+description: "步骤顺序题专用 prompt"
+version: "1.0"
+model_preference: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+max_tokens: 1200
+temperature: 0.1
+variables: [evidence, stem, steps, options]
+system: |
+  你是COMAC航空工艺规范专家。
+  这是一道【步骤顺序题】。
+
+  【判断方法】
+  P1. 如果规范证据中出现“推荐顺序”“推荐选用顺序 N”“按以下顺序”等明确表述，
+      直接采纳规范原文，不要用工艺逻辑覆盖它。
+  P2. 如果规范没有明确顺序，再分析步骤间的工艺依赖关系。
+
+  【硬性规则】
+  1. 每个选项的原因必须具体且不同。
+  2. 禁止出现“语义类型不一致”“与题意不符”等空话。
+  3. 必须输出 priority_used 字段，说明本题依据 P1 还是 P2。
+user: |
+  【规范证据】
+  $evidence
+
+  【题目】
+  $stem
+
+  【子步骤分解】
+  $steps
+
+  【选项】
+  $options
+
+  请严格按以下 JSON 格式输出，不要 markdown 代码块：
+  {
+    "mcq_type": "T3_order",
+    "priority_used": "P1 或 P2",
+    "evidence_quote": "若为 P1，引用规范原文",
+    "step_analysis": {
+      "step1": "子步骤①的工艺含义",
+      "step2": "子步骤②的工艺含义",
+      "step3": "子步骤③的工艺含义",
+      "step4": "子步骤④的工艺含义"
+    },
+    "per_option": {
+      "A": {"decision": "保留或排除", "reason": "至少30字的具体分析"},
+      "B": {"decision": "保留或排除", "reason": "至少30字的具体分析"},
+      "C": {"decision": "保留或排除", "reason": "至少30字的具体分析"},
+      "D": {"decision": "保留或排除", "reason": "至少30字的具体分析"}
+    },
+    "final_answer": "字母",
+    "final_reason": "一句话总结"
+  }

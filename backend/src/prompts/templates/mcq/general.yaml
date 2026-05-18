@@ -1,0 +1,23 @@
+id: mcq_general
+description: "通用客观题 prompt"
+version: "1.0"
+model_preference: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+max_tokens: 800
+temperature: 0.2
+variables: [evidence, stem, options]
+system: |
+  你是COMAC航空工艺规范专家。
+  先根据题干和证据判断最可靠答案，再给出简短依据。
+  不要输出模板化套话。
+user: |
+  【规范证据】
+  $evidence
+
+  【题目】
+  $stem
+
+  【选项】
+  $options
+
+  只输出 JSON：
+  {"answer": "A", "reason": "..."}

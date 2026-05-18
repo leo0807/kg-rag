@@ -20,7 +20,7 @@ class PromptRegistry:
         templates_dir = Path(__file__).parent / "templates"
         if not templates_dir.exists():
             return
-        for yaml_file in sorted(templates_dir.glob("*.yaml")):
+        for yaml_file in sorted(templates_dir.rglob("*.yaml")):
             with yaml_file.open("r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             template_id = str(data.get("id") or yaml_file.stem).strip()

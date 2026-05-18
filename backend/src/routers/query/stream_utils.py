@@ -63,6 +63,36 @@ def serialize_sources(sections: list[dict], ft_score_map: dict[str, float]) -> l
     return sources
 
 
+def build_metrics_event(latency_ms: int, retrieval_ms: int, section_count: int, source_count: int) -> str:
+    payload = {
+        "type": "metrics",
+        "content": {
+            "latency_ms": latency_ms,
+            "retrieval_ms": retrieval_ms,
+            "section_count": section_count,
+            "source_count": source_count,
+        },
+    }
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def get_question_handler_for(question: str):
+    from ...services.qa.mcq_handler import detect_question_type, QuestionType
+    from ...services.qa.question_handlers import get_question_handler
+
+    qtype = detect_question_type(question)
+    handler = get_question_handler(qtype)
+    type_label = {
+        QuestionType.MULTIPLE_CHOICE: '🧮 识别为选择题',
+        QuestionType.MULTIPLE_SELECT: '🧮 识别为多选题',
+        QuestionType.TRUE_FALSE: '🧮 识别为判断题',
+        QuestionType.FILL_BLANK: '🧮 识别为填空题',
+        QuestionType.SHORT_ANSWER: '🧮 识别为简答题',
+        QuestionType.OPEN: '',
+    }.get(qtype, '')
+    return qtype, handler, type_label
+
+
 async def try_semantic_cache_lookup(
     question: str,
     strategy: str,

@@ -88,6 +88,7 @@ def template_summary(template_id: str, template: dict[str, Any]) -> dict[str, An
                 }
             )
     else:
+        selected_payload = template
         version_items.append(
             {
                 "name": str(template.get("version") or "1.0"),

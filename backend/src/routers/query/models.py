@@ -57,3 +57,5 @@ class QueryResponse(BaseModel):
     message:        str | None = None
     options:        list[str] = Field(default_factory=list)
     original_question: str | None = None
+    mcq_meta:       dict | None = None
+    mcq_type:       str | None = None
