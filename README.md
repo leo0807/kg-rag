@@ -2,6 +2,15 @@
 
 > 基于知识图谱与向量检索融合的航空制造工艺规范智能问答系统
 
+> **部署说明**：本项目设计为部署在内部局域网环境。
+> 所有 AI 能力默认使用本地服务：
+> - LLM：Ollama / vLLM（默认 `LLM_API_URL=http://localhost:11434/v1`）
+> - 多模态：本地 Qwen2-VL / InternVL2 / MLX-VLM
+> - Embedding：本地 bge-m3
+>
+> 代码中保留了 Anthropic、阿里云 DashScope、腾讯混元等远程 API
+> 的 provider 实现，便于公网环境下灵活切换，但**内网部署时不启用**。
+
 ## 系统架构
 ```
 PDF 文件
@@ -17,7 +26,7 @@ Next.js 前端（用户认证 + 会话管理）
 
 **智能问答**
 - 两阶段检索：并行（全文+向量）→ RRF 融合 → bge-reranker 精排
-- LLM 答案生成，支持 OpenAI 兼容 API / Anthropic
+- LLM 答案生成，支持 OpenAI 兼容 API（本地 Ollama / vLLM）
 - 来源溯源，引用章节可点击跳转
 - 会话管理，历史记录持久化到 Neo4j
 
@@ -173,9 +182,9 @@ python -m pytest tests/ -v
 
 ### 多模态知识图谱
 - [x] PDF 图片提取（pdfplumber + pymupdf）
-- [x] 图片多模态理解（GPT-4V / Qwen-VL）提取图中的工艺步骤、工具、尺寸数据
+- [x] 图片多模态理解（本地 Qwen2-VL / InternVL2 / MLX-VLM）提取图中的工艺步骤、工具、尺寸数据
 - [x] 图文关联：Section 节点关联 Image 节点，图片描述写入向量库
-- [x] 多模态查询：用户可以上传图片提问（支持粘贴/点击上传，图片随消息持久化）
+- [ ] 多模态查询：用户可以上传图片提问（移动端 API 已实现，PC 端 UI 计划中）
 - [x] 知识图谱扩展：Tool / Material / Process 节点，LLM 实体提取 + Neo4j 写入
 
 ### 数据飞轮
@@ -186,7 +195,7 @@ python -m pytest tests/ -v
 ### 其他
 - [x] 多跳推理（LangGraph Agent）
 - [x] 流式输出（SSE）
-- [x] WebSocket 导入进度推送
+- [ ] WebSocket 导入进度推送（计划中，当前为 HTTP 轮询）
 - [x] 前端单元测试（Vitest）
 - [x] 全局跨文档搜索
 - [x] 文档对比功能
@@ -261,7 +270,7 @@ python -m pytest tests/ -v
 - [x] PostgreSQL 索引补齐：`conversations` 表缺 `user_id` 索引，`query_feedback` 表无任何索引
 - [x] Neo4j 全文索引验证：启动时检查 `cps_fulltext_index` 是否存在，不存在则自动创建
 - [x] GPU 支持：Embedder 硬编码 `device="cpu"`，需检测 CUDA 并自动切换
-- [x] 配置热重载：修改模型/策略配置后无需重启服务
+- [ ] 配置热重载：修改模型/策略配置后无需重启服务（局部 reload 已实现，通用机制计划中）
 
 ---
 
@@ -271,7 +280,7 @@ python -m pytest tests/ -v
 - [x] 浅色 / 深色主题切换
 - [x] 移动端适配
 - [x] 知识图谱节点搜索框：在图谱页输入节点名称快速定位并高亮
-- [x] 对话分支：支持从某条 AI 消息处新开分支，探索不同追问路径
+- [ ] 对话分支（计划中）：支持从某条 AI 消息处新开分支，探索不同追问路径
 
 ---
 
@@ -501,7 +510,7 @@ python -m pytest tests/ -v
 - [ ] **图上直接编辑**：管理员在可视化界面中拖拽创建关系（如将两个 Tool 节点连上 `ALTERNATIVE_TO` 边），无需写 Cypher，操作自动同步至 Neo4j
 - [ ] **Cypher 查询控制台**：专家用户可直接输入 Cypher 查询语句，结果实时渲染为交互图谱，支持图谱探索性分析
 - [ ] **节点注释与标注**：用户可对任意节点添加注释（`Note` 节点），`(Section)-[:HAS_NOTE {author, created_at}]->(Note)`，团队协作标注知识盲点或疑问
-- [x] **图谱快照与分享**：将当前图谱视图（含过滤、高亮状态）保存为 URL 可分享的快照，团队成员打开链接可复现完全相同的视图状态
+- [ ] **图谱快照与分享**：将当前图谱视图（含过滤、高亮状态）保存为 URL 可分享的快照，团队成员打开链接可复现完全相同的视图状态
 - [x] **增量渲染与虚拟化**：节点超过 1000 时切换为 WebGL（Three.js / PixiJS）渲染，维持交互帧率 > 30fps；超过 5000 时降级为 Canvas 静态热力图
 - [x] **图谱漫游模式（Graph Tour）**：以某主题（如"液压系统安装"）为起点，AI 自动规划一条穿越相关节点的导览路径，逐步展开讲解每个节点的知识要点
 
@@ -552,7 +561,7 @@ python -m pytest tests/ -v
 **查询运营分析**
 - [x] **查询热力分析**：统计哪些 Section 节点作为检索来源被引用最频繁（基于 `query_feedback` 的 `clicked_source` 事件 + 流式返回的 sources 列表），`GET /api/admin/analytics/hot-nodes?top_k=20&days=30` 输出热点节点排行，热力值反映在可视化图谱的节点大小/亮度上，指导图谱扩充优先级
 - [x] **检索策略效果对比**：按策略（parallel / graph_augmented / multi_hop / sequential）分组统计平均端到端延迟、👍 好评率、平均返回来源数量、LLM token 消耗，`GET /api/admin/analytics/strategy-stats?days=30`；结果表格辅助调整"自动策略选择"的路由规则
-- [x] **零结果查询监控**：记录 `sources` 为空的查询词，`GET /api/admin/analytics/empty-queries?days=7` 输出高频零结果词表（知识盲区），每周自动邮件推送至文档管理员，指导下一批 PDF 优先入库范围
+- [ ] **零结果查询监控**：记录 `sources` 为空的查询词，`GET /api/admin/analytics/empty-queries?days=7` 输出高频零结果词表（知识盲区），每周自动邮件推送至文档管理员，指导下一批 PDF 优先入库范围
 - [x] **用户活跃度报表**：按用户 / 部门统计 DAU、周查询量、平均会话轮数、最常用检索策略，`GET /api/admin/analytics/user-activity?days=30`；支持导出 CSV，对接企业 BI 工具（如 Metabase / Superset）
 
 **成本与资源监控**
@@ -700,7 +709,7 @@ pip install dspy-ai
 
 ### 五、Prompt Caching — 大幅降低 LLM 成本
 
-Anthropic Claude API 支持 Prompt Caching，对超过 1024 token 的系统提示或文档内容进行服务端缓存，重复调用时 token 费用降低约 90%。
+Prompt Caching：通过缓存系统提示和热点文档片段减少重复 token 处理。本地 vLLM / SGLang 通过 prefix caching 实现，自建 LLM 网关可在应用层实现 system prompt 复用。
 
 **适用场景**
 
@@ -789,7 +798,7 @@ Anthropic Claude API 支持 Prompt Caching，对超过 1024 token 的系统提�
 | Agent 框架 | LangGraph | 多跳推理 ReAct Agent，Tool Use 编排 | ✅ 已实现 |
 | Agent 框架 | Agent Skills / Function Calling | 领域专用结构化工具集 | 规划中 |
 | 提示优化 | DSPy | 自动优化实体提取、Text2Cypher、答案生成的 Prompt | 规划中 |
-| 成本优化 | Anthropic Prompt Caching | 系统提示和热点文档缓存，成本降低 ~90% | 规划中 |
+| 成本优化 | Prompt Caching | 系统提示和热点文档缓存复用，减少重复 token 处理 | 规划中 |
 | 效果评估 | RAGAS | 自动评估 Faithfulness / Relevancy / Recall / Precision | 规划中 |
 | 效果评估 | TruLens | 生产环境在线评分，异常问题自动入复核队列 | 规划中 |
 | 响应加速 | 语义缓存（GPTCache） | 相似问题向量匹配命中缓存，< 50ms 响应 | 已完成 |
@@ -1178,7 +1187,7 @@ crew = Crew(agents=[
 | 图检索 | Neo4j 5.20 · Cypher · BFS 扩展 | ✅ |
 | 融合策略 | RRF · Parallel · Sequential · Graph-Aug · Multi-hop · GNN · Counterfactual | ✅ |
 | Agent | LangGraph ReAct · 多跳推理链 | ✅ |
-| 多模态 | GPT-4V / Qwen-VL 图片理解 · 图文关联查询 | ✅ |
+| 多模态 | 本地 Qwen2-VL / InternVL2 / MLX-VLM 图片理解 · 图文关联查询 | ✅ |
 | 可视化 | D3.js · Canvas · WebGL(PixiJS) · 热力图 · Timeline | ✅ |
 | 可观测性 | Langfuse · LLM Cost Tracking · 用户活跃度报表 | ✅ |
 | 基础设施 | Docker Compose · FastAPI · Next.js 15 · PostgreSQL · Redis | ✅ |
