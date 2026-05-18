@@ -479,6 +479,8 @@
   - Note: uvicorn on SIGTERM closes the listening socket immediately after entering shutdown. New connection attempts may show `curl` exit `000` rather than HTTP 503. This is acceptable operationally: load balancers treat both as instance-unavailable and route away. `ShutdownGateMiddleware` is kept as defense-in-depth for multi-worker / in-flight request windows.
 - ~~**F120 PDF 解析异常优雅降级**~~：🟢 verified_at: 2026-05-18, method: `curl /api/preview` + pytest route smoke test
   - Note: `preview()` now wraps `parse(tmp_path)` in `try/except` and returns 422 + friendly message on parse failures; backend log records warning only.
+- ~~**F121 上传校验统一为多文件类型**~~：🟢 verified_at: 2026-05-18, method: `curl /api/preview` + `curl /api/ingest` 12-case regression
+  - Note: `validate_upload()` now accepts `allowed_types`; `/api/preview` remains PDF-only by default, `/api/ingest` uses `DOCUMENT_TYPES` and magic-byte checks per MIME type.
 
 ### 中优先级（影响稳定性/可维护性）
 - **F117 异步任务队列**：PDF 入库仍同步阻塞（Celery 已有框架但未接入主入库流程）

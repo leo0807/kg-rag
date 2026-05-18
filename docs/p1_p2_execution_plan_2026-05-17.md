@@ -2,11 +2,11 @@
 
 ## 摘要
 - 总任务数：15
-- 已完成：3（F049、F060、F120）
-- 待完成：12
-- 估算工时：28.5 人天
+- 已完成：4（F049、F060、F120、F121）
+- 待完成：11
+- 估算工时：28.0 人天
 - LLM 依赖任务（GATED ON B001）：2 条
-- 当前 HEAD：3ef822e
+- 当前 HEAD：f77418d
 
 ## 工作纪律（每条任务执行前必读）
 
@@ -79,6 +79,10 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 - commit: 3ef822e
 - 验证：`/api/preview` 对坏 PDF 返回 422 + 友好消息；真实 PDF 仍正常
 
+### F121 多类型上传校验统一（已闭环 ✓）
+- commit: f77418d
+- 验证：`/api/preview` 6 项 + `/api/ingest` 6 项，共 12 项回归全过；`validate_upload()` 支持 `allowed_types` 白名单
+
 ## 完成记录表
 
 | 任务 | 结果 | commit | 验证摘要 |
@@ -86,6 +90,7 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 | F049 | CLOSED | 342dd5d | Tool/Material/Process/Constraint 独立颜色 + 过滤 + 详情侧栏 |
 | F060 | CLOSED | 8495c1f, 948efd4 | tokenizer max_length 8192，单测 8/8 PASS |
 | F120 | CLOSED | 3ef822e | 坏 PDF 返回 422，真实 PDF 仍正常 |
+| F121 | CLOSED | f77418d | 12 项回归全过，preview 保持 PDF-only，ingest 接入 DOCUMENT_TYPES |
 
 ## 待执行任务（按推荐顺序）
 
@@ -129,12 +134,14 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 
 ---
 
-### 任务 2：F121 多类型上传校验统一
+### 任务 2：F121 多类型上传校验统一（已闭环 ✓）
 **优先级**：P2
 **估时**：0.5 天
 **类型**：实施型
 **依赖 LLM**：否
 **审计来源**：docs/feature_audit_2026-05-17.md#f121
+
+**状态**：~~进行中~~ ✅ 已闭环
 
 #### 背景
 当前 `validate_upload()` 是 PDF-only，`/api/ingest` 保留了独立的内联多类型校验（PDF/DOCX/DOC）。DOCX/DOC pipeline 完整（LibreOffice 转换 → pdfplumber 解析），支持是真实需求。两套逻辑并存，长期维护成本高。需扩展 `validate_upload()` 支持多类型白名单，统一两处逻辑。
@@ -151,9 +158,14 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 6. 准备 6 个测试文件并逐个 `curl /api/ingest` 验证。
 
 #### 验收
-- [ ] `/api/ingest` 接受 PDF、DOCX、DOC，拒绝 .exe
-- [ ] `/api/preview` 仍然只接受 PDF
-- [ ] 内联校验代码从 ingest.py 删除
+- [x] `/api/ingest` 接受 PDF、DOCX、DOC，拒绝 .exe
+- [x] `/api/preview` 仍然只接受 PDF
+- [x] 内联校验代码从 ingest.py 删除
+
+#### 完成记录
+- commit: `f77418d`
+- 验证：F113 回归 6 项 + F121 新增 6 项，共 12 项全过
+- 样本来源：`ok.pdf` / `ok.docx` / `ok.doc` 由本地生成；`evil.exe` / `empty.pdf` / `real.pdf 改后缀 .docx` 为本地构造
 
 #### Commits
 - Commit A: feat(F121): unify upload validation for PDF/DOCX/DOC
