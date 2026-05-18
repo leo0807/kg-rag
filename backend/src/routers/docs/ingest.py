@@ -171,7 +171,19 @@ async def preview(file: UploadFile = File(...)):
     content  = await validate_upload(file)
     tmp_path = UPLOAD_DIR / (file.filename or "preview.pdf")
     tmp_path.write_bytes(content)
-    return parse(tmp_path)
+    try:
+        return parse(tmp_path)
+    except Exception as e:
+        logger.warning(
+            "PDF parse failed: filename=%r error=%s: %s",
+            file.filename,
+            type(e).__name__,
+            e,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=f"无法解析 PDF：{type(e).__name__}",
+        )
 
 
 @router.post("/api/ingest")
