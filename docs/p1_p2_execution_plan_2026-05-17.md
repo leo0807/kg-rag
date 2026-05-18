@@ -2,11 +2,11 @@
 
 ## 摘要
 - 总任务数：15
-- 已完成：2（F049、F060）
-- 待完成：13
-- 估算工时：29.0 人天
+- 已完成：3（F049、F060、F120）
+- 待完成：12
+- 估算工时：28.5 人天
 - LLM 依赖任务（GATED ON B001）：2 条
-- 当前 HEAD：948efd4
+- 当前 HEAD：3ef822e
 
 ## 工作纪律（每条任务执行前必读）
 
@@ -75,6 +75,18 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 - commits: 8495c1f, 948efd4
 - 验证：tokenizer max_length 8192，单测 8/8 PASS
 
+### F120 PDF 解析异常优雅降级（已闭环 ✓）
+- commit: 3ef822e
+- 验证：`/api/preview` 对坏 PDF 返回 422 + 友好消息；真实 PDF 仍正常
+
+## 完成记录表
+
+| 任务 | 结果 | commit | 验证摘要 |
+|---|---|---|---|
+| F049 | CLOSED | 342dd5d | Tool/Material/Process/Constraint 独立颜色 + 过滤 + 详情侧栏 |
+| F060 | CLOSED | 8495c1f, 948efd4 | tokenizer max_length 8192，单测 8/8 PASS |
+| F120 | CLOSED | 3ef822e | 坏 PDF 返回 422，真实 PDF 仍正常 |
+
 ## 待执行任务（按推荐顺序）
 
 ### 任务 1：F120 PDF 解析异常优雅降级
@@ -83,6 +95,8 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 **类型**：实施型
 **依赖 LLM**：否
 **审计来源**：docs/feature_audit_2026-05-17.md#f120
+
+**状态**：~~进行中~~ ✅ 已闭环
 
 #### 背景
 F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时返回 500 + 暴露 traceback。是安全风险（DoS 攻击面）+ 用户体验问题。
@@ -99,14 +113,19 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 6. 完成后分两个 commit：代码实现 + 文档归档。
 
 #### 验收
-- [ ] 28 字节假 PDF 返回 422 + 友好消息（不是 500）
-- [ ] backend.log 记录 warning，不暴露完整 traceback
-- [ ] 加密 PDF 返回 422（如果有测试样本）
-- [ ] 真实 PDF 上传仍正常
+- [x] 28 字节假 PDF 返回 422 + 友好消息（不是 500）
+- [x] backend.log 记录 warning，不暴露完整 traceback
+- [x] 加密 PDF 返回 422（如果有测试样本）
+- [x] 真实 PDF 上传仍正常
+
+#### 完成记录
+- commit: `3ef822e`
+- 验证：`pytest backend/tests/test_preview_endpoint.py` + `curl /api/preview`
+- 备注：坏 PDF 返回 422 `无法解析 PDF：PdfminerException`，真实 PDF 仍返回 200
 
 #### Commits
 - Commit A: feat(F120): graceful PDF parse error
-- Commit B: docs: mark F120 closed
+- Commit B: docs: mark F120 closed and update execution plan
 
 ---
 

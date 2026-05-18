@@ -477,6 +477,8 @@
 - **F115 LLM API 重试与熔断**：无指数退避重试和熔断器（`tenacity`/`pybreaker`）
 - ~~**F116 优雅关闭（Graceful Shutdown）**~~：🟢 verified_at: 2026-05-18, method: SIGTERM + stream completion smoke test
   - Note: uvicorn on SIGTERM closes the listening socket immediately after entering shutdown. New connection attempts may show `curl` exit `000` rather than HTTP 503. This is acceptable operationally: load balancers treat both as instance-unavailable and route away. `ShutdownGateMiddleware` is kept as defense-in-depth for multi-worker / in-flight request windows.
+- ~~**F120 PDF 解析异常优雅降级**~~：🟢 verified_at: 2026-05-18, method: `curl /api/preview` + pytest route smoke test
+  - Note: `preview()` now wraps `parse(tmp_path)` in `try/except` and returns 422 + friendly message on parse failures; backend log records warning only.
 
 ### 中优先级（影响稳定性/可维护性）
 - **F117 异步任务队列**：PDF 入库仍同步阻塞（Celery 已有框架但未接入主入库流程）
