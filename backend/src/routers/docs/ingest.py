@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -11,11 +10,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from neo4j import Driver
 
 from ...auth.deps import get_admin_user as _get_admin_user
-from ...core.config import settings
 from ...core.database import get_driver
 from ...services.graph.neo4j_writer import write_document, write_document_incremental
 from ...services.parsing.parser import parse
-from ...services.security.upload_validator import validate_upload
+from ...services.security.upload_validator import DOCUMENT_TYPES, validate_upload
 from .ingest_helpers import run_image_analysis
 
 logger = logging.getLogger(__name__)
@@ -40,11 +38,6 @@ def _cleanup_old_tasks() -> None:
              if v.get("created_at", datetime.utcnow()) < cutoff]
     for k in stale:
         _ingest_tasks.pop(k, None)
-
-
-def _save_upload_file(file: UploadFile, path: Path) -> None:
-    with path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
 
 
 async def _run_ingest_bg(task_id: str, tmp_path: Path, driver: Driver, incremental: bool = True) -> None:
@@ -194,46 +187,14 @@ async def ingest(
     _:           object     = Depends(_get_admin_user),
 ):
     """接收文件并立即返回 task_id，实际入库在后台执行。"""
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in {".pdf", ".docx", ".doc"}:
-        raise HTTPException(status_code=400, detail="仅支持 PDF / DOCX / DOC 格式")
-
     _cleanup_old_tasks()
 
     task_id  = uuid.uuid4().hex[:12]
     tmp_path = UPLOAD_DIR / f"{task_id}_{file.filename or 'upload'}"
-    await asyncio.to_thread(_save_upload_file, file, tmp_path)
+    content = await validate_upload(file, allowed_types=DOCUMENT_TYPES)
+    tmp_path.write_bytes(content)
 
     file_size = tmp_path.stat().st_size
-    if file_size > settings.MAX_UPLOAD_FILE_BYTES:
-        tmp_path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=400,
-            detail=f"文件过大（{file_size} bytes），上限 {settings.MAX_UPLOAD_FILE_BYTES} bytes",
-        )
-
-    _MAGIC = {
-        ".pdf":  [(0, b"%PDF-")],
-        ".docx": [(0, b"PK\x03\x04")],
-        ".doc":  [(0, b"\xd0\xcf\x11\xe0")],
-    }
-    try:
-        with tmp_path.open("rb") as _f:
-            _header = _f.read(8)
-        _ok = any(
-            _header[off:off + len(sig)] == sig
-            for off, sig in _MAGIC.get(suffix, [])
-        )
-        if not _ok:
-            tmp_path.unlink(missing_ok=True)
-            raise HTTPException(
-                status_code=400,
-                detail=f"文件内容与扩展名 {suffix} 不符，请上传真实的 {suffix.upper()} 文件",
-            )
-    except HTTPException:
-        raise
-    except Exception as _me:
-        logger.warning("魔数校验异常（跳过）: %s", _me)
 
     _ingest_tasks[task_id] = {
         "status": "running", "step": "queued", "doc_id": None,

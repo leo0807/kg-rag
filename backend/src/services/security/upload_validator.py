@@ -4,18 +4,27 @@ from ...core.config import settings
 
 log = logging.getLogger(__name__)
 
-# PDF magic number: %PDF-（25 50 44 46 2D）
-_PDF_MAGIC = b"%PDF-"
+PDF_ONLY = frozenset({"application/pdf"})
+DOCUMENT_TYPES = frozenset({
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+})
 
-ALLOWED_MIME_TYPES = {"application/pdf"}
+MAGIC_BYTES_MAP: dict[str, tuple[bytes, ...]] = {
+    "application/pdf": (b"%PDF-",),
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (b"PK\x03\x04",),
+    "application/msword": (b"\xd0\xcf\x11\xe0",),
+}
 
 
 async def validate_upload(
     file: UploadFile,
+    allowed_types: frozenset[str] | None = None,
     max_bytes: int | None = None,
 ) -> bytes:
     """
-    校验上传文件（PDF 专用）：
+    校验上传文件。
     1. MIME 类型白名单
     2. 文件非空且不超大小上限
     3. magic number 匹配（防止扩展名伪装）
@@ -23,16 +32,17 @@ async def validate_upload(
     Returns: 文件内容（bytes），调用方直接写盘即可。
     Raises: HTTPException(400) on any validation failure.
     """
+    allowed_types = allowed_types or PDF_ONLY
     max_bytes = max_bytes if max_bytes is not None else settings.MAX_UPLOAD_FILE_BYTES
 
-    if file.content_type not in ALLOWED_MIME_TYPES:
+    if file.content_type not in allowed_types:
         log.warning(
-            "Rejected upload: filename=%r content_type=%r",
-            file.filename, file.content_type,
+            "Rejected upload: filename=%r content_type=%r allowed=%r",
+            file.filename, file.content_type, sorted(allowed_types),
         )
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的文件类型 {file.content_type!r}，仅支持 PDF",
+            detail=f"不支持的文件类型 {file.content_type!r}",
         )
 
     content = await file.read()
@@ -50,15 +60,21 @@ async def validate_upload(
             detail=f"文件过大（{len(content)} bytes），上限 {max_bytes} bytes",
         )
 
-    if not content.startswith(_PDF_MAGIC):
+    expected_magics = MAGIC_BYTES_MAP.get(file.content_type, ())
+    if expected_magics and not any(content.startswith(magic) for magic in expected_magics):
         log.warning(
-            "Rejected upload: filename=%r magic=%r (not PDF)",
-            file.filename, content[:8],
+            "Rejected upload: filename=%r content_type=%r magic=%r (mismatch)",
+            file.filename, file.content_type, content[:8],
         )
         raise HTTPException(
             status_code=400,
-            detail="文件不是有效的 PDF（magic number 不匹配）",
+            detail="文件 magic number 不匹配，疑似伪装",
         )
 
-    log.info("Upload validated: filename=%r size=%d", file.filename, len(content))
+    log.info(
+        "Upload validated: filename=%r type=%r size=%d",
+        file.filename,
+        file.content_type,
+        len(content),
+    )
     return content
