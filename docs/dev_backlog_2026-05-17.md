@@ -151,6 +151,7 @@ SIGTERM 未处理，重启部署时正在进行的 SSE 流被立即切断，前�
 - [x] `docker compose restart backend` 前端无 SSE 中断错误
 
 **验证**：2026-05-18，单 worker / `graph/tour` SSE 完整输出后进程正常退出；`query/stream` 与 `graph/tour` 均接入 `shutdown_tracker.track_stream()`。
+**备注**：uvicorn 收到 SIGTERM 后会很快关闭监听 socket，因此新连接在 `curl` 侧可能表现为 `000` 而非 503；这属于可接受的实例下线行为。`ShutdownGateMiddleware` 仍保留为多 worker / 并发窗口的防御纵深。
 
 **依赖**：无
 
