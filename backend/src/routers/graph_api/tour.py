@@ -13,6 +13,7 @@ from neo4j import Driver
 from pydantic import BaseModel
 
 from ...core.database import get_driver
+from ...core.shutdown import shutdown_tracker
 from ...services.ai.llm import clean_llm_response
 from ...services.ai.llm_service import get_llm_service
 
@@ -82,118 +83,119 @@ async def graph_tour(
       {"type":"done"}
     """
     async def generate():
-        # ── ① 检索与主题相关的章节 ──────────────────────────────────────────
-        from .query.core import do_retrieval
+        async with shutdown_tracker.track_stream():
+            # ── ① 检索与主题相关的章节 ──────────────────────────────────────────
+            from ..query.core import do_retrieval
 
-        loop = asyncio.get_running_loop()
-        try:
-            sections, _, _ = await loop.run_in_executor(
-                None,
-                lambda: do_retrieval(driver, req.topic, "graph_augmented", top_k=10),
-            )
-        except Exception as exc:
-            logger.warning("导览检索失败: %s", exc)
-            sections = []
+            loop = asyncio.get_running_loop()
+            try:
+                sections, _, _ = await loop.run_in_executor(
+                    None,
+                    lambda: do_retrieval(driver, req.topic, "graph_augmented", top_k=10),
+                )
+            except Exception as exc:
+                logger.warning("导览检索失败: %s", exc)
+                sections = []
 
-        if not sections:
-            yield f'data: {json.dumps({"type":"error","message":"未找到与该主题相关的内容"}, ensure_ascii=False)}\n\n'
-            return
+            if not sections:
+                yield f'data: {json.dumps({"type":"error","message":"未找到与该主题相关的内容"}, ensure_ascii=False)}\n\n'
+                return
 
-        # ── ② 展开子图：章节 → 文档 + 实体邻居 ─────────────────────────────
-        tour_nodes: list[dict] = []
-        tour_edges: list[dict] = []
-        seen_ids:   set[str]   = set()
-        chunk_ids = [s["chunk_id"] for s in sections[: req.max_stops + 4]]
+            # ── ② 展开子图：章节 → 文档 + 实体邻居 ─────────────────────────────
+            tour_nodes: list[dict] = []
+            tour_edges: list[dict] = []
+            seen_ids:   set[str]   = set()
+            chunk_ids = [s["chunk_id"] for s in sections[: req.max_stops + 4]]
 
-        def _add_node(n: dict) -> bool:
-            if n["id"] in seen_ids:
-                return False
-            seen_ids.add(n["id"])
-            tour_nodes.append(n)
-            return True
+            def _add_node(n: dict) -> bool:
+                if n["id"] in seen_ids:
+                    return False
+                seen_ids.add(n["id"])
+                tour_nodes.append(n)
+                return True
 
-        with driver.session() as session:
-            rows = session.run("""
-                UNWIND $chunk_ids AS cid
-                MATCH (s:Section {chunk_id: cid})
-                OPTIONAL MATCH (d:Document)-[:HAS_SECTION]->(s)
-                OPTIONAL MATCH (s)-[:REQUIRES_TOOL]->(t:Tool)
-                OPTIONAL MATCH (s)-[:USES_MATERIAL]->(m:Material)
-                OPTIONAL MATCH (s)-[:INVOLVES_PROCESS]->(p:Process)
-                RETURN
-                    s.chunk_id                                   AS cid,
-                    COALESCE(s.title, s.chunk_id)                AS sec_name,
-                    s.doc_id                                     AS sec_doc,
-                    COALESCE(s.content, '')                      AS sec_content,
-                    d.name                                       AS doc_id,
-                    COALESCE(d.title, d.name)                    AS doc_name,
-                    collect(DISTINCT t.name)[0..2]               AS tools,
-                    collect(DISTINCT m.name)[0..2]               AS mats,
-                    collect(DISTINCT p.name)[0..2]               AS procs
-            """, chunk_ids=chunk_ids)
+            with driver.session() as session:
+                rows = session.run("""
+                    UNWIND $chunk_ids AS cid
+                    MATCH (s:Section {chunk_id: cid})
+                    OPTIONAL MATCH (d:Document)-[:HAS_SECTION]->(s)
+                    OPTIONAL MATCH (s)-[:REQUIRES_TOOL]->(t:Tool)
+                    OPTIONAL MATCH (s)-[:USES_MATERIAL]->(m:Material)
+                    OPTIONAL MATCH (s)-[:INVOLVES_PROCESS]->(p:Process)
+                    RETURN
+                        s.chunk_id                                   AS cid,
+                        COALESCE(s.title, s.chunk_id)                AS sec_name,
+                        s.doc_id                                     AS sec_doc,
+                        COALESCE(s.content, '')                      AS sec_content,
+                        d.name                                       AS doc_id,
+                        COALESCE(d.title, d.name)                    AS doc_name,
+                        collect(DISTINCT t.name)[0..2]               AS tools,
+                        collect(DISTINCT m.name)[0..2]               AS mats,
+                        collect(DISTINCT p.name)[0..2]               AS procs
+                """, chunk_ids=chunk_ids)
 
-            for row in rows:
-                # Section node
-                sec_node = {
-                    "id":      row["cid"],
-                    "name":    row["sec_name"],
-                    "type":    "Section",
-                    "doc_id":  row["sec_doc"] or "",
-                    "content": (row["sec_content"] or "")[:300],
-                    "label":   row["sec_name"],
-                }
-                _add_node(sec_node)
-
-                # Document node
-                if row["doc_id"]:
-                    doc_node = {
-                        "id":    row["doc_id"],
-                        "name":  row["doc_name"],
-                        "type":  "Document",
-                        "doc_id": row["doc_id"],
-                        "label": row["doc_name"],
+                for row in rows:
+                    # Section node
+                    sec_node = {
+                        "id":      row["cid"],
+                        "name":    row["sec_name"],
+                        "type":    "Section",
+                        "doc_id":  row["sec_doc"] or "",
+                        "content": (row["sec_content"] or "")[:300],
+                        "label":   row["sec_name"],
                     }
-                    if _add_node(doc_node):
-                        tour_edges.append({"source": row["doc_id"], "target": row["cid"], "type": "HAS_SECTION"})
+                    _add_node(sec_node)
 
-                # Entity nodes
-                for names, etype, rel in [
-                    (row["tools"], "Tool",     "REQUIRES_TOOL"),
-                    (row["mats"],  "Material", "USES_MATERIAL"),
-                    (row["procs"], "Process",  "INVOLVES_PROCESS"),
-                ]:
-                    for name in (names or []):
-                        if not name:
-                            continue
-                        ent = {"id": name, "name": name, "type": etype, "label": name, "doc_id": ""}
-                        if _add_node(ent):
-                            tour_edges.append({"source": row["cid"], "target": name, "type": rel})
+                    # Document node
+                    if row["doc_id"]:
+                        doc_node = {
+                            "id":    row["doc_id"],
+                            "name":  row["doc_name"],
+                            "type":  "Document",
+                            "doc_id": row["doc_id"],
+                            "label": row["doc_name"],
+                        }
+                        if _add_node(doc_node):
+                            tour_edges.append({"source": row["doc_id"], "target": row["cid"], "type": "HAS_SECTION"})
 
-        # ── ③ 确定导览顺序：取前 max_stops 个章节节点 ─────────────────────
-        stop_nodes = [
-            n for n in tour_nodes
-            if n["type"] == "Section" and n["id"] in {s["chunk_id"] for s in sections}
-        ][: req.max_stops]
+                    # Entity nodes
+                    for names, etype, rel in [
+                        (row["tools"], "Tool",     "REQUIRES_TOOL"),
+                        (row["mats"],  "Material", "USES_MATERIAL"),
+                        (row["procs"], "Process",  "INVOLVES_PROCESS"),
+                    ]:
+                        for name in (names or []):
+                            if not name:
+                                continue
+                            ent = {"id": name, "name": name, "type": etype, "label": name, "doc_id": ""}
+                            if _add_node(ent):
+                                tour_edges.append({"source": row["cid"], "target": name, "type": rel})
 
-        if not stop_nodes:
-            stop_nodes = [n for n in tour_nodes if n["type"] == "Section"][: req.max_stops]
+            # ── ③ 确定导览顺序：取前 max_stops 个章节节点 ─────────────────────
+            stop_nodes = [
+                n for n in tour_nodes
+                if n["type"] == "Section" and n["id"] in {s["chunk_id"] for s in sections}
+            ][: req.max_stops]
 
-        total = len(stop_nodes)
+            if not stop_nodes:
+                stop_nodes = [n for n in tour_nodes if n["type"] == "Section"][: req.max_stops]
 
-        # ── ④ 发送初始化帧 ─────────────────────────────────────────────────
-        yield f'data: {json.dumps({"type":"init","total":total,"topic":req.topic}, ensure_ascii=False)}\n\n'
-        yield f'data: {json.dumps({"type":"path","nodes":tour_nodes,"edges":tour_edges}, ensure_ascii=False)}\n\n'
+            total = len(stop_nodes)
 
-        # ── ⑤ 逐站发送：stop → delta… → next_stop ──────────────────────
-        for i, node in enumerate(stop_nodes):
-            yield f'data: {json.dumps({"type":"stop","index":i,"node_id":node["id"],"node":node}, ensure_ascii=False)}\n\n'
+            # ── ④ 发送初始化帧 ─────────────────────────────────────────────────
+            yield f'data: {json.dumps({"type":"init","total":total,"topic":req.topic}, ensure_ascii=False)}\n\n'
+            yield f'data: {json.dumps({"type":"path","nodes":tour_nodes,"edges":tour_edges}, ensure_ascii=False)}\n\n'
 
-            async for delta in _stream_explanation(req.topic, node):
-                yield f'data: {json.dumps({"type":"delta","content":delta}, ensure_ascii=False)}\n\n'
+            # ── ⑤ 逐站发送：stop → delta… → next_stop ──────────────────────
+            for i, node in enumerate(stop_nodes):
+                yield f'data: {json.dumps({"type":"stop","index":i,"node_id":node["id"],"node":node}, ensure_ascii=False)}\n\n'
 
-            yield f'data: {json.dumps({"type":"next_stop"})}\n\n'
+                async for delta in _stream_explanation(req.topic, node):
+                    yield f'data: {json.dumps({"type":"delta","content":delta}, ensure_ascii=False)}\n\n'
 
-        yield f'data: {json.dumps({"type":"done"})}\n\n'
+                yield f'data: {json.dumps({"type":"next_stop"})}\n\n'
+
+            yield f'data: {json.dumps({"type":"done"})}\n\n'
 
     return StreamingResponse(
         generate(),
