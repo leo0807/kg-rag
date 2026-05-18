@@ -475,7 +475,7 @@
 - ~~**F113 文件上传防护**~~：🟢 verified_at: 2026-05-17, method: curl multi-cases (MIME/magic/size/empty)
 - ~~**F114 请求体大小限制**~~：🟢 verified_at: 2026-05-17, method: curl + 60MB body → 413
 - **F115 LLM API 重试与熔断**：无指数退避重试和熔断器（`tenacity`/`pybreaker`）
-- **F116 优雅关闭（Graceful Shutdown）**：SIGTERM 信号未处理，流式响应可能被截断
+- ~~**F116 优雅关闭（Graceful Shutdown）**~~：🟢 verified_at: 2026-05-18, method: SIGTERM + stream completion smoke test
 
 ### 中优先级（影响稳定性/可维护性）
 - **F117 异步任务队列**：PDF 入库仍同步阻塞（Celery 已有框架但未接入主入库流程）
