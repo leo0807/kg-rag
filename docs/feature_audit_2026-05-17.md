@@ -252,7 +252,7 @@
 
 ### F049 🟡 Tool/Material/Process 节点加入可视化及过滤
 - **evidence**：`backend/src/routers/graph_api/graph.py:213` 返回实体节点；`frontend/src/app/graph/GraphFilterPanel.tsx` 过滤面板
-- **notes**：后端已返回实体节点，前端 GraphFilterPanel 有类型过滤，但实体节点在力导向图中的渲染样式未独立验证（README 原始描述"前端尚未渲染"，后已标 [x]）。
+- **notes**：已在 `/graph` 页面完成浏览器验证：Tool / Material / Process / Constraint 具有独立颜色，GraphFilterPanel 可按实体类型过滤，节点点击可打开/切换详情侧栏。verified_at: 2026-05-18, method: browser smoke test on `/graph?nf=Tool`.
 
 ### F050 🟢 节点详情侧边栏（点击任意节点展开属性面板）
 - **evidence**：`frontend/src/app/graph/NodeDetailSidebar.tsx`
