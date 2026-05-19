@@ -46,6 +46,7 @@ from .routers.graph_api.gnn      import router as gnn_router
 from .routers.graph_api.visual_qc import router as visual_qc_router
 from .routers.docs.reprocess     import router as reprocess_router
 from .routers.admin_api.cache    import router as admin_cache_router
+from .routers.admin_api.config_reload import router as admin_config_router
 from .routers.admin_api.synonyms import router as admin_synonyms_router
 from .routers.annotations        import router as annotations_router
 from .routers.ai_status          import router as ai_status_router
@@ -210,6 +211,7 @@ app.include_router(gnn_router)
 app.include_router(visual_qc_router)
 app.include_router(reprocess_router)
 app.include_router(admin_cache_router)
+app.include_router(admin_config_router)
 app.include_router(admin_synonyms_router)
 app.include_router(annotations_router)
 app.include_router(ai_status_router)

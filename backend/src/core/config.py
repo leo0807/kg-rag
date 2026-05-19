@@ -1,14 +1,44 @@
-from pydantic import ValidationInfo, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from __future__ import annotations
+
 from functools import lru_cache
 from pathlib import Path
+from threading import RLock
+from typing import Any, Iterable
+import os
+
+from dotenv import dotenv_values
+from pydantic import ValidationInfo, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ROOT = Path(__file__).parent.parent.parent.parent
+ENV_FILE_PATH = _ROOT / ".env"
+_SETTINGS_LOCK = RLock()
+
+RELOADABLE_FIELDS = frozenset(
+    {
+        "LOG_LEVEL",
+        "QUERY_CACHE_TTL",
+        "SEMANTIC_CACHE_LOOKUP_TIMEOUT",
+        "CLARIFICATION_ENABLED",
+        "CLARIFICATION_MIN_LENGTH",
+        "CLARIFICATION_LLM_CHECK",
+        "RETRIEVER_TOP_K",
+        "RERANKER_ENABLED",
+        "RERANKER_TOP_K",
+        "RERANKER_CANDIDATE_K",
+        "LLM_TIMEOUT",
+        "LLM_MAX_TOKENS",
+        "MAX_REQUEST_BODY_BYTES",
+        "MAX_UPLOAD_FILE_BYTES",
+        "SHUTDOWN_GRACE_PERIOD_SECONDS",
+        "ALERT_COOLDOWN_MINUTES",
+    }
+)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(_ROOT / ".env"),
+        env_file=str(ENV_FILE_PATH),
         extra="ignore",
     )
 
@@ -115,6 +145,9 @@ class Settings(BaseSettings):
     WECOM_WEBHOOK:           str = ""
     ALERT_COOLDOWN_MINUTES:  int = 30
 
+    def reload(self, allowed_fields: Iterable[str] | None = None) -> dict[str, dict[str, Any]]:
+        return reload_reloadable_settings(self, allowed_fields=allowed_fields)
+
     @field_validator("NEO4J_URI", mode="before")
     @classmethod
     def check_neo4j_uri(cls, v: str) -> str:
@@ -151,3 +184,51 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+def _load_reloadable_env_values(fields: Iterable[str]) -> dict[str, Any]:
+    file_values = dotenv_values(ENV_FILE_PATH)
+    env_values: dict[str, Any] = {}
+    for field in fields:
+        value = file_values.get(field)
+        if value is not None:
+            env_values[field] = value
+            continue
+        if field in os.environ:
+            env_values[field] = os.environ[field]
+    return env_values
+
+
+def get_reloadable_settings_snapshot() -> dict[str, Any]:
+    return {field: getattr(settings, field) for field in sorted(RELOADABLE_FIELDS)}
+
+
+def reload_reloadable_settings(
+    current: Settings | None = None,
+    allowed_fields: Iterable[str] | None = None,
+) -> dict[str, dict[str, Any]]:
+    target = current or settings
+    fields = tuple(sorted(set(allowed_fields or RELOADABLE_FIELDS)))
+    if not fields:
+        return {}
+
+    overrides = _load_reloadable_env_values(fields)
+    if not overrides:
+        return {}
+
+    with _SETTINGS_LOCK:
+        merged = target.model_dump()
+        merged.update(overrides)
+        fresh = type(target).model_validate(merged)
+
+        changed: dict[str, dict[str, Any]] = {}
+        model_fields = type(fresh).model_fields
+        for field in fields:
+            if field not in model_fields:
+                continue
+            old_value = getattr(target, field)
+            new_value = getattr(fresh, field)
+            if old_value != new_value:
+                object.__setattr__(target, field, new_value)
+                changed[field] = {"old": old_value, "new": new_value}
+        return changed

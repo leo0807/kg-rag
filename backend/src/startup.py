@@ -11,6 +11,7 @@ from fastapi import FastAPI
 
 from .core.config import settings
 from .core.database import init_db, get_driver
+from .core.config_watcher import config_watcher
 from .core.logging_setup import setup_logging
 from .core.shutdown import shutdown_tracker
 from .db.session import AsyncSessionLocal, init_tables
@@ -106,6 +107,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Embedding 预热失败: %s", e)
 
+    await config_watcher.start()
+
     # ... (existing GNN service logic)
 
     # 服务重启后图片补全任务不自动续跑，由用户在管理页面手动控制
@@ -117,6 +120,7 @@ async def lifespan(app: FastAPI):
     clean = await shutdown_tracker.drain(grace_period=settings.SHUTDOWN_GRACE_PERIOD_SECONDS)
     if not clean:
         logger.warning("Shutdown timed out, some streams were force-killed")
+    await config_watcher.stop()
     health_monitor.stop_background_task()
     if _HAS_SCHEDULER and scheduler:
         scheduler.shutdown()
