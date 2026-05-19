@@ -10,11 +10,21 @@ DOCUMENT_TYPES = frozenset({
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/msword",
 })
+IMAGE_TYPES = frozenset({
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif",
+})
 
 MAGIC_BYTES_MAP: dict[str, tuple[bytes, ...]] = {
     "application/pdf": (b"%PDF-",),
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (b"PK\x03\x04",),
     "application/msword": (b"\xd0\xcf\x11\xe0",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/webp": (b"RIFF",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
 }
 
 

@@ -9,6 +9,7 @@ class QueryRequest(BaseModel):
     top_k:      int        = 5
     history:    list[dict] = []
     images:     list[str]  = []   # base64 data URIs, e.g. "data:image/png;base64,..."
+    image_context: str = ""
     doc_hints:  list[str]  = Field(default_factory=list)
     use_hyde:   bool       = False
     hyde_alpha: float      = 0.5  # 假设答案向量权重（0=纯原始问题，1=纯假设答案）

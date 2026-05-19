@@ -29,7 +29,7 @@ from .stream_utils import _error_event, _emit_follow_ups, build_metrics_event, c
 logger = logging.getLogger(__name__)
 async def query_stream(request: Request, req: QueryRequest, driver: Driver = Depends(get_driver), current_user: Optional[User] = None, db: AsyncSession | None = None):
     if not req.question.strip(): raise HTTPException(status_code=400, detail="question 不能为空")
-    top_k = req.top_k or 5
+    top_k = req.top_k or 5; cache_question = req.question if not req.image_context else f"{req.question}\n\n{req.image_context[:500]}"
     effective_settings = await load_effective_settings(db, current_user.id if current_user else None)
     user_id = current_user.id if current_user else ""; department = current_user.department if current_user else ""
     async def generate():
@@ -55,10 +55,10 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                     _q_emb: list[float] | None = None
                     try:
                         timeout_s = float(getattr(effective_settings, "SEMANTIC_CACHE_LOOKUP_TIMEOUT", 1.0) or 1.0)
-                        _q_emb, hit = await try_semantic_cache_lookup(req.question, req.strategy or "parallel", timeout_s)
+                        _q_emb, hit = await try_semantic_cache_lookup(cache_question, req.strategy or "parallel", timeout_s)
                         if hit:
                             async for event in stream_semantic_cache_hit(
-                                hit, req.question, user_id, department, req.strategy or "parallel"
+                                hit, cache_question, user_id, department, req.strategy or "parallel"
                             ):
                                 yield event
                             return
@@ -220,17 +220,10 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                     ]
                     for h in trim_conversation_history_for_question(req.question, req.history, max_rounds=3):
                         messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+                    if req.image_context:
+                        context = f"{context}\n\n{req.image_context}"
                     user_text = f"## 相关规范内容\n\n{context}\n\n## 问题\n\n{req.question}" + _handler.user_suffix()
-                    if req.images:
-                        user_content: list = [{"type": "text", "text": user_text}]
-                        for img_uri in req.images:
-                            user_content.append({
-                                "type": "image_url",
-                                "image_url": {"url": img_uri},
-                            })
-                        messages.append({"role": "user", "content": user_content})
-                    else:
-                        messages.append({"role": "user", "content": user_text})
+                    messages.append({"role": "user", "content": user_text})
                     full_answer = ""
                     try:
                         async for delta in stream_with_first_token_logging(
@@ -279,7 +272,7 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                             await asyncio.to_thread(
                                 semantic_cache.store,
                                 _q_emb, req.strategy or "parallel", full_answer,
-                                sources, req.question[:200], doc_ids,
+                                sources, cache_question[:200], doc_ids,
                             )
                         except Exception as _se:
                             logger.debug("语义缓存写入失败（跳过）: %s", _se)

@@ -22,6 +22,11 @@ from .clarification_utils import build_clarification_payload, detect_clarificati
 from .context_utils import build_llm_context, reorder_sources_for_llm
 from .mcq_utils import maybe_answer_mcq_sync
 logger = logging.getLogger(__name__)
+
+_MODEL_PRICE = {"gpt-4o": (0.005, 0.015), "gpt-4o-mini": (0.00015, 0.0006), "claude-3-5-sonnet": (0.003, 0.015), "claude-3-haiku": (0.00025, 0.00125), "qwen2.5-7b": (0.0, 0.0)}
+
+
+def _calc_cost(model: str, prompt_tok: int, completion_tok: int) -> float: key = next((k for k in _MODEL_PRICE if k in model.lower()), None); return 0.0 if not key else round((prompt_tok * _MODEL_PRICE[key][0] + completion_tok * _MODEL_PRICE[key][1]) / 1000, 6)
 async def _get_default_pipeline(user_id: str, db: AsyncSession) -> dict | None:
     """取用户默认链路配置，无则返回 None。"""
     try:
@@ -60,7 +65,7 @@ async def query_sync(
         raise HTTPException(status_code=400, detail="question 不能为空")
     effective_settings = await load_effective_settings(db, current_user.id if current_user else None)
     with use_runtime_settings(effective_settings):
-        top_k = req.top_k or 5
+        top_k = req.top_k or 5; cache_question = req.question if not req.image_context else f"{req.question}\n\n{req.image_context[:500]}"
         user_id = current_user.id if current_user else ""; department = current_user.department if current_user else ""
     clarification = await detect_clarification(
         req.question,
@@ -77,7 +82,7 @@ async def query_sync(
     )
     if mcq_response is not None:
         return mcq_response
-    cached = get_cached_result(req.question, req.strategy, top_k)
+    cached = get_cached_result(cache_question, req.strategy, top_k)
     if cached:
         return QueryResponse(**cached)
     start = time.time()
@@ -103,7 +108,7 @@ async def query_sync(
                     model_name=get_llm_service().model_name,
                 )
                 set_cached_result(
-                    req.question,
+                    cache_question,
                     "pipeline",
                     top_k,
                     {"answer": answer, "sources": [s.model_dump() for s in sources]},
@@ -129,7 +134,7 @@ async def query_sync(
                 department=department,
                 model_name=get_llm_service().model_name,
             )
-            set_cached_result(req.question, req.strategy, top_k,
+            set_cached_result(cache_question, req.strategy, top_k,
                               {"answer": answer, "sources": [s.model_dump() for s in sources]})
             return QueryResponse(answer=answer, sources=sources)
         except Exception as e:
@@ -157,7 +162,7 @@ async def query_sync(
                 model_name=get_llm_service().model_name,
             )
             set_cached_result(
-                req.question,
+                cache_question,
                 req.strategy,
                 top_k,
                 {
@@ -204,7 +209,7 @@ async def query_sync(
                     model_name=get_llm_service().model_name,
                 )
                 set_cached_result(
-                    req.question,
+                    cache_question,
                     req.strategy,
                     top_k,
                     {
@@ -224,7 +229,7 @@ async def query_sync(
     t_retrieval = time.time()
     sections, ft_score_map, expansion_info = do_retrieval(
         driver,
-        req.question,
+                    cache_question,
         req.strategy,
         top_k,
         doc_id=resolve_retrieval_doc_id(req.question, req.doc_hints),
@@ -241,14 +246,14 @@ async def query_sync(
         except Exception:
             pass
 
-    prompt_tokens = completion_tokens = 0
-    llm_ms = 0
+    prompt_tokens = completion_tokens = llm_ms = 0
     if not sections:
         answer = "在知识库中未找到相关章节，请确认文件已入库。"
     else:
         llm_sections = reorder_sources_for_llm(sections, req.question)
         llm_context = build_llm_context(llm_sections)
         context = (conflict_notes + "\n\n" + llm_context) if conflict_notes else llm_context
+        if req.image_context: context = f"{context}\n\n{req.image_context}"
         try:
             from ...services.ai.llm import generate_answer_with_usage
             t_llm = time.time()
@@ -274,15 +279,7 @@ async def query_sync(
     total_ms = int((time.time() - start) * 1000)
     model_name = get_llm_service().model_name
 
-    metrics = QueryMetrics(
-        total_ms=total_ms,
-        stages={"检索": retrieval_ms, "LLM生成": llm_ms},
-        tokens={"prompt": prompt_tokens, "completion": completion_tokens,
-                "total": prompt_tokens + completion_tokens},
-        cost_usd=_calc_cost(model_name, prompt_tokens, completion_tokens),
-        candidates_retrieved=len(sections),
-        candidates_after_rerank=len(sources),
-    )
+    metrics = QueryMetrics(total_ms=total_ms, stages={"检索": retrieval_ms, "LLM生成": llm_ms}, tokens={"prompt": prompt_tokens, "completion": completion_tokens, "total": prompt_tokens + completion_tokens}, cost_usd=_calc_cost(model_name, prompt_tokens, completion_tokens), candidates_retrieved=len(sections), candidates_after_rerank=len(sources))
 
     emit_generation_record(
         strategy=req.strategy,
@@ -293,7 +290,7 @@ async def query_sync(
         department=department,
         model_name=model_name,
     )
-    set_cached_result(req.question, req.strategy, top_k,
+    set_cached_result(cache_question, req.strategy, top_k,
                       {"answer": answer, "sources": [s.model_dump() for s in sources],
                        "expansion_info": expansion_info})
     return QueryResponse(answer=answer, sources=sources, expansion_info=expansion_info,

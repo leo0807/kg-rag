@@ -14,6 +14,7 @@ from ...auth import deps as auth_deps
 from ...db.session import get_db
 from ...db.models import User
 from .models  import QueryRequest, QueryResponse
+from .request_parser import parse_query_request
 from .sync    import query_sync
 from .stream  import query_stream
 from .compare import query_compare
@@ -29,7 +30,7 @@ limiter = Limiter(key_func=get_remote_address)
 @limiter.limit("30/minute")
 async def query(
     request:      Request,
-    req:          QueryRequest,
+    req:          QueryRequest = Depends(parse_query_request),
     current_user: User = Depends(get_current_user),
     driver:       Driver = Depends(get_protected_driver),
     db:           AsyncSession = Depends(get_db),
@@ -41,7 +42,7 @@ async def query(
 @limiter.limit("30/minute")
 async def query_stream_route(
     request:      Request,
-    req:          QueryRequest,
+    req:          QueryRequest = Depends(parse_query_request),
     current_user: User = Depends(get_current_user),
     driver:       Driver = Depends(get_protected_driver),
     db:           AsyncSession = Depends(get_db),
@@ -185,7 +186,7 @@ async def query_suggest(
 @limiter.limit("10/minute")
 async def query_compare_route(
     request: Request,
-    req:     QueryRequest,
+    req:     QueryRequest = Depends(parse_query_request),
     current_user: User = Depends(get_current_user),
     driver:  Driver     = Depends(get_protected_driver),
     db:      AsyncSession = Depends(get_db),
