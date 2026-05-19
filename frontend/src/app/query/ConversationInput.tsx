@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFavorites } from "@/app/favorites/useFavorites";
 import { ConversationInputComposer } from "./ConversationInputComposer";
 import { ConversationInputStatusBars } from "./ConversationInputStatusBars";
@@ -56,6 +56,7 @@ export default function ConversationInput({
   const { getFavoriteId, addFavorite, removeFavorite } = useFavorites();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -108,6 +109,24 @@ export default function ConversationInput({
     if (files.length) readFilesAsBase64(files);
   }
 
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    if (!isDragging) setIsDragging(true);
+  }
+
+  function handleDragLeave() {
+    setIsDragging(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files).filter((f) =>
+      f.type.startsWith("image/"),
+    );
+    if (files.length) readFilesAsBase64(files);
+  }
+
   const canSend =
     Boolean(value.trim() || pendingImages.length > 0) && !loading && !streaming;
 
@@ -148,11 +167,15 @@ export default function ConversationInput({
         loading={loading}
         streaming={streaming}
         onStop={onStop}
+        isDragging={isDragging}
         canSend={canSend}
         onSubmit={onSubmit}
         onFileClick={() => fileInputRef.current?.click()}
         onFileChange={handleFileChange}
         onPaste={handlePaste}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         onKeyDown={handleKeyDown}
         onInput={(e) => {
           const el = e.currentTarget;

@@ -41,6 +41,23 @@ function normalizeAnswerText(text: string) {
   return text.replace(/\u00A0/g, " ").replace(/[ \t]{3,}/g, " ");
 }
 
+function dataUriToFile(dataUri: string, index: number): File {
+  const match = dataUri.match(/^data:([^;]+);base64,(.+)$/s);
+  if (!match) {
+    throw new Error("invalid image data uri");
+  }
+  const mime = match[1];
+  const base64 = match[2];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const subtype = mime.split("/")[1] || "png";
+  const ext = subtype === "jpeg" ? "jpg" : subtype;
+  return new File([bytes], `query-image-${index + 1}.${ext}`, { type: mime });
+}
+
 function upsertAgentStep(
   steps: AgentStepInfo[],
   nextStep: AgentStepInfo,
@@ -661,14 +678,32 @@ export function useStreamQuery({
           currentAnswerImages = [];
           setRetrievedCount(null);
           setStreamAnswerImages([]);
-          const headers = await getAuthHeaders({
-            "Content-Type": "application/json",
-          });
-          const res = await fetch(`${API}/api/query/stream`, {
-            method: "POST",
-            headers,
-            signal: controller.signal,
-            body: JSON.stringify({
+          const isMultipart = images.length > 0;
+          const headers = await getAuthHeaders(
+            isMultipart ? undefined : { "Content-Type": "application/json" },
+          );
+          let body: BodyInit;
+          if (isMultipart) {
+            const formData = new FormData();
+            formData.append("question", question);
+            formData.append("strategy", strategy);
+            formData.append("history", JSON.stringify(history));
+            formData.append("use_hyde", String(useHyde));
+            formData.append("hyde_alpha", String(hydeAlpha));
+            formData.append(
+              "skip_clarification",
+              String(options?.skipClarification ?? false),
+            );
+            formData.append(
+              "doc_hints",
+              JSON.stringify(options?.docHints ?? []),
+            );
+            images.forEach((image, index) => {
+              formData.append("images", dataUriToFile(image, index));
+            });
+            body = formData;
+          } else {
+            body = JSON.stringify({
               question,
               strategy,
               history,
@@ -677,7 +712,13 @@ export function useStreamQuery({
               hyde_alpha: hydeAlpha,
               skip_clarification: options?.skipClarification ?? false,
               doc_hints: options?.docHints ?? [],
-            }),
+            });
+          }
+          const res = await fetch(`${API}/api/query/stream`, {
+            method: "POST",
+            headers,
+            signal: controller.signal,
+            body,
           });
           if (!res.ok) {
             const body = await parseResponseBody(res);

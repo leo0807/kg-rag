@@ -14,11 +14,15 @@ interface Props {
   loading: boolean;
   streaming: boolean;
   onStop?: () => void;
+  isDragging?: boolean;
   canSend: boolean;
   onSubmit: () => void;
   onFileClick: () => void;
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onPaste: (e: ClipboardEvent) => void;
+  onDragOver?: (e: React.DragEvent<HTMLTextAreaElement>) => void;
+  onDragLeave?: (e: React.DragEvent<HTMLTextAreaElement>) => void;
+  onDrop?: (e: React.DragEvent<HTMLTextAreaElement>) => void;
   onKeyDown: (e: KeyboardEvent) => void;
   onInput: (e: FormEvent<HTMLTextAreaElement>) => void;
   onChange: (v: string) => void;
@@ -33,11 +37,15 @@ export function ConversationInputComposer({
   loading,
   streaming,
   onStop,
+  isDragging,
   canSend,
   onSubmit,
   onFileClick,
   onFileChange,
   onPaste,
+  onDragOver,
+  onDragLeave,
+  onDrop,
   onKeyDown,
   onInput,
   onChange,
@@ -47,7 +55,13 @@ export function ConversationInputComposer({
   onToggleFavorite,
 }: Props) {
   return (
-    <div className="flex items-end gap-2 rounded-2xl border border-gray-700 bg-gray-900 px-3 py-3 transition-colors focus-within:border-[#1B6BB5] sm:px-3.5 sm:py-3.5">
+    <div
+      className={`flex items-end gap-2 rounded-2xl border px-3 py-3 transition-colors focus-within:border-[#1B6BB5] sm:px-3.5 sm:py-3.5 ${
+        isDragging
+          ? "border-[#1B6BB5] bg-gray-900/95"
+          : "border-gray-700 bg-gray-900"
+      }`}
+    >
       <button
         type="button"
         onClick={onFileClick}
@@ -71,6 +85,9 @@ export function ConversationInputComposer({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
         placeholder="发送消息或粘贴图片... （Enter 发送，Shift+Enter 换行）"
         rows={1}
         className="max-h-32 flex-1 resize-none bg-transparent text-sm leading-relaxed text-gray-200 outline-none placeholder-gray-600"
