@@ -2,11 +2,11 @@
 
 ## 摘要
 - 总任务数：15
-- 已完成：5（F049、F060、F110、F120、F121）
-- 待完成：10
-- 估算工时：26.5 人天
+- 已完成：6（F049、F060、F110、F118、F120、F121）
+- 待完成：9
+- 估算工时：23.25 人天
 - LLM 依赖任务（GATED ON B001）：2 条
-- 当前 HEAD：3163ade
+- 当前 HEAD：692782f
 
 ## 工作纪律（每条任务执行前必读）
 
@@ -87,6 +87,10 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 - commit: 3163ade
 - 验证：图谱页复制分享链接后可恢复过滤、选中节点与缩放状态；既有 `nf` / `sn` URL 同步已扩展为完整 snapshot 同步
 
+### F118 Embedding 批处理（已闭环 ✓）
+- commit: docs(F118): close as already-implemented after investigation
+- 验证：code review 发现 `embed_batch(texts)` 已被所有 bulk path 调用，本地 bge-m3 直接走 `SentenceTransformer.encode(texts)`，原“逐条 encode 瓶颈”假设不成立
+
 ## 完成记录表
 
 | 任务 | 结果 | commit | 验证摘要 |
@@ -94,6 +98,7 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 | F049 | CLOSED | 342dd5d | Tool/Material/Process/Constraint 独立颜色 + 过滤 + 详情侧栏 |
 | F060 | CLOSED | 8495c1f, 948efd4 | tokenizer max_length 8192，单测 8/8 PASS |
 | F110 | CLOSED | 3163ade | 图谱快照 URL 可复制分享并恢复过滤、选中节点与缩放状态 |
+| F118 | CLOSED | docs(F118): close as already-implemented after investigation | embed_batch(texts) 已覆盖所有 bulk path，bge-m3 走原生 batch encode |
 | F022 | CLOSED | 328d23e | query/settings/graph 响应式入口与降级结构完成，浏览器 DOM 校验通过 |
 | F120 | CLOSED | 3ef822e | 坏 PDF 返回 422，真实 PDF 仍正常 |
 | F121 | CLOSED | f77418d | 12 项回归全过，preview 保持 PDF-only，ingest 接入 DOCUMENT_TYPES |
@@ -422,7 +427,7 @@ LLM 调用无重试机制，单次网络抖动或 Ollama 重启直接返回 500�
 
 ---
 
-### 任务 10：F118 Embedding 批处理
+### 任务 10：F118 Embedding 批处理（已闭环 ✓）
 **优先级**：P1
 **估时**：1 天
 **类型**：实施型性能优化
@@ -430,23 +435,26 @@ LLM 调用无重试机制，单次网络抖动或 Ollama 重启直接返回 500�
 **审计来源**：[feature_audit_2026-05-17.md#f118-embedding-批处理](./feature_audit_2026-05-17.md#f118-embedding-批处理)
 
 #### 背景
-Embedding 服务逐条 encode，入库速度是主要瓶颈（bge-m3 CPU 模式尤甚）。改为批处理可充分利用矩阵运算，显著提升入库吞吐。
+调研发现 Embedding 服务已通过 `embed_batch(texts)` 覆盖所有 bulk path，bge-m3 本地实现直接使用 `SentenceTransformer.encode(texts)`。原本假设的“逐条 encode 瓶颈”并不存在。
 
 #### 步骤
-1. 查看 `backend/src/services/ai/embedding_service.py`。
-2. 将 `encode()` 改为 `encode_batch(texts: list[str])`。
-3. 入库服务在 chunk 列表上批量调用，减少模型调用次数。
-4. 将 `EMBEDDING_BATCH_SIZE` 写入 `settings`。
-5. 用本地计时做批处理 vs 逐条对比。
+1. 查看 `backend/src/services/retrieval/embedding_service.py`。
+2. 核对 `embed_batch(texts)` 是否被 bulk path 调用。
+3. 核对本地 bge-m3 是否调用 `SentenceTransformer.encode(texts)`。
+4. 记录调研结论，不做代码改动。
 
 #### 验收
-- [ ] 入库 100 chunk 耗时相比逐条模式下降 ≥ 30%（本地计时对比）
-- [ ] 批量结果与逐条结果 L2 距离 < 1e-5（精度不变）
-- [ ] `EMBEDDING_BATCH_SIZE` 可通过 `.env` 调整
+- [x] 入库批量路径已使用 `embed_batch(texts)`
+- [x] 本地 bge-m3 已走原生 `SentenceTransformer.encode(texts)`
+- [x] 原“逐条 encode 瓶颈”假设被证伪
+
+#### 完成记录
+- commit: `docs(F118): close as already-implemented after investigation`
+- 验证：code review（`embedding_service.py` / `embedder.py` / `neo4j_writer.py` / `document_persistence.py` / `reprocess_vectorize.py`）
+- 备注：F125/F126 已作为后续 P3 优化项记入 backlog
 
 #### Commits
-- Commit A: feat(F118): batch embedding encode path
-- Commit B: docs: mark F118 closed
+- Commit: `docs(F118): close as already-implemented after investigation`
 
 ---
 

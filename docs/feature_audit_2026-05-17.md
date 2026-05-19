@@ -431,6 +431,12 @@
 - **method**：图谱页选中节点后生成完整 snapshot URL，复制分享链接并在新标签页恢复过滤、选中节点和缩放状态
 - **notes**：现有 `nf` / `sn` URL 同步扩展为完整快照同步，分享按钮已可复制当前视图链接。
 
+### F118 🟢 Embedding 批处理
+- **evidence**：`backend/src/services/retrieval/embedding_service.py` / `backend/src/services/graph/document_persistence.py`
+- **verified_at**：2026-05-17
+- **method**：code review（`embed_batch(texts)` 被所有 bulk path 调用；本地 bge-m3 直接走 `SentenceTransformer.encode(texts)`）
+- **notes**：原 backlog 假设的“逐条 encode 瓶颈”不存在；当前已是原生 batch encode，无需代码改造。后续微优化见 F125 / F126。
+
 ### F111 🟢 增量渲染与虚拟化（SVG → Canvas → WebGL）
 - **evidence**：
   - `frontend/src/app/graph/renderSVG.ts`, `renderCanvas.ts`, `renderWebGL.ts`, `renderHeatmap.ts`
@@ -489,7 +495,6 @@
 - **F079 对话分支功能**（上节标 🔴，代码完全不存在）
 - **F038 WebSocket 进度推送**（上节标 🔴，WebSocket 完全不存在，当前为 Redis + HTTP 轮询）
 - **F073 PostgreSQL 索引补齐**（conversations 表缺 user_id 索引）
-- **F118 Embedding 批处理**（当前逐条 encode，入库速度瓶颈）
 
 ### 低优先级（长期规划）
 - Kubernetes 部署（Helm Chart）
@@ -507,7 +512,7 @@
 | 🟢 已实现 | 53（含 F020 升级） |
 | 🟡 部分实现 | 17（含 F020 移出后） |
 | 🔴 未实现（声称已实现但代码不存在） | 5 |
-| 🔴 未实现（README 标 `[ ]` 的高/中优先级合规功能） | 8（F073、F113-F118、F119） |
+| 🔴 未实现（README 标 `[ ]` 的高/中优先级合规功能） | 7（F073、F113-F117、F119） |
 | ⚫ 外网依赖描述点（含于 🟡，非独立条目） | 5 |
 
 **声称已实现但实际未实现的高风险条目（需立即修正 README）**：
@@ -704,7 +709,7 @@ ls -la backend/models/gnn/
 | F038 WebSocket | 🔴（待确认） | 🔴（坐实，HTTP 轮询） |
 | F107 零结果监控 | 🔴（待确认） | 🔴（坐实，数据未采集） |
 | F094 GNN | 🟢（待确认） | 🟢（坐实，权重已训练） |
-| 第八节 8 条合规功能 | 无编号 | F073、F113-F118、F119 |
+| 第八节 8 条合规功能 | 无编号 | F073、F113-F117、F119 |
 
 ---
 

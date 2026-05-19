@@ -54,13 +54,13 @@
 | 优先级 | 条目数 | 总估时 | 变更说明 |
 |--------|--------|--------|---------|
 | P0     | 1      | 1.0 人天  | F038/F107/F116 已关闭；F113+F114 已实现关闭（-3条 -1.5天） |
-| P1     | 5      | 8.0 人天  | F055 验证升 🟢；F060 已关闭；F073 已实现关闭；F120 已关闭 |
+| P1     | 4      | 7.0 人天  | F055 验证升 🟢；F060/F118 已关闭；F073/F120 已实现关闭 |
 | P2     | 4      | 8.5 人天  | F100/F022/F110/F121 已实现关闭；F122/F123 新增（+2条 +1.5天） |
-| P3     | 1      | 7.0 人天  | F124 新增（+1条 +7.0天） |
-| 合计   | 14     | 26.5 人天 | 较初版 -5条 +3.5天 |
+| P3     | 3      | 7.75 人天 | F124/F125/F126 新增（+3条 +0.75天） |
+| 合计   | 15     | 23.25 人天 | 较初版 -4条 +0.25天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
-> 最后更新：2026-05-18（F060/F110/F120/F121/F022 已关闭；F122/F123/F124 新增；预存在改动分类完成）。
+> 最后更新：2026-05-19（F060/F110/F118/F120/F121/F022 已关闭；F122/F123/F124/F125/F126 新增；预存在改动分类完成）。
 
 ---
 
@@ -328,27 +328,34 @@ PDF 入库同步阻塞（耗时 > 30s），HTTP worker 长期被占用。需将 
 
 ### F118 Embedding 批处理
 
-**状态**：待开发
+**状态**：🟢 已关闭
 **优先级**：P1
 **审计来源**：[feature_audit_2026-05-17.md#f118-embedding-批处理](./feature_audit_2026-05-17.md#f118-embedding-批处理)
 
 **任务描述**：
-Embedding 服务逐条 encode，入库速度是主要瓶颈（bge-m3 CPU 模式尤甚）。改为批处理可充分利用矩阵运算，显著提升入库吞吐。
+调研发现 Embedding 服务已通过 `embed_batch(texts)` 覆盖所有 bulk path，`SentenceTransformer.encode(texts)` 亦为原生 batch encode。原“逐条 encode 瓶颈”假设不成立，因此无需代码改造。
 
 **关键文件路径**：
-- `backend/src/services/ai/embedding_service.py` — `encode()` 改为 `encode_batch(texts: list[str])`
+- `backend/src/services/retrieval/embedding_service.py` — `embed_batch(texts)` / `SentenceTransformer.encode(texts)`
+- `backend/src/services/graph/document_persistence.py` — 章节 / 表格批量 embed
+- `backend/src/services/graph/neo4j_writer.py` — 文档 / 公式 / 表格批量 embed
+- `backend/src/services/ingestion/reprocess_vectorize.py` — 重处理章节批量 embed
 
 **实现思路**：
-- 新增 `encode_batch(texts, batch_size=32)`，内部分批调用模型
-- 入库服务在 chunk 列表上批量调用，减少模型调用次数
-- `EMBEDDING_BATCH_SIZE` 写入 `settings`
+- 不改代码；仅记账为“已具备批处理”
+- 后续若需微优化，优先将远程 Embedding API 的 batch_size 配置化，或在 Apple Silicon 上补 MPS 分支
 
-**估时**：一天
+**估时**：一天（已完成）
 
 **验收标准**：
-- [ ] 入库 100 chunk 耗时相比逐条模式下降 ≥ 30%（本地计时对比）
-- [ ] 批量结果与逐条结果 L2 距离 < 1e-5（精度不变）
-- [ ] `EMBEDDING_BATCH_SIZE` 可通过 `.env` 调整
+- [x] 入库 100 chunk 路径已通过批量调用实现，无逐条 encode 循环
+- [x] 批量入口 `embed_batch(texts)` 已被调用方统一使用
+- [x] 调研结论：F118 假设不成立，暂无代码改造必要
+
+**完成记录**：
+- commit: `docs(F118): close as already-implemented after investigation`
+- 验证：`embedding_service.py` / `embedder.py` / `neo4j_writer.py` / `document_persistence.py` / `reprocess_vectorize.py` code review
+- 备注：F125 / F126 作为 P3 后续可优化项单独记账
 
 **依赖**：无
 
@@ -619,6 +626,52 @@ F022 移动端评估时发现，登录页未在当前会话下直接验证，且
 
 **验收标准**：
 - [ ] 移动端图谱的交互与性能问题有独立优化方案
+
+**依赖**：无
+
+---
+
+### F125 远程 Embedding API batch_size 配置化
+
+**状态**：🔴 未实现
+**优先级**：P3
+**审计来源**：F118 调研发现
+
+**任务描述**：
+`backend/src/services/retrieval/embedding_service.py` 中 `_OpenAICompatEmbeddingProvider` 的 `batch_size = 25` 是硬编码。当前内网默认走本地模式，因此这不影响生产，但代码中的魔数没有配置入口与文档说明。
+
+**改造**：
+- 将 25 提到 `settings.REMOTE_EMBEDDING_BATCH_SIZE`
+- 默认值仍为 25
+- 通过环境变量可调整远程 Embedding API 每批请求大小
+
+**验收**：
+- [ ] settings 有 `REMOTE_EMBEDDING_BATCH_SIZE` 字段
+- [ ] `embedding_service.py` 引用 settings，而非硬编码
+- [ ] 默认值仍为 25，行为无变化
+
+**依赖**：无
+
+---
+
+### F126 macOS MPS 加速支持
+
+**状态**：🔴 未实现
+**优先级**：P3
+**审计来源**：F118 调研发现
+
+**任务描述**：
+`embedding_service.py` 只检测 `torch.cuda.is_available()`，未检测 `torch.backends.mps.is_available()`。在 Apple Silicon 开发机上，bge-m3 可能退回 CPU；若可用 MPS，则应优先使用 MPS。
+
+**改造**：
+- device 检测优先级改为 `cuda > mps > cpu`
+- 仅影响本地 bge-m3 加载路径
+
+**验收**：
+- [ ] device 检测逻辑包含 MPS 分支
+- [ ] Apple Silicon 机器 embedding 速度提升可见
+- [ ] CUDA 机器行为无变化
+- [ ] CPU 机器（无 GPU、无 MPS）行为无变化
 
 **依赖**：无
 
