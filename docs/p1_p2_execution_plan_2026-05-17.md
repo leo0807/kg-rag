@@ -2,21 +2,20 @@
 
 ## 摘要
 - 总任务数：15
-- 已完成：6（F049、F060、F110、F118、F120、F121）
-- 待完成：9
-- 估算工时：23.25 人天
+- 已完成：7（F049、F060、F076、F110、F118、F120、F121）
+- 待完成：8
+- 估算工时：22.25 人天
 - LLM 依赖任务（GATED ON B001）：2 条
-- 当前 HEAD：692782f
+- 当前 HEAD：7285e2e
 
 ## 待执行任务（已决策）
 
 按以下顺序执行，前一个 commit 落地 + 用户审核后才进下一个：
 
-1. F076 配置热重载（方案 C）
-2. F031-pc PC 端图片上传（方案 A）
-3. F117 PDF 入库 Celery（方案 B，前置验证）
-4. F079 对话分支（方案 B + 形状 Y）
-5. F122 全局长任务 Celery 化（BLOCKED ON F117）
+1. F031-pc PC 端图片上传（方案 A）
+2. F117 PDF 入库 Celery（方案 B，前置验证）
+3. F079 对话分支（方案 B + 形状 Y）
+4. F122 全局长任务 Celery 化（BLOCKED ON F117）
 
 总估时：9-14 人天
 
@@ -89,6 +88,10 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 - commits: 8495c1f, 948efd4
 - 验证：tokenizer max_length 8192，单测 8/8 PASS
 
+### F076 配置热重载（已闭环 ✓）
+- commit: 7285e2e
+- 验证：`.env` 修改触发 watcher 自动刷新；`POST /api/admin/config/reload` 手动刷新也能立即生效；仅白名单字段可热重载
+
 ### F120 PDF 解析异常优雅降级（已闭环 ✓）
 - commit: 3ef822e
 - 验证：`/api/preview` 对坏 PDF 返回 422 + 友好消息；真实 PDF 仍正常
@@ -111,6 +114,7 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 |---|---|---|---|
 | F049 | CLOSED | 342dd5d | Tool/Material/Process/Constraint 独立颜色 + 过滤 + 详情侧栏 |
 | F060 | CLOSED | 8495c1f, 948efd4 | tokenizer max_length 8192，单测 8/8 PASS |
+| F076 | CLOSED | 7285e2e | `.env` watcher 自动刷新 + `POST /api/admin/config/reload` 手动刷新均生效 |
 | F110 | CLOSED | 3163ade | 图谱快照 URL 可复制分享并恢复过滤、选中节点与缩放状态 |
 | F118 | CLOSED | docs(F118): close as already-implemented after investigation | embed_batch(texts) 已覆盖所有 bulk path，bge-m3 走原生 batch encode |
 | F022 | CLOSED | 328d23e | query/settings/graph 响应式入口与降级结构完成，浏览器 DOM 校验通过 |
@@ -206,6 +210,8 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 
 ⚠️ 注意：此任务有 A/B/C 三种实现选项，按工作纪律 I4，必须停下来等用户决定再推进。
 
+**状态**：✅ 已闭环（2026-05-19）
+
 #### 背景
 当前代码只存在零散的局部 reload，不存在通用配置热重载。目标是让部分运行时配置在不重启服务的情况下可刷新。
 
@@ -232,11 +238,12 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 8. 验证 `.env` 改动后无需重启即可读到新值。
 
 #### 验收
-- [ ] 修改 `.env` 某配置项后 5 秒内无需重启即可读到新值
+- [x] 修改 `.env` 某配置项后 5 秒内无需重启即可读到新值
 
-#### Commits
-- Commit A: feat(F076): config hot reload via admin API
-- Commit B: docs: mark F076 closed
+#### 完成记录
+- commit: `7285e2e`
+- 验证：`.env` 修改触发 watcher 自动刷新；`POST /api/admin/config/reload` 手动刷新也能立即生效
+- 备注：仅白名单字段可热重载，DB / 端口 / JWT / LLM provider 仍保持不可热重载
 
 ---
 

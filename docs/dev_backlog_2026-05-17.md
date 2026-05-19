@@ -419,7 +419,7 @@ PDF 入库同步阻塞（耗时 > 30s），HTTP worker 长期被占用。需将 
 ### F049 实体节点可视化渲染验证 / F076 通用配置热重载实现
 
 **状态（F049）**：🟢 已验证（2026-05-18 浏览器烟雾测试通过）
-**状态（F076）**：🔴 确认未实现（代码级验证：全库无 watchdog/FileSystemEvent，只有局部 reload 端点）
+**状态（F076）**：🟢 已关闭（2026-05-19 `.env` watcher + 手动 reload 端点验证通过）
 **优先级**：P1
 **审计来源**：[feature_audit_2026-05-17.md#f049--实体节点渲染](./feature_audit_2026-05-17.md#f049--实体节点渲染) · [#f076--配置热重载](./feature_audit_2026-05-17.md#f076--配置热重载)
 
@@ -435,23 +435,23 @@ PDF 入库同步阻塞（耗时 > 30s），HTTP worker 长期被占用。需将 
   - `docs(F076): mark closed`
 
 **任务描述**：
-F049：已完成浏览器目视检查，Tool / Material / Process / Constraint 节点颜色与 Section 有区分，GraphFilterPanel 可按实体类型过滤，节点点击可切换详情侧栏。F076：代码已确认不支持通用热重载，全库无 watchdog/FileSystemEvent，仅有 synonyms / entity / GNN 局部 reload；需实现通用机制。
+F049：已完成浏览器目视检查，Tool / Material / Process / Constraint 节点颜色与 Section 有区分，GraphFilterPanel 可按实体类型过滤，节点点击可切换详情侧栏。F076：已实现通用配置热重载，支持 `.env` watcher 自动刷新和 `/api/admin/config/reload` 手动刷新，且仅限白名单安全字段。
 
 **关键文件路径**：
 - F049：`frontend/src/app/graph/` — 节点渲染配置（验证即可）
 - F076：`backend/src/core/config.py` + `backend/src/startup.py` — 热重载机制新增
 
 **实现思路（F076）**：
-- 调研当前哪些配置已支持局部 reload（synonyms / entity / GNN）
-- 在 `startup.py` 新增 watchdog 线程监听 `.env` 变化，或新增 `POST /api/admin/config/reload` 触发端点
-- settings 重新加载后广播至各 service（LLM provider / retrieval config 等）
-- 验收：改 `.env` 中某配置项后，5 秒内 `GET /api/admin/config` 返回新值
+- 通过 `backend/src/core/config.py` 提供白名单重载 helper
+- 在 `startup.py` 启动 `.env` watcher，文件变化后自动刷新可热重载字段
+- 提供 `POST /api/admin/config/reload` 供管理员手动刷新
+- settings 重新加载后立即反映到 `GET /api/admin/config`
 
 **估时**：F049 半天（验证）；F076 一天（半天调研 + 半天实现）
 
 **验收标准**：
 - [x] F049：图谱页 Tool / Material 节点与 Section 节点颜色 / 形状不同（已验证）
-- [ ] F076：修改 `.env` 某配置项后 5 秒内无需重启即可读到新值
+- [x] F076：修改 `.env` 某配置项后 5 秒内无需重启即可读到新值
 
 **依赖**：F049 需前端启动；F076 无依赖
 

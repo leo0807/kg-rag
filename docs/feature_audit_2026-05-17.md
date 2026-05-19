@@ -321,9 +321,13 @@
 - **evidence**：`backend/src/services/retrieval/embedding_service.py:63` 加载时有 device 参数
 - **notes**：代码传入 device 参数，但硬编码为 `"cpu"` 还是自动检测未进一步确认（embedding_service 需要完整阅读）。
 
-### F076 🔴 配置热重载（修改模型/策略配置后无需重启）
-- **evidence**：全库无 watchdog/FileSystemEvent/inotify 实现；`backend/src/services/runtime/model_settings.py` 存在但为 DB 读取模式，无文件 watch
-- **notes**：verified_at: 2026-05-17, method: grep watchdog/reload/hot。仅局部 reload 端点存在（synonyms、entity config、GNN），无通用 .env 热重载机制。降级 🟡→🔴。
+### F076 🟢 配置热重载（修改模型/策略配置后无需重启）
+- **evidence**：
+  - `backend/src/core/config.py`：`RELOADABLE_FIELDS` 白名单 + `reload_reloadable_settings()`
+  - `backend/src/core/config_watcher.py`：`.env` 轮询 watcher
+  - `backend/src/routers/admin_api/config_reload.py`：`POST /api/admin/config/reload`
+  - `backend/src/startup.py`：lifespan 启停 watcher
+- **notes**：verified_at: 2026-05-19, method: `.env` 修改 + 自动 watcher + 手动 reload 接口烟雾测试通过。仅热重载安全字段（TOP_K / 阈值 / max_xxx / 日志级别），DB / 端口 / JWT / LLM provider 仍保持不可热重载。
 
 ### F077 🟡 文档对比页差异算法（Myers diff，支持词级高亮）
 - **evidence**：`frontend/src/app/compare/diff.ts` 文件存在
