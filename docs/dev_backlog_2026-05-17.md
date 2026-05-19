@@ -206,6 +206,18 @@ SIGTERM 未处理，重启部署时正在进行的 SSE 流被立即切断，前�
 **优先级**：P1
 **审计来源**：[feature_audit_2026-05-17.md#f031--图片提问](./feature_audit_2026-05-17.md#f031--图片提问)
 
+**决策记录（2026-05-17）**：
+- **方案**：A（扩展现有 `/api/query` 接受 multipart）
+- **关键细节**：
+  - JSON 请求继续工作（向后兼容）
+  - 图片字段可选，支持 paste / drag / file picker
+  - 上传图片随 message 持久化（Conversation 表）
+- **预计 commits**：
+  - `feat(F031-be): /api/query accepts multipart with optional image`
+  - `feat(F031-fe): image upload UI in ConversationInput`
+  - `feat(F031-storage): persist uploaded images with message`
+  - `docs(F031): mark closed`
+
 **任务描述**：
 移动端图片提问 API 已实现，PC 端 query 页面无图片上传控件（无粘贴 / 点击上传）。README 已更正为"移动端 API 已实现，PC 端 UI 计划中"，本任务补充 PC 端 UI。
 
@@ -272,6 +284,22 @@ SIGTERM 未处理，重启部署时正在进行的 SSE 流被立即切断，前�
 **状态**：待开发（Celery 框架已引入，未接主入库流程）
 **优先级**：P1
 **审计来源**：[feature_audit_2026-05-17.md#f117-异步任务队列](./feature_audit_2026-05-17.md#f117-异步任务队列)
+
+**决策记录（2026-05-17）**：
+- **方案**：B（完整迁移到 Celery，前置验证现状）
+- **关键前置**：调研当前 celery_app 状态
+  - worker 容器是否真的在跑
+  - 是否已有 task 定义在用
+  - broker 配置（Redis）是否完整
+- **如果前置验证发现 Celery 链路有缺陷**：
+  - 降级到方案 A（最小改造）
+  - 立即停下来等用户决策
+- **预计 commits**：
+  - `chore(F117-survey): celery infrastructure verification`
+  - `feat(F117-tasks): define ingest celery task`
+  - `feat(F117-route): /api/ingest submits to celery queue`
+  - `feat(F117-status): /api/ingest/status query task state`
+  - `docs(F117): mark closed`
 
 **任务描述**：
 PDF 入库同步阻塞（耗时 > 30s），HTTP worker 长期被占用。需将 `/api/ingest` 改为提交 Celery 任务后立即返回 `task_id`，实际处理异步执行，前端用现有轮询机制查询进度。
@@ -395,6 +423,17 @@ PDF 入库同步阻塞（耗时 > 30s），HTTP worker 长期被占用。需将 
 **优先级**：P1
 **审计来源**：[feature_audit_2026-05-17.md#f049--实体节点渲染](./feature_audit_2026-05-17.md#f049--实体节点渲染) · [#f076--配置热重载](./feature_audit_2026-05-17.md#f076--配置热重载)
 
+**决策记录（2026-05-17）**：
+- **方案**：C（watchdog 自动 + 手动端点都做）
+- **关键细节**：
+  - 手动端点永远重新 reload 配置（不管 watchdog 之前是否触发）
+  - 仅热重载安全配置项（TOP_K / 阈值 / max_xxx / 日志级别）
+  - 不热重载（DB / 端口 / JWT secret / LLM provider）
+- **预计 commits**：
+  - `feat(F076-watchdog): file watcher for env reload`
+  - `feat(F076-endpoint): POST /api/admin/config/reload`
+  - `docs(F076): mark closed`
+
 **任务描述**：
 F049：已完成浏览器目视检查，Tool / Material / Process / Constraint 节点颜色与 Section 有区分，GraphFilterPanel 可按实体类型过滤，节点点击可切换详情侧栏。F076：代码已确认不支持通用热重载，全库无 watchdog/FileSystemEvent，仅有 synonyms / entity / GNN 局部 reload；需实现通用机制。
 
@@ -489,6 +528,17 @@ F049：已完成浏览器目视检查，Tool / Material / Process / Constraint �
 **优先级**：P2
 **审计来源**：F116 调研发现
 
+**决策记录（2026-05-17）**：
+- **状态**：BLOCKED ON F117
+- **方案**：C（沿用 F117 的 Celery 机制）
+- **范围**：17 处 fire-and-forget 任务中除 ingest 链路外的约 12 处
+- **保留 asyncio 的例外**：
+  - health monitor（生命周期循环）
+  - 其他“应用本身需要的后台 loop”
+- **迁移优先级**：高风险优先（评测服务 5 处）
+- **lifespan shutdown 中显式处理保留的 asyncio task**
+- **F117 完成且稳定运行 ≥ 2 个 commit 后才启动 F122**
+
 **任务描述**：
 SIGTERM 时，除了 SSE 流（F116 已覆盖），还有约 17 处 `asyncio.create_task()` 启动的后台长任务（PDF 入库、评测、GNN 训练、批量 OCR 等）。当前这些任务在 SIGTERM 时被直接 cancel，可能造成：
 - PDF 入库中途崩，知识库状态不一致
@@ -543,6 +593,22 @@ SIGTERM 时，除了 SSE 流（F116 已覆盖），还有约 17 处 `asyncio.cre
 **状态**：🔴 未实现
 **优先级**：P2
 **审计来源**：[feature_audit_2026-05-17.md#f079--对话分支](./feature_audit_2026-05-17.md#f079--对话分支)
+
+**决策记录（2026-05-17）**：
+- **方案**：真正的消息树分支
+- **数据模型**：形状 Y
+  - `Conversation` 表加 `branch_from_message_id`（nullable）
+  - `Conversation` 表加 `branch_from_conversation_id`（nullable）
+  - `Message` 表不动
+- **触发点**：AI 消息和用户消息都可分支
+- **视图**：扁平列表 + “派生自 X 的第 N 条消息”标记
+- **独立性**：深拷贝（分支创建时复制前缀 messages）
+- **预计 commits**：
+  - `feat(F079-schema): add branch_from_* columns`
+  - `feat(F079-be): POST /api/conversations/branch`
+  - `feat(F079-fe): branch button on messages`
+  - `feat(F079-fe): branch indicator in ConversationSidebar`
+  - `docs(F079): mark closed`
 
 **任务描述**：支持从某条 AI 消息处新开分支，探索不同追问路径。涉及数据模型（`Message` 加 `parent_message_id`）和前端树状分支 UI，工作量较大。
 
@@ -708,33 +774,6 @@ F022 移动端评估时发现，登录页未在当前会话下直接验证，且
 **优先级**：P2
 
 > 新建 `ShortcutsModal.tsx`（77 行），`useKeyboard.ts` 注册 `?` 监听，挂载于 ConditionalLayout 两个分支。Playwright (a)-(e) 全 PASS。
-
-### F122 全局长任务优雅关闭
-
-**状态**：🔴 未实现
-**优先级**：P2
-**审计来源**：F116 调研发现
-**任务描述**：
-SIGTERM 时，除了 SSE 流（F116 已覆盖），还有约 17 处 `asyncio.create_task()` 启动的后台长任务（PDF 入库、评测、GNN 训练、批量 OCR 等）。当前这些任务在 SIGTERM 时被直接 cancel，可能造成：
-- PDF 入库中途崩，知识库状态不一致
-- 评测任务部分结果丢失
-- GNN 训练 checkpoint 未保存
-
-涉及位置：
-- `docs/ingest.py:230`, `entities.py:104`, `reprocess.py`, `images.py:205`
-- `ingestion/backfill_runtime.py:104`, `batch_ingest_service.py`
-- `evaluation/*` 5 个评测服务
-- `routers/query/stream_agent.py:64`
-- `routers/graph_api/predict.py:52`, `gnn.py:109`
-- `services/quality/conflict_scan.py:97`
-
-设计选项：
-- 选项 A：每类任务自己实现 checkpoint + resume
-- 选项 B：建一个全局 TaskRegistry，SIGTERM 时统一 cancel + 等待 N 秒
-- 选项 C：依赖 Celery 接管所有长任务（依赖 F117）
-
-**估时**：1-2 周（取决于选项）
-**验收**：SIGTERM 后 30s 内，正在跑的任务要么完成，要么保存了 checkpoint 可恢复，不能"中途消失"
 
 ### F123 登录页移动端响应式（与已登录后退出入口）
 
