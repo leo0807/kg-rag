@@ -39,7 +39,7 @@ export const mainNavItems: SidebarItem[] = [
   { href: "/query", label: "智能问答", shortcut: "⌘/", Icon: MessageSquare },
   { href: "/pipeline", label: "检索链路", Icon: Gauge },
   { href: "/graph", label: "图谱可视化", Icon: Network },
-  { href: "/graph/builder", label: "Cypher 构造器", Icon: GitBranch },
+  { href: "/cypher", label: "Cypher 工具", Icon: Terminal },
   { href: "/references", label: "引用关系", Icon: Share2 },
   { href: "/timeline", label: "版本时间线", Icon: GitBranch },
   { href: "/compare", label: "文档对比", Icon: GitCompare },
@@ -53,7 +53,6 @@ export const mainNavItems: SidebarItem[] = [
   { href: "/admin/prompts", label: "Prompt 管理", Icon: ClipboardList },
   { href: "/admin/associations", label: "隐性关联挖掘", Icon: GitBranch },
   { href: "/admin/conflicts", label: "规范冲突检测", Icon: AlertTriangle },
-  { href: "/admin/cypher", label: "Cypher 执行器", Icon: Terminal },
   { href: "/settings", label: "设置", Icon: Settings },
 ];
 
