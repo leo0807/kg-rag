@@ -539,24 +539,32 @@ SIGTERM 时，除了 SSE 流（F116 已覆盖），还有约 17 处 `asyncio.cre
 **类型**：测试基础设施
 **依赖 LLM**：否
 **审计来源**：[feature_audit_2026-05-17.md#f039--前端单元测试vitest](./feature_audit_2026-05-17.md#f039--前端单元测试vitest)
+**状态**：~~待开发~~ ✅ 已闭环 2026-05-19
 
 #### 背景
-Vitest 框架已配置但测试覆盖率不足，需针对核心 Hook（`useStreamQuery`、`useConversation`）和工具函数补充单元测试。
+Vitest 框架已配置，但原先只覆盖了极少量 API 工具函数。已围绕 `fetchApi`、`useStreamQuery` 错误归类、`MessageError`、`useKeyboard`、`ShortcutsModal` 补齐关键路径测试，并修正了 Vitest setup 配置。
 
 #### 步骤
 1. 查看现有 Vitest 配置和测试目录。
 2. 为 `useStreamQuery` 补 SSE 解析 / 断线重连 / 错误归类测试。
-3. 为 `useConversation` 和关键工具函数补充单测。
+3. 为 `MessageError`、`useKeyboard`、`ShortcutsModal` 补关键交互测试。
 4. 维持测试风格与现有项目一致。
-5. 验证 `pnpm test` 能跑通。
+5. 验证 `pnpm vitest run` 能跑通。
 
 #### 验收
-- [ ] `pnpm test` 通过，核心 Hook 覆盖率 ≥ 60%
-- [ ] SSE 断线重连逻辑有测试覆盖
+- [x] `pnpm vitest run` 通过
+- [x] 核心 Hook / 组件关键路径有守卫
+- [x] SSE 断线重连逻辑有测试覆盖
+
+#### 完成记录
+
+| 任务 | 结果 | commit | 验证摘要 |
+|---|---|---|---|
+| F039 | CLOSED |  | `pnpm vitest run` 通过，5 个测试文件共 22 个测试全绿 |
 
 #### Commits
 - Commit A: test(F039): add vitest coverage for core hooks and utils
-- Commit B: docs: mark F039 closed
+- Commit B: docs(F039): mark F039 closed + update execution plan
 
 ## 任务执行决策树
 

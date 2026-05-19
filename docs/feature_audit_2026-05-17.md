@@ -211,9 +211,9 @@
 - **evidence**：全库搜索 `WebSocket`, `websocket`, `ws://`, `wss://` **均无结果**
 - **notes**：README 声称已实现 WebSocket 导入进度，但代码中完全不存在 WebSocket 相关实现。当前实现是 HTTP 轮询（后端有 processing_tracker.py，前端有轮询逻辑）。
 
-### F039 🟡 前端单元测试（Vitest）
-- **evidence**：`frontend/src/test/api.test.ts` （**仅 1 个**文件）
-- **notes**：README 声称有 Vitest 前端单元测试，实际只有 1 个测试文件，覆盖极有限。
+### F039 🟢 前端单元测试（Vitest）
+- **evidence**：`frontend/src/test/api.test.ts`、`frontend/src/test/useStreamQuery.test.ts`、`frontend/src/test/messageError.test.tsx`、`frontend/src/test/useKeyboard.test.ts`、`frontend/src/test/shortcutsModal.test.tsx`
+- **notes**：Vitest 已可运行，围绕 `fetchApi`、`useStreamQuery` 错误归类、`MessageError`、`useKeyboard`、`ShortcutsModal` 补齐关键路径测试；`pnpm vitest run` 全绿。verified_at: 2026-05-19, method: Vitest run
 
 ### F040 🟢 全局跨文档搜索
 - **evidence**：`frontend/src/app/search/page.tsx` + `backend/src/routers/search_api/search.py`

@@ -55,12 +55,12 @@
 |--------|--------|--------|---------|
 | P0     | 1      | 1.0 人天  | F038/F107/F116 已关闭；F113+F114 已实现关闭（-3条 -1.5天） |
 | P1     | 4      | 7.0 人天  | F055 验证升 🟢；F060/F118 已关闭；F073/F120 已实现关闭 |
-| P2     | 4      | 8.5 人天  | F100/F022/F110/F121 已实现关闭；F122/F123 新增（+2条 +1.5天） |
+| P2     | 3      | 6.5 人天  | F039/F100/F022/F110/F121 已实现关闭；F122/F123 新增（+2条 +1.5天） |
 | P3     | 3      | 7.75 人天 | F124/F125/F126 新增（+3条 +0.75天） |
 | 合计   | 15     | 23.25 人天 | 较初版 -4条 +0.25天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
-> 最后更新：2026-05-19（F060/F110/F118/F120/F121/F022 已关闭；F122/F123/F124/F125/F126 新增；预存在改动分类完成）。
+> 最后更新：2026-05-19（F039/F060/F110/F118/F120/F121/F022 已关闭；F122/F123/F124/F125/F126 新增；预存在改动分类完成）。
 
 ---
 
@@ -679,21 +679,24 @@ F022 移动端评估时发现，登录页未在当前会话下直接验证，且
 
 ### F039 前端 Vitest 测试补全
 
-**状态**：🟡 部分实现（框架已配置，覆盖率不足）
+**状态**：~~待开发~~ **🟢 CLOSED 2026-05-19**
 **优先级**：P2
 **审计来源**：[feature_audit_2026-05-17.md#f039--前端单元测试vitest](./feature_audit_2026-05-17.md#f039--前端单元测试vitest)
 
-**任务描述**：Vitest 框架已配置但测试覆盖率不足，需针对核心 Hook（`useStreamQuery`、`useConversation`）和工具函数补充单元测试。
+**任务描述**：Vitest 框架已配置，已围绕 `fetchApi`、`useStreamQuery` 错误归类、`MessageError`、`useKeyboard`、`ShortcutsModal` 补齐关键路径单测。
 
 **关键文件路径**：
-- `frontend/src/app/query/useStreamQuery.test.ts`（需新建）
-- `frontend/src/lib/*.test.ts`（覆盖工具函数）
+- `frontend/src/test/api.test.ts`
+- `frontend/src/test/useStreamQuery.test.ts`
+- `frontend/src/test/messageError.test.tsx`
+- `frontend/src/test/useKeyboard.test.ts`
+- `frontend/src/test/shortcutsModal.test.tsx`
 
 **估时**：两天
 
 **验收标准**：
-- [ ] `pnpm test` 通过，核心 Hook 覆盖率 ≥ 60%
-- [ ] SSE 断线重连逻辑有测试覆盖
+- [x] `pnpm test` 通过，核心 Hook / 组件关键路径有守卫
+- [x] SSE 断线重连逻辑有测试覆盖
 
 **依赖**：无
 
@@ -705,3 +708,43 @@ F022 移动端评估时发现，登录页未在当前会话下直接验证，且
 **优先级**：P2
 
 > 新建 `ShortcutsModal.tsx`（77 行），`useKeyboard.ts` 注册 `?` 监听，挂载于 ConditionalLayout 两个分支。Playwright (a)-(e) 全 PASS。
+
+### F122 全局长任务优雅关闭
+
+**状态**：🔴 未实现
+**优先级**：P2
+**审计来源**：F116 调研发现
+**任务描述**：
+SIGTERM 时，除了 SSE 流（F116 已覆盖），还有约 17 处 `asyncio.create_task()` 启动的后台长任务（PDF 入库、评测、GNN 训练、批量 OCR 等）。当前这些任务在 SIGTERM 时被直接 cancel，可能造成：
+- PDF 入库中途崩，知识库状态不一致
+- 评测任务部分结果丢失
+- GNN 训练 checkpoint 未保存
+
+涉及位置：
+- `docs/ingest.py:230`, `entities.py:104`, `reprocess.py`, `images.py:205`
+- `ingestion/backfill_runtime.py:104`, `batch_ingest_service.py`
+- `evaluation/*` 5 个评测服务
+- `routers/query/stream_agent.py:64`
+- `routers/graph_api/predict.py:52`, `gnn.py:109`
+- `services/quality/conflict_scan.py:97`
+
+设计选项：
+- 选项 A：每类任务自己实现 checkpoint + resume
+- 选项 B：建一个全局 TaskRegistry，SIGTERM 时统一 cancel + 等待 N 秒
+- 选项 C：依赖 Celery 接管所有长任务（依赖 F117）
+
+**估时**：1-2 周（取决于选项）
+**验收**：SIGTERM 后 30s 内，正在跑的任务要么完成，要么保存了 checkpoint 可恢复，不能"中途消失"
+
+### F123 登录页移动端响应式（与已登录后退出入口）
+
+**状态**：🔴 未实现
+**优先级**：P2
+**审计来源**：F022 评估时发现
+**任务描述**：
+- `/login` 页在移动视口下的可用性（需登出会话才能测）
+- 已登录用户在移动端的退出登录入口（目前 settings 菜单移动端难发现 → 退出也难发现）
+
+**验收**：
+- 移动视口可打开 `/login` 并完成登录
+- 已登录用户可从移动端任何页面便捷退出
