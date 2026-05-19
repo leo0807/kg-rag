@@ -24,6 +24,44 @@ const ERROR_TITLES: Record<string, string> = {
   network_error: "网络连接异常",
 };
 
+function getTone(kind?: string) {
+  if (kind === "network_error" || kind === "network") {
+    return {
+      container: "bg-red-950/40 border-red-600/70",
+      icon: "text-red-400",
+      title: "text-red-300",
+      body: "text-red-200/80",
+      footer: "text-red-400/60",
+      hintButton:
+        "bg-red-800/40 hover:bg-red-700/50 border-red-600/50 text-red-300",
+    };
+  }
+  if (
+    kind === "stream_truncated" ||
+    kind === "stream_empty" ||
+    kind === "interrupted"
+  ) {
+    return {
+      container: "bg-slate-950/40 border-slate-600/70",
+      icon: "text-slate-400",
+      title: "text-slate-300",
+      body: "text-slate-200/80",
+      footer: "text-slate-400/60",
+      hintButton:
+        "bg-slate-800/40 hover:bg-slate-700/50 border-slate-600/50 text-slate-300",
+    };
+  }
+  return {
+    container: "bg-amber-950/40 border-amber-600/70",
+    icon: "text-amber-400",
+    title: "text-amber-300",
+    body: "text-amber-200/80",
+    footer: "text-amber-400/60",
+    hintButton:
+      "bg-amber-800/40 hover:bg-amber-700/50 border-amber-600/50 text-amber-300",
+  };
+}
+
 interface Props {
   errorInfo: LLMErrorInfo;
   isAdmin?: boolean;
@@ -31,19 +69,20 @@ interface Props {
 }
 
 export function MessageError({ errorInfo, isAdmin, onRetry }: Props) {
+  const tone = getTone((errorInfo as { kind?: string }).kind ?? errorInfo.code);
   const title = ERROR_TITLES[errorInfo.code] ?? "AI 服务异常";
 
   return (
-    <div className="px-4 py-3 bg-amber-950/40 border border-amber-600/70 rounded-2xl rounded-tl-sm">
+    <div className={`px-4 py-3 border rounded-2xl rounded-tl-sm ${tone.container}`}>
       <div className="flex items-start gap-2 mb-2">
-        <AlertTriangle size={15} className="text-amber-400 mt-0.5 shrink-0" />
-        <span className="text-sm font-medium text-amber-300">{title}</span>
+        <AlertTriangle size={15} className={`${tone.icon} mt-0.5 shrink-0`} />
+        <span className={`text-sm font-medium ${tone.title}`}>{title}</span>
       </div>
-      <p className="text-xs text-amber-200/80 mb-3">{errorInfo.message}</p>
+      <p className={`text-xs mb-3 ${tone.body}`}>{errorInfo.message}</p>
 
       {isAdmin && (errorInfo.status_code || errorInfo.endpoint) && (
-        <div className="mb-3 px-3 py-2 bg-amber-900/30 border border-amber-700/40 rounded-lg text-xs text-amber-300/70 space-y-1">
-          <div className="font-medium text-amber-400 mb-1">管理员信息</div>
+        <div className={`mb-3 px-3 py-2 border rounded-lg text-xs space-y-1 ${tone.container}`}>
+          <div className={`font-medium mb-1 ${tone.title}`}>管理员信息</div>
           {errorInfo.status_code && (
             <div>
               HTTP 状态码：
@@ -69,15 +108,14 @@ export function MessageError({ errorInfo, isAdmin, onRetry }: Props) {
         </div>
       )}
 
-      <div className="text-xs text-amber-400/60 space-y-0.5">
+      <div className={`text-xs space-y-0.5 ${tone.footer}`}>
         <div className="font-medium mb-1">你可以：</div>
         <div>{ERROR_HINTS[errorInfo.code] ?? ERROR_HINTS.unknown_error}</div>
         {onRetry && (
           <button
             type="button"
             onClick={onRetry}
-            className="mt-2 px-3 py-1 text-xs bg-amber-800/40 hover:bg-amber-700/50
-                       border border-amber-600/50 rounded-lg text-amber-300 transition-colors"
+            className={`mt-2 px-3 py-1 text-xs border rounded-lg transition-colors ${tone.hintButton}`}
           >
             重新发送
           </button>
