@@ -180,11 +180,16 @@
   - `backend/src/services/images/multimodal_writer.py` 写入 Image 节点
   - `backend/src/services/images/image_vector_service.py` 图片向量写入
 
-### F031 🟡 多模态查询：用户可以上传图片提问（支持粘贴/点击上传，图片随消息持久化）
+### F031 🟢 多模态查询：用户可以上传图片提问（支持粘贴/点击上传，图片随消息持久化）
+- **verified_at**：2026-05-19
+- **method**：multipart query + 浏览器文件上传预览 + 会话回读
 - **evidence**：
-  - `backend/src/routers/mobile.py:14` 移动端图片分析 API
-  - 前端 `ConversationInput.tsx` 有 `quoteSource` 引用来源章节，但未发现用户主动上传图片到对话的功能
-- **notes**：移动 API 有图片分析能力，但 PC 端 query 页面**未找到**图片上传组件/粘贴上传功能。功能宣传为"用户上传图片提问"，实际 PC 端尚未实现。
+  - `backend/src/routers/query/request_parser.py`：`/api/query` / `/api/query/stream` 支持 multipart，`image` / `images` 进入统一解析器
+  - `backend/src/services/images/query_image_context.py`：图片转文本补充上下文并复用现有 `analyze_image`
+  - `frontend/src/app/query/ConversationInput.tsx`：图片粘贴 / 拖拽 / 点击上传入口
+  - `frontend/src/app/query/useStreamQuery.ts`：有图片时改用 `FormData` 发送
+  - `backend/src/routers/conversations.py`：会话 messages 以 JSON 整体持久化，images 随 message 一并保存
+- **notes**：PC 端 query 页面已完成图片上传、预览与历史会话回读；multipart 请求在无图 / 有图 / 非法图 / 超限图场景下均按预期返回。
 
 ### F032 🟢 知识图谱扩展：Tool / Material / Process 节点，LLM 实体提取 + Neo4j 写入
 - **evidence**：
@@ -472,7 +477,6 @@
 | 编号 | 功能 | 判定理由 | 优先级 |
 |------|------|----------|--------|
 | F038 | WebSocket 导入进度推送 | 全库无 WebSocket 实现，当前为 HTTP 轮询 | 中 |
-| F031-pc | 用户上传图片提问（PC 端粘贴/点击上传） | query 前端无图片上传 UI | 高 |
 | F079 | 对话分支（从 AI 消息新开分支） | 无相关实现 | 低 |
 | F107 | 零结果查询监控 API | analytics.py 无 empty-queries 端点 | 低 |
 | F110 | 图谱快照 URL 分享 | 无 URL 编码/分享逻辑 | 低 |
@@ -513,18 +517,17 @@
 
 | 分类 | 数量 |
 |------|------|
-| 🟢 已实现 | 53（含 F020 升级） |
+| 🟢 已实现 | 54（含 F020 升级） |
 | 🟡 部分实现 | 17（含 F020 移出后） |
-| 🔴 未实现（声称已实现但代码不存在） | 5 |
+| 🔴 未实现（声称已实现但代码不存在） | 4 |
 | 🔴 未实现（README 标 `[ ]` 的高/中优先级合规功能） | 7（F073、F113-F117、F119） |
 | ⚫ 外网依赖描述点（含于 🟡，非独立条目） | 5 |
 
 **声称已实现但实际未实现的高风险条目（需立即修正 README）**：
 1. F038：WebSocket 导入进度（代码完全不存在，当前为 HTTP 轮询）
-2. F031-pc：PC 端用户上传图片提问（前端 query 页面无图片上传 UI）
-3. F107：零结果查询监控 API（端点不存在，数据也未采集）
-4. F110：图谱快照 URL 分享（功能不存在）
-5. F079：对话分支（功能不存在）
+2. F107：零结果查询监控 API（端点不存在，数据也未采集）
+3. F110：图谱快照 URL 分享（功能不存在）
+4. F079：对话分支（功能不存在）
 
 ---
 

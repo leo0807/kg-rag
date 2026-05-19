@@ -2,22 +2,21 @@
 
 ## 摘要
 - 总任务数：15
-- 已完成：7（F049、F060、F076、F110、F118、F120、F121）
-- 待完成：8
-- 估算工时：22.25 人天
+- 已完成：8（F049、F060、F076、F110、F118、F120、F121、F031-pc）
+- 待完成：7
+- 估算工时：20.25 人天
 - LLM 依赖任务（GATED ON B001）：2 条
-- 当前 HEAD：7285e2e
+- 当前 HEAD：c5b87e4
 
 ## 待执行任务（已决策）
 
 按以下顺序执行，前一个 commit 落地 + 用户审核后才进下一个：
 
-1. F031-pc PC 端图片上传（方案 A）
-2. F117 PDF 入库 Celery（方案 B，前置验证）
-3. F079 对话分支（方案 B + 形状 Y）
-4. F122 全局长任务 Celery 化（BLOCKED ON F117）
+1. F117 PDF 入库 Celery（方案 B，前置验证）
+2. F079 对话分支（方案 B + 形状 Y）
+3. F122 全局长任务 Celery 化（BLOCKED ON F117）
 
-总估时：9-14 人天
+总估时：7-12 人天
 
 每个任务的详细决策见 [docs/dev_backlog_2026-05-17.md](./dev_backlog_2026-05-17.md) 对应条目的“决策记录”小节。
 
@@ -108,6 +107,10 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 - commit: docs(F118): close as already-implemented after investigation
 - 验证：code review 发现 `embed_batch(texts)` 已被所有 bulk path 调用，本地 bge-m3 直接走 `SentenceTransformer.encode(texts)`，原“逐条 encode 瓶颈”假设不成立
 
+### F031-pc PC 端图片上传问答（已闭环 ✓）
+- commits: 6b1b0fa, ae11335
+- 验证：multipart `/api/query` 接口、图片上传 UI、预览、拖拽/粘贴/文件选择和历史会话回读均通过
+
 ## 完成记录表
 
 | 任务 | 结果 | commit | 验证摘要 |
@@ -117,6 +120,7 @@ I10. 任何 docker / 数据库 / 网络层无法解决的错误
 | F076 | CLOSED | 7285e2e | `.env` watcher 自动刷新 + `POST /api/admin/config/reload` 手动刷新均生效 |
 | F110 | CLOSED | 3163ade | 图谱快照 URL 可复制分享并恢复过滤、选中节点与缩放状态 |
 | F118 | CLOSED | docs(F118): close as already-implemented after investigation | embed_batch(texts) 已覆盖所有 bulk path，bge-m3 走原生 batch encode |
+| F031-pc | CLOSED | 6b1b0fa, ae11335 | multipart 上传、图片预览、拖拽/粘贴/文件选择和历史会话回读完成 |
 | F022 | CLOSED | 328d23e | query/settings/graph 响应式入口与降级结构完成，浏览器 DOM 校验通过 |
 | F120 | CLOSED | 3ef822e | 坏 PDF 返回 422，真实 PDF 仍正常 |
 | F121 | CLOSED | f77418d | 12 项回归全过，preview 保持 PDF-only，ingest 接入 DOCUMENT_TYPES |
@@ -281,8 +285,13 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 **依赖 LLM**：否
 **审计来源**：[feature_audit_2026-05-17.md#f031--图片提问](./feature_audit_2026-05-17.md#f031--图片提问)
 
+**状态**：~~进行中~~ ✅ 已闭环
+
 #### 背景
-移动端图片提问 API 已实现，PC 端 query 页面无图片上传控件（无粘贴 / 点击上传）。README 已更正为"移动端 API 已实现，PC 端 UI 计划中"，本任务补充 PC 端 UI。
+移动端图片提问 API 已实现，PC 端 query 页面原先无图片上传控件（无粘贴 / 点击上传）。现已补齐 PC 端 UI 与 multipart 路径，并完成历史回读验证。
+
+#### 完成记录
+- 2026-05-19：通过 multipart `/api/query` 扩展、图片上传 UI、历史会话回读验证，PC 端图片提问闭环。
 
 #### 实现思路
 - 前端：在 `ConversationInput` / query 输入区加图片上传区，支持 clipboard paste / drag-drop / file picker
@@ -306,8 +315,8 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 - [ ] 历史会话能重新加载图片
 
 #### Commits
-- Commit A: feat(F031-pc-fe): image upload UI in query page
-- Commit B: feat(F031-pc-be): accept image in query endpoint
+- Commit A: feat(F031-be): /api/query accepts multipart with optional image
+- Commit B: feat(F031-fe): add image upload UI and multipart send path
 - Commit C: docs: mark F031-pc closed
 
 ⚠️ 此任务是新功能开发不是 bug 修复，按工作纪律 I4（架构层选择），"扩展 endpoint vs 新建 endpoint" 这个决策必须停下来等用户。
