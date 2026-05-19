@@ -46,6 +46,7 @@ export interface LLMErrorInfo {
   message: string;
   status_code: number | null;
   endpoint: string;
+  kind?: string;
 }
 
 export interface ClarificationInfo {

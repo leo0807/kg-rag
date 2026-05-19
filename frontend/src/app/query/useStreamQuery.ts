@@ -90,7 +90,7 @@ type StreamEvent = {
   error?: { code?: string; message?: string };
 };
 
-class StreamTerminalError extends Error {
+export class StreamTerminalError extends Error {
   constructor(public error: StreamErrorInfo) {
     super(error.message);
     this.name = "StreamTerminalError";
@@ -124,7 +124,10 @@ function extractErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-function classifyHttpError(status: number, body: unknown): StreamErrorInfo {
+export function classifyHttpError(
+  status: number,
+  body: unknown,
+): StreamErrorInfo {
   const base = {
     status_code: status,
     endpoint: "",
@@ -204,7 +207,7 @@ function classifyHttpError(status: number, body: unknown): StreamErrorInfo {
   };
 }
 
-function classifyFetchException(err: unknown): StreamErrorInfo {
+export function classifyFetchException(err: unknown): StreamErrorInfo {
   if (err instanceof DOMException && err.name === "AbortError") {
     return {
       kind: "interrupted",
@@ -238,7 +241,7 @@ function classifyFetchException(err: unknown): StreamErrorInfo {
   };
 }
 
-function classifySseError(event: {
+export function classifySseError(event: {
   code?: string;
   status_code?: number | null;
   httpStatus?: number | null;
@@ -283,6 +286,32 @@ function classifySseError(event: {
     endpoint: "",
     retryable: false,
     httpStatus: status,
+  };
+}
+
+export function classifyStreamEndError(
+  receivedAnyDelta: boolean,
+): StreamErrorInfo {
+  if (receivedAnyDelta) {
+    return {
+      kind: "stream_truncated",
+      code: "stream_truncated",
+      message: "回答中断，已显示部分内容",
+      status_code: null,
+      endpoint: "",
+      retryable: false,
+      httpStatus: null,
+    };
+  }
+
+  return {
+    kind: "stream_empty",
+    code: "stream_empty",
+    message: "服务暂时不可用，请稍后重试",
+    status_code: null,
+    endpoint: "",
+    retryable: false,
+    httpStatus: null,
   };
 }
 
@@ -724,26 +753,9 @@ export function useStreamQuery({
           }
           clearRequestTimeout();
           if (!streamDone) {
-            if (receivedAnyDelta.current) {
-              throw new StreamTerminalError({
-                kind: "stream_truncated",
-                code: "stream_truncated",
-                message: "回答中断，已显示部分内容",
-                status_code: null,
-                endpoint: "",
-                retryable: false,
-                httpStatus: null,
-              });
-            }
-            throw new StreamTerminalError({
-              kind: "stream_empty",
-              code: "stream_empty",
-              message: "服务暂时不可用，请稍后重试",
-              status_code: null,
-              endpoint: "",
-              retryable: false,
-              httpStatus: null,
-            });
+            throw new StreamTerminalError(
+              classifyStreamEndError(receivedAnyDelta.current),
+            );
           }
         } catch (error) {
           clearRequestTimeout();
