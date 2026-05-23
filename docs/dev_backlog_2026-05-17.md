@@ -17,32 +17,24 @@
 
 ## 已知阻塞（External blockers, 不计入 backlog 待办）
 
-### B001：LLM 远程 API 额度耗尽
+### ~~B001：LLM 远程 API 额度耗尽~~ （已解除 2026-05-23）
+
 - 首次发现：2026-05-17
-- 影响范围：所有依赖远端 LLM 的端到端测试
-  - MCQ 顺序题 / 数值题 / 条件题 验证暂时无法跑
-  - 普通问答端到端测试无法跑
-- 缓解策略：
-  - 选项 1：充值 / 等周期重置 / 换 API key
-  - 选项 2：在 `backend/.env` 设 `LLM_MODE=local` 切到 Ollama
-- 影响的回归测试：测试 4（顺序题路由验证）BLOCKED
-- 验证记录：定义题（测试 3）已 PASS，证明路由架构本身正常
-
-### B001 详细影响清单
-受阻测试 / 任务：
-- MCQ 顺序题 / 数值题 / 条件题端到端验证
-- 普通问答任意策略的 LLM 生成阶段
-- F115（LLM 重试与熔断）端到端验证
-
-未受阻的部分：
-- MCQ 路由 / detector / parser / formatter（不依赖 LLM）
-- 检索阶段（向量、全文、RRF、rerank）
-- 上传 / 入库 / 解析 pipeline
-- 所有 P1 / P2 中不依赖 LLM 的任务
+- **解除日期**：2026-05-23
+- **原因**：原 `LLM_MODEL=Qwen/Qwen3-235B-A22B-Instruct-2507` 在硅基流动返回 Model disabled（HTTP 403）
+- **解除方式**：切换 `LLM_MODEL=Qwen/Qwen3-VL-32B-Instruct`，后端重启后三类 MCQ 测试全部 PASS
+- **副作用发现**：`errors.py` 把所有 HTTP 403 一律归类为 `quota_exceeded`，导致误判模型不可用为额度问题，耗费诊断时间；修复见 Step 3 `errors.py` 改造
+- **验证记录（解除时）**：
+  - 测试 1 定义题 → `mcq_type=T1_definition`, `predicted=B` ✅
+  - 测试 2 顺序题 → `mcq_type=T3_order`, `predicted=A` ✅
+  - 测试 3 普通问答 → `type=answer`, 5 sources, no error ✅
+- **影响的 GATED 任务现可继续**：
+  - F115 LLM 重试与熔断（端到端验证可跑了）
+  - F056 自动策略接通验证（可跑了）
 
 ### F115 LLM API 重试与熔断
 
-**状态**：GATED ON B001
+**状态**：~~GATED ON B001~~ 待开发（B001 已解除，可启动）
 **优先级**：P0
 **审计来源**：[feature_audit_2026-05-17.md#f115-llm-api-重试与熔断](./feature_audit_2026-05-17.md#f115-llm-api-重试与熔断)
 
@@ -60,7 +52,7 @@
 | 合计   | 15     | 23.25 人天 | 较初版 -4条 +0.25天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
-> 最后更新：2026-05-19（F039/F060/F110/F118/F120/F121/F022 已关闭；F122/F123/F124/F125/F126 新增；预存在改动分类完成）。
+> 最后更新：2026-05-23（B001 已解除：LLM 切换至 Qwen3-VL-32B-Instruct，端到端验证通过；errors.py 403 归类修复）。
 
 ---
 
