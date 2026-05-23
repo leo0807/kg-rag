@@ -8,6 +8,7 @@ import logging
 import os
 import tempfile
 
+from .canonicalization import canonicalize_table_fragments
 from .normalization import MIN_ROWS, df_to_rows, parse_html_table, rows_to_constraints, rows_to_markdown
 
 logger = logging.getLogger(__name__)
@@ -216,7 +217,7 @@ def extract_tables_full(pdf_path: str, doc_id: str, sections: list[dict]) -> lis
             continue
         vision_tables.extend(extract_page_with_vision(pdf_path, page_idx, doc_id, sections, total_pages))
 
-    all_tables = camelot_tables + vision_tables
+    all_tables = canonicalize_table_fragments(camelot_tables + vision_tables)
     logger.info(
         "表格提取汇总 doc_id=%s camelot=%d vision=%d total=%d",
         doc_id,
@@ -229,4 +230,3 @@ def extract_tables_full(pdf_path: str, doc_id: str, sections: list[dict]) -> lis
 
 def extract_all_tables(pdf_path: str, doc_id: str, sections: list[dict]) -> list[dict]:
     return [constraint for table in extract_tables_full(pdf_path, doc_id, sections) for constraint in table["constraints"]]
-

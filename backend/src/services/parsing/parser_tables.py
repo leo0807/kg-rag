@@ -5,6 +5,7 @@ import pdfplumber
 from pathlib import Path
 
 from .parser_heading import _extract_page_tables
+from ..tables.canonicalization import canonicalize_table_fragments
 
 logger = logging.getLogger(__name__)
 
@@ -66,4 +67,4 @@ def extract_tables_pdfplumber(pdf_path: Path, doc_id: str, sections: list[dict])
     except Exception as e:
         logger.warning("pdfplumber 表格提取失败 %s: %s", pdf_path.name, e)
 
-    return tables
+    return canonicalize_table_fragments(tables)

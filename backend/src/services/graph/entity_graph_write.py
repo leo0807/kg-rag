@@ -35,6 +35,10 @@ def write_tables(driver: Driver, doc_id: str, table_data: list[dict]) -> None:
             raw_rows = _parse_rows(item.get("rows_json", ""))
             headers = raw_rows[0] if raw_rows else []
             data_rows = raw_rows[1:] if len(raw_rows) > 1 else []
+            page_index = item.get("page_index")
+            page_start = item.get("page_start", page_index)
+            page_end = item.get("page_end", page_index)
+            page_indices = item.get("page_indices") or ([page_index] if page_index is not None else [])
             session.run(
                 """
                 MATCH (sec:Section {chunk_id: $chunk_id})
@@ -43,6 +47,10 @@ def write_tables(driver: Driver, doc_id: str, table_data: list[dict]) -> None:
                     t.markdown        = $markdown,
                     t.rows_json       = $rows_json,
                     t.page_index      = $page_index,
+                    t.page_start      = $page_start,
+                    t.page_end        = $page_end,
+                    t.page_indices    = $page_indices,
+                    t.fragment_count   = $fragment_count,
                     t.row_count       = $row_count,
                     t.col_count       = $col_count,
                     t.bbox            = $bbox,
@@ -55,7 +63,11 @@ def write_tables(driver: Driver, doc_id: str, table_data: list[dict]) -> None:
                 doc_id=doc_id,
                 markdown=item["markdown"],
                 rows_json=item["rows_json"],
-                page_index=item["page_index"],
+                page_index=page_index,
+                page_start=page_start,
+                page_end=page_end,
+                page_indices=page_indices,
+                fragment_count=item.get("fragment_count", 1),
                 row_count=item.get("row_count", 0),
                 col_count=len(headers),
                 bbox=item.get("bbox"),
@@ -286,4 +298,3 @@ def link_image_tools(driver: Driver, image_id: str, tools: list[str]) -> None:
             image_id=image_id,
             tools=[tool.strip() for tool in tools if tool and tool.strip()],
         )
-
