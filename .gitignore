@@ -34,6 +34,7 @@ backend/**/*.docx
 
 # 进度文件
 ingest_progress.json
+batch_state.json
 
 # IDE
 .DS_Store
