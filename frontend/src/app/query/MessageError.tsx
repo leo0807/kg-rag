@@ -4,8 +4,12 @@ import { AlertTriangle } from "lucide-react";
 import type { LLMErrorInfo } from "./types";
 
 const ERROR_HINTS: Record<string, string> = {
+  auth_failed: "· 检查 API key 是否有效，或联系管理员更新配置",
+  model_unavailable: "· 联系管理员检查 LLM_MODEL 配置或更换可用模型",
   quota_exceeded: "· 联系管理员充值或切换模型",
+  forbidden: "· 联系管理员检查 API key 权限",
   rate_limited: "· 稍等片刻后重试",
+  api_invalid_request: "· 联系管理员检查请求参数配置",
   timeout: "· 点击重试，或换用响应更快的模型",
   service_unavailable: "· 检查 AI 服务是否正常运行",
   stream_truncated: "· 已显示部分内容，可重新发送",
@@ -15,8 +19,12 @@ const ERROR_HINTS: Record<string, string> = {
 };
 
 const ERROR_TITLES: Record<string, string> = {
+  auth_failed: "API key 失效",
+  model_unavailable: "LLM 模型不可用",
   quota_exceeded: "API 额度不足",
-  rate_limited: "请求过于频繁",
+  forbidden: "LLM 服务拒绝访问",
+  rate_limited: "调用频率超限",
+  api_invalid_request: "LLM API 请求错误",
   timeout: "模型响应超时",
   service_unavailable: "AI 服务暂时不可用",
   stream_truncated: "回答中断",
@@ -25,7 +33,7 @@ const ERROR_TITLES: Record<string, string> = {
 };
 
 function getTone(kind?: string) {
-  if (kind === "network_error" || kind === "network") {
+  if (kind === "network_error" || kind === "network" || kind === "auth_failed" || kind === "api_invalid_request") {
     return {
       container: "bg-red-950/40 border-red-600/70",
       icon: "text-red-400",

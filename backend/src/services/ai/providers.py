@@ -6,7 +6,7 @@ import json
 import logging
 from typing import AsyncGenerator
 
-from .errors import trim_preview
+from .errors import parse_response_for_business_error, trim_preview
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,11 @@ class OpenAICompatProvider:
             timeout=timeout,
         )
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
+        data = resp.json()
+        biz_err = parse_response_for_business_error(data)
+        if biz_err:
+            raise biz_err
+        return data["choices"][0]["message"]["content"]
 
     def chat_with_usage(self, messages: list[dict], **kwargs) -> tuple[str, dict]:
         import requests
@@ -50,6 +54,9 @@ class OpenAICompatProvider:
         )
         resp.raise_for_status()
         data = resp.json()
+        biz_err = parse_response_for_business_error(data)
+        if biz_err:
+            raise biz_err
         usage = data.get("usage", {})
         return data["choices"][0]["message"]["content"], {
             "prompt_tokens": usage.get("prompt_tokens", 0),
