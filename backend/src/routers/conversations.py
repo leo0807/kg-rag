@@ -54,12 +54,14 @@ async def list_conversations(
     convs = result.scalars().all()
     return [
         {
-            "id":         c.id,
-            "title":      c.title,
-            "messages":   json.loads(c.messages),
-            "strategy":   c.strategy,
-            "created_at": c.created_at.isoformat(),
-            "updated_at": c.updated_at.isoformat(),
+            "id":                          c.id,
+            "title":                       c.title,
+            "messages":                    json.loads(c.messages),
+            "strategy":                    c.strategy,
+            "created_at":                  c.created_at.isoformat(),
+            "updated_at":                  c.updated_at.isoformat(),
+            "branch_from_conversation_id": c.branch_from_conversation_id,
+            "branch_from_message_index":   c.branch_from_message_index,
         }
         for c in convs
     ]

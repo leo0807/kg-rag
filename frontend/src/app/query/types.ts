@@ -94,6 +94,8 @@ export interface Conversation {
   title: string;
   messages: Message[];
   timestamp: number;
+  branch_from_conversation_id?: string | null;
+  branch_from_message_index?: number | null;
 }
 
 export type Strategy =

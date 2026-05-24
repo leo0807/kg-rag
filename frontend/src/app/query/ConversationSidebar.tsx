@@ -3,6 +3,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  GitBranch,
   MessageSquare,
   Plus,
   Search,
@@ -182,9 +183,23 @@ export default function ConversationSidebar({
                     <div className="text-xs leading-relaxed line-clamp-2">
                       {conv.title}
                     </div>
-                    <div className="text-xs text-gray-600 mt-0.5">
-                      {conv.messages.length / 2} 轮对话
-                    </div>
+                    {conv.branch_from_conversation_id ? (
+                      <div className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-500">
+                        <GitBranch size={10} />
+                        <span className="truncate">
+                          派生自{" "}
+                          {conversations.find(
+                            (c) => c.id === conv.branch_from_conversation_id,
+                          )?.title ?? "已删除对话"}
+                          {conv.branch_from_message_index != null &&
+                            ` 第 ${conv.branch_from_message_index + 1} 条`}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-600 mt-0.5">
+                        {conv.messages.length / 2} 轮对话
+                      </div>
+                    )}
                   </div>
                 </button>
                 <button
