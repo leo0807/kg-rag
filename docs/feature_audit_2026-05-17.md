@@ -279,9 +279,9 @@
 - **evidence**：`backend/src/routers/query/core.py:201` `apply_entity_aware(driver, fused_ids, source_meta, question, doc_id)` 主查询管线无条件调用（Neo4j 可用时）；`backend/src/routers/query/graph_expansion.py:32` 完整实现 `REQUIRES_TOOL|USES_MATERIAL|INVOLVES_PROCESS` 图谱扩展
 - **notes**：verified_at: 2026-05-17, method: grep core.py + graph_expansion.py。原审计依据 suggest.py 漏查主管线，已升级 🟡→🟢。
 
-### F056 🟡 自动策略选择（根据问题类型自动选择检索策略）
-- **evidence**：`backend/src/routers/query/__init__.py:197` `POST /query/auto-strategy` 推荐端点存在，含关键词路由逻辑（对比型→parallel，跨引用→multi_hop 等）
-- **notes**：verified_at: 2026-05-17, method: grep __init__.py + stream.py。推荐端点独立存在，但 stream.py 中 strategy="auto" 无对应分支，传入后静默走 do_retrieval 等同于 parallel；主查询流未自动调用推荐端点。
+### F056 🟢 自动策略选择（根据问题类型自动选择检索策略）
+- **evidence**：`backend/src/services/qa/strategy_router.py` 共享规则函数；`backend/src/routers/query/sync.py:86-88` auto-resolution 接入主流；`backend/src/routers/query/models.py:63-64` QueryResponse 新增 strategy_used/strategy_reason 字段
+- **notes**：resolved_at: 2026-05-24, method: 4 路端到端验证（事实题→parallel, 对比题→parallel, 步骤题→graph_augmented, parallel_rrf 直传）。/query/auto-strategy 端点保留向后兼容，与主流共享 select_strategy()。
 
 ### F057 🟢 图谱增强策略（graph_augmented）
 - **evidence**：`backend/src/routers/query/sync.py:180` `"graph_augmented"` 在策略枚举中

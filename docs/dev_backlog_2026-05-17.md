@@ -46,13 +46,13 @@
 | 优先级 | 条目数 | 总估时 | 变更说明 |
 |--------|--------|--------|---------|
 | P0     | 1      | 1.0 人天  | F038/F107/F116 已关闭；F113+F114 已实现关闭（-3条 -1.5天） |
-| P1     | 4      | 7.0 人天  | F055 验证升 🟢；F060/F118 已关闭；F073/F120 已实现关闭 |
+| P1     | 3      | 6.0 人天  | F056 已关闭（auto strategy 接通）；F055 验证升 🟢；F060/F118 已关闭；F073/F120 已实现关闭 |
 | P2     | 3      | 6.5 人天  | F039/F100/F022/F110/F121 已实现关闭；F122/F123 新增（+2条 +1.5天） |
 | P3     | 4      | 8.25 人天 | F124/F125/F126 新增；F127 新增（providers.py 拆分，+0.5天） |
-| 合计   | 16     | 23.75 人天 | 较初版 -4条 +0.75天 |
+| 合计   | 15     | 22.75 人天 | 较初版 -5条 -0.25天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
-> 最后更新：2026-05-23（B001 已解除；errors.py 403 归类修复；F127 新增）。
+> 最后更新：2026-05-24（F056 已关闭：auto strategy 真正接通主流）。
 
 ---
 
@@ -247,28 +247,23 @@ SIGTERM 未处理，重启部署时正在进行的 SSE 流被立即切断，前�
 
 ### F056 自动策略选择接入主管线
 
-**状态**：🟡 部分实现（路由逻辑已有，未驱动实际策略）
+**状态**：🟢 已完成（2026-05-24）
 **优先级**：P1
 **审计来源**：[feature_audit_2026-05-17.md#f056--自动策略选择](./feature_audit_2026-05-17.md#f056--自动策略选择)
 
-**任务描述**：
-自动策略路由逻辑（关键词分类）已实现，但 `strategy="auto"` 分支未实际驱动策略选择，用户选"自动"时走固定策略。
+**完成记录**：
+- 提取 `select_strategy()` 到 `backend/src/services/qa/strategy_router.py`（27 行）
+- sync.py + stream.py 在 MCQ 拦截后、缓存查找前做 auto-resolution（`req.strategy` 原地替换）
+- QueryResponse 新增 `strategy_used` / `strategy_reason` 字段
+- /query/auto-strategy 端点保留，改为调用共享 `select_strategy()`
+- 缓存写入补全 `strategy_used` / `strategy_reason`，避免 cache hit 丢字段
 
-**关键文件路径**：
-- `backend/src/routers/query/stream.py` — `strategy == "auto"` 分支
-- `backend/src/services/retrieval/auto_strategy.py`（或类似路径）
-
-**实现思路**：
-- `auto` 分支调用策略分类器，得到推荐策略名（`parallel` / `multi_hop` 等）
-- 将推荐策略替换后走对应分支处理
-- 响应中加 `strategy_used` 字段，供前端可选展示
-
-**估时**：一天
-
-**验收标准**：
-- [ ] 发明显多跳问题，响应中 `strategy_used` 为 `multi_hop`
-- [ ] 发简单查询，`strategy_used` 为 `parallel`
-- [ ] `strategy="auto"` 不再固定走同一策略
+**验收结果**：
+- [x] 对比题 → `strategy_used=parallel, reason=对比型问题适合并行全文+向量检索`
+- [x] 步骤题 → `strategy_used=graph_augmented, reason=步骤/流程型问题适合图谱增强检索`
+- [x] 通用事实题 → `strategy_used=parallel, reason=通用问题使用并行检索`
+- [x] `strategy=parallel_rrf`（非 auto）→ `strategy_used=parallel_rrf`
+- 单元测试：`backend/tests/test_strategy_router.py`（7 条全绿）
 
 **依赖**：无
 
