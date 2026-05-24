@@ -14,6 +14,7 @@ from ...auth import deps as auth_deps
 from ...db.session import get_db
 from ...db.models import User
 from .models  import QueryRequest, QueryResponse
+from ...services.qa.strategy_router import select_strategy
 from .request_parser import parse_query_request
 from .sync    import query_sync
 from .stream  import query_stream
@@ -196,22 +197,6 @@ async def query_compare_route(
 
 @router.post("/query/auto-strategy")
 async def auto_strategy(req: QueryRequest):
-    """
-    根据问题类型自动推荐检索策略。
-    对比型 → parallel，步骤/流程型 → graph_augmented，
-    约束参数型 → graph_augmented，跨引用型 → multi_hop，其他 → parallel
-    """
-    q = req.question.lower()
-
-    if any(kw in q for kw in ["对比", "比较", "区别", "不同", "差异"]):
-        strategy, reason = "parallel", "对比型问题适合并行全文+向量检索"
-    elif any(kw in q for kw in ["引用", "参照", "规范要求", "另一"]):
-        strategy, reason = "multi_hop", "跨文档引用问题适合多跳推理"
-    elif any(kw in q for kw in ["力矩", "温度", "压力", "公差", "参数", "数值", "范围", "极限"]):
-        strategy, reason = "graph_augmented", "工艺约束参数问题适合图谱增强检索"
-    elif any(kw in q for kw in ["如何", "步骤", "流程", "怎么", "操作", "程序", "顺序"]):
-        strategy, reason = "graph_augmented", "步骤/流程型问题适合图谱增强检索"
-    else:
-        strategy, reason = "parallel", "通用问题使用并行检索"
-
+    """推荐检索策略（不执行查询，保留向后兼容）。"""
+    strategy, reason = select_strategy(req.question)
     return {"strategy": strategy, "reason": reason, "question": req.question}
