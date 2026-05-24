@@ -358,33 +358,29 @@ F113 上传校验放行格式合法的 PDF，但下游 pdfminer 解析失败时�
 
 ---
 
-### 任务 7：F079 对话分支
+### 任务 7：F079 对话分支（已闭环 ✓）
 **优先级**：P2
-**估时**：1-2 天
+**估时**：1-2 天（实际 2026-05-25 一次推进完成）
 **类型**：实施型新功能
 **依赖 LLM**：否
-**审计来源**：[feature_audit_2026-05-17.md#f079--对话分支](./feature_audit_2026-05-17.md#f079--对话分支)
 
-#### 背景
-支持从某条 AI 消息处新开分支，探索不同追问路径。涉及数据模型（`Message` 加 `parent_message_id`）和前端树状分支 UI，工作量较大。
-
-#### 关键文件路径
-- `backend/src/db/models.py` — `Message` 表加 `parent_message_id` + migration
-- `frontend/src/app/query/` — 消息分支选择 UI
-
-#### 步骤（待用户确认数据模型 / UI 方案后细化）
-1. 先明确分支的持久化模型与前端交互。
-2. 评估 `Message` 表的关系改动是否需要迁移和回填。
-3. 设计分支切换 UI 与消息列表切换逻辑。
-4. 完成后再拆分实现 commit / 文档 commit。
+#### 完成记录（2026-05-25）
+形状 Y + 深拷贝 + 触发 C + 视图 Y 按决策记录全部实现。
 
 #### 验收
-- [ ] 点击某条 AI 消息的"分支"按钮，可在新分支继续提问
-- [ ] 切换分支时消息列表正确切换，不混淆
+- [x] 点击 user/assistant 消息的分支按钮，在新分支继续提问
+- [x] ConversationSidebar 扁平列表显示派生标记（源对话 title + 第 N 条）
+- [x] 分支独立深拷贝，互不影响（curl + psql 验证）
+- [x] 源对话删除后分支保留（FK ON DELETE SET NULL 验证）
+- [x] 单元测试 6/6 通过
 
 #### Commits
-- Commit A: feat(F079): conversation branching data model and UI
-- Commit B: docs: mark F079 closed
+- `e3f798f` feat(F079-schema): add branch_from columns to conversations
+- `feff9f5` feat(F079-fk): backfill FK constraint for branch_from_conversation_id
+- `9506cbe` feat(F079-be): POST /api/conversations/branch endpoint
+- `4c0d661` feat(F079-fe): add branch button to user/assistant messages
+- `ac89abe` feat(F079-sidebar): branch indicator in ConversationSidebar
+- `d436dc6` test(F079): unit tests for branch endpoint
 
 ---
 

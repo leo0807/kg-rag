@@ -341,9 +341,19 @@
 ### F078 🟢 知识图谱节点搜索框（输入节点名称快速定位高亮）
 - **evidence**：`frontend/src/app/graph/GraphToolbarSearch.tsx:22`
 
-### F079 🔴 对话分支（从某条 AI 消息处新开分支，探索不同追问路径）
-- **evidence**：全库 grep `branch`, `fork.*conversation` **均无命中**（pipeline 的 `condition_branch` 与此无关）
-- **notes**：功能未实现。
+### F079 🟢 对话分支（从某条 AI 消息处新开分支，探索不同追问路径）
+- **verified_at**：2026-05-25
+- **method**：schema migration + endpoint curl + sidebar visual check + unit tests 6/6
+- **evidence**：
+  - `backend/src/db/models.py`：`Conversation` 加 `branch_from_conversation_id`（String(36), FK self-ref, ON DELETE SET NULL）和 `branch_from_message_index`（Integer）
+  - `backend/src/db/session.py`：`init_tables` 增量补列 + FK DO $$ 幂等创建
+  - `backend/src/routers/conversations.py`：`POST /api/conversations/branch` — 深拷贝前缀 messages，记录 branch_from 字段
+  - `GET /api/conversations` 返回 `branch_from_conversation_id` + `branch_from_message_index`
+  - `frontend/src/app/query/UserMessageBubble.tsx`：hover-reveal 分支按钮（同 user 消息右上角操作区）
+  - `frontend/src/app/query/AssistantMessageBubble.tsx`：hover-reveal 分支按钮（原已有，现通过统一 onBranch 调用新端点）
+  - `frontend/src/app/query/ConversationSidebar.tsx`：扁平列表 + "派生自 [title] 第 N 条" 派生标记
+  - `backend/tests/test_branch.py`：6 项单元测试全通过
+- **notes**：触发点 = user + assistant 消息均可分支（触发 C）；视图 = 扁平列表 + 派生标记（视图 Y）；分支独立性 = 深拷贝，互不影响；源对话删除后分支保留（FK ON DELETE SET NULL）。
 
 ---
 

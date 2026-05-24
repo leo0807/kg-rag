@@ -47,12 +47,12 @@
 |--------|--------|--------|---------|
 | P0     | 0      | 0 人天    | F115 已关闭（LLM 重试+熔断）；F038/F107/F116 已关闭；F113+F114 已实现关闭 |
 | P1     | 3      | 6.0 人天  | F056 已关闭（auto strategy 接通）；F055 验证升 🟢；F060/F118 已关闭；F073/F120 已实现关闭 |
-| P2     | 3      | 6.5 人天  | F039/F100/F022/F110/F121 已实现关闭；F122/F123 新增（+2条 +1.5天） |
+| P2     | 2      | 1.5 人天  | F079 已关闭（对话分支）；F039/F100/F022/F110/F121 已实现关闭；F122/F123 新增（+2条 +1.5天） |
 | P3     | 4      | 8.25 人天 | F124/F125/F126 新增；F127 新增（providers.py + service.py 拆分） |
-| 合计   | 14     | 21.75 人天 | 较初版 -6条 -1.25天 |
+| 合计   | 13     | 16.75 人天 | 较初版 -7条 -6.25天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
-> 最后更新：2026-05-24（F115 已关闭：LLM 重试+熔断器接入 LLMService）。
+> 最后更新：2026-05-25（F079 已关闭：对话分支形状 Y，6 commits 完整实现）。
 
 ---
 
@@ -575,41 +575,22 @@ SIGTERM 时，除了 SSE 流（F116 已覆盖），还有约 17 处 `asyncio.cre
 
 ---
 
-### F079 对话分支
+### ~~F079 对话分支~~
 
-**状态**：🔴 未实现
+> **CLOSED 2026-05-25：形状 Y（Conversation 加两列）+ 深拷贝 + 触发 C + 视图 Y 全部实现。**
+
+**状态**：🟢 已关闭（2026-05-25）
 **优先级**：P2
 **审计来源**：[feature_audit_2026-05-17.md#f079--对话分支](./feature_audit_2026-05-17.md#f079--对话分支)
 
-**决策记录（2026-05-17）**：
-- **方案**：真正的消息树分支
-- **数据模型**：形状 Y
-  - `Conversation` 表加 `branch_from_message_id`（nullable）
-  - `Conversation` 表加 `branch_from_conversation_id`（nullable）
-  - `Message` 表不动
-- **触发点**：AI 消息和用户消息都可分支
-- **视图**：扁平列表 + “派生自 X 的第 N 条消息”标记
-- **独立性**：深拷贝（分支创建时复制前缀 messages）
-- **预计 commits**：
-  - `feat(F079-schema): add branch_from_* columns`
-  - `feat(F079-be): POST /api/conversations/branch`
-  - `feat(F079-fe): branch button on messages`
-  - `feat(F079-fe): branch indicator in ConversationSidebar`
-  - `docs(F079): mark closed`
-
-**任务描述**：支持从某条 AI 消息处新开分支，探索不同追问路径。涉及数据模型（`Message` 加 `parent_message_id`）和前端树状分支 UI，工作量较大。
+**完成记录**：
+- 2026-05-25：Stage 1 schema，Stage 2 FK+endpoint，Stage 3-4 前端，Stage 5 测试+文档，5 个 Stage 6 个 commit 完整闭环。
 
 **关键文件路径**：
-- `backend/src/db/models.py` — `Message` 表加 `parent_message_id` + migration
-- `frontend/src/app/query/` — 消息分支选择 UI
-
-**估时**：一周
-
-**验收标准**：
-- [ ] 点击某条 AI 消息的"分支"按钮，可在新分支继续提问
-- [ ] 切换分支时消息列表正确切换，不混淆
-
-**依赖**：无
+- `backend/src/db/models.py` — `branch_from_conversation_id` + `branch_from_message_index`
+- `backend/src/routers/conversations.py` — `POST /api/conversations/branch`
+- `frontend/src/app/query/UserMessageBubble.tsx` / `ConversationSidebar.tsx` — 分支按钮 + 派生标记
+- `backend/tests/test_branch.py` — 6 项单元测试
 
 ---
 
