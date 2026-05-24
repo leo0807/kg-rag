@@ -14,7 +14,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ..db.session import get_db
 from ..db.models  import Conversation
 from ..auth.deps  import get_current_user
@@ -33,6 +33,11 @@ class ConversationCreate(BaseModel):
 class MessageAdd(BaseModel):
     messages: list[dict]
     title:    str = ""
+
+
+class BranchRequest(BaseModel):
+    source_conversation_id: str
+    message_index: int = Field(..., ge=0)
 
 
 @router.get("")
@@ -81,6 +86,48 @@ async def create_conversation(
         "title":    conv.title,
         "messages": [],
         "strategy": conv.strategy,
+    }
+
+
+@router.post("/branch")
+async def branch_conversation(
+    req:  BranchRequest,
+    db:   AsyncSession = Depends(get_db),
+    user: User         = Depends(get_current_user),
+):
+    """从某对话的某条消息分支出新对话（深拷贝前缀 messages）"""
+    result = await db.execute(
+        select(Conversation).where(
+            Conversation.id      == req.source_conversation_id,
+            Conversation.user_id == user.id,
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, "源对话不存在")
+
+    source_messages = json.loads(source.messages) if source.messages else []
+    if not (0 <= req.message_index < len(source_messages)):
+        raise HTTPException(400, "message_index 越界")
+
+    branch_messages = source_messages[: req.message_index + 1]
+    branch = Conversation(
+        id                          = str(uuid.uuid4()),
+        user_id                     = user.id,
+        title                       = f"{source.title or '对话'} 分支",
+        messages                    = json.dumps(branch_messages, ensure_ascii=False),
+        branch_from_conversation_id = source.id,
+        branch_from_message_index   = req.message_index,
+    )
+    db.add(branch)
+    await db.commit()
+    await db.refresh(branch)
+    return {
+        "id":                          branch.id,
+        "title":                       branch.title,
+        "branch_from_conversation_id": branch.branch_from_conversation_id,
+        "branch_from_message_index":   branch.branch_from_message_index,
+        "message_count":               len(branch_messages),
     }
 
 
