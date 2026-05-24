@@ -21,9 +21,15 @@ async def get_config(_: User = Depends(get_admin_user)):
     }
 
 
+_BREAKER_FIELDS = frozenset({"LLM_CIRCUIT_BREAKER_THRESHOLD", "LLM_CIRCUIT_BREAKER_RESET_SECONDS"})
+
+
 @router.post("/reload")
 async def reload_config(_: User = Depends(get_admin_user)):
     changed = reload_reloadable_settings()
+    if changed.keys() & _BREAKER_FIELDS:
+        from ...services.ai.circuit_breaker import reset_circuit_breaker
+        reset_circuit_breaker()
     return {
         "status": "ok",
         "changed": changed,

@@ -98,14 +98,19 @@ class LLMService:
         return call_kwargs
 
     def chat(self, messages: list[dict], system_prompt: str = "", **kwargs) -> str:
+        from .retry import call_with_retry
         msgs = prepend_system(messages, system_prompt)
-        try:
-            return self._provider.chat(msgs, **self._apply_defaults(kwargs))
-        except LLMError:
-            raise
-        except Exception as exc:
-            logger.exception("LLMService.chat 失败 provider=%s model=%s", type(self._provider).__name__, self.model_name)
-            raise map_exception(exc) from exc
+
+        def _do() -> str:
+            try:
+                return self._provider.chat(msgs, **self._apply_defaults(kwargs))
+            except LLMError:
+                raise
+            except Exception as exc:
+                logger.exception("LLMService.chat 失败 provider=%s model=%s", type(self._provider).__name__, self.model_name)
+                raise map_exception(exc) from exc
+
+        return call_with_retry(_do)
 
     def chat_with_usage(
         self,
@@ -113,14 +118,19 @@ class LLMService:
         system_prompt: str = "",
         **kwargs,
     ) -> tuple[str, dict]:
+        from .retry import call_with_retry
         msgs = prepend_system(messages, system_prompt)
-        try:
-            return self._provider.chat_with_usage(msgs, **self._apply_defaults(kwargs))
-        except LLMError:
-            raise
-        except Exception as exc:
-            logger.exception("LLMService.chat_with_usage 失败 provider=%s model=%s", type(self._provider).__name__, self.model_name)
-            raise map_exception(exc) from exc
+
+        def _do() -> tuple[str, dict]:
+            try:
+                return self._provider.chat_with_usage(msgs, **self._apply_defaults(kwargs))
+            except LLMError:
+                raise
+            except Exception as exc:
+                logger.exception("LLMService.chat_with_usage 失败 provider=%s model=%s", type(self._provider).__name__, self.model_name)
+                raise map_exception(exc) from exc
+
+        return call_with_retry(_do)
 
     async def stream_chat(
         self,
@@ -128,20 +138,37 @@ class LLMService:
         system_prompt: str = "",
         **kwargs,
     ) -> AsyncGenerator[str, None]:
+        from .retry import acall_with_retry
         msgs = prepend_system(messages, system_prompt)
+
+        # 只对"建立 stream"做熔断检查；async generator 内部失败不重试，
+        # 以免产生重复输出
+        async def _get_stream():
+            return self._provider.stream_chat(msgs, **self._apply_defaults(kwargs))
+
         try:
-            async for chunk in self._provider.stream_chat(msgs, **self._apply_defaults(kwargs)):
-                yield chunk
+            stream = await acall_with_retry(_get_stream)
         except LLMError:
             raise
         except Exception as exc:
             logger.exception(
-                "LLMService.stream_chat 失败 provider=%s model=%s message_count=%d",
+                "LLMService.stream_chat 建立失败 provider=%s model=%s",
                 type(self._provider).__name__,
                 self.model_name,
-                len(msgs),
             )
             raise map_exception(exc) from exc
+
+        first_chunk_seen = False
+        try:
+            async for chunk in stream:
+                first_chunk_seen = True
+                yield chunk
+        except Exception as exc:
+            if not first_chunk_seen:
+                logger.warning("LLMService.stream_chat 首字前失败: %s", exc)
+            else:
+                logger.warning("LLMService.stream_chat 输出中断: %s", exc)
+            raise
 
     async def chat_with_tools(
         self,
@@ -150,23 +177,28 @@ class LLMService:
         system_prompt: str = "",
         **kwargs,
     ) -> dict:
+        from .retry import acall_with_retry
         msgs = prepend_system(messages, system_prompt)
-        try:
-            if isinstance(self._provider, OpenAICompatProvider):
-                return await self._chat_with_tools_openai_compat(msgs, tools, **kwargs)
-            if isinstance(self._provider, AnthropicProvider):
-                return await self._chat_with_tools_anthropic(msgs, tools, **kwargs)
-            text = self.chat(msgs, **kwargs)
-            return {"text": text}
-        except LLMError:
-            raise
-        except Exception as exc:
-            logger.exception(
-                "LLMService.chat_with_tools 失败 provider=%s model=%s",
-                type(self._provider).__name__,
-                self.model_name,
-            )
-            raise map_exception(exc) from exc
+
+        async def _do() -> dict:
+            try:
+                if isinstance(self._provider, OpenAICompatProvider):
+                    return await self._chat_with_tools_openai_compat(msgs, tools, **kwargs)
+                if isinstance(self._provider, AnthropicProvider):
+                    return await self._chat_with_tools_anthropic(msgs, tools, **kwargs)
+                text = self.chat(msgs, **kwargs)
+                return {"text": text}
+            except LLMError:
+                raise
+            except Exception as exc:
+                logger.exception(
+                    "LLMService.chat_with_tools 失败 provider=%s model=%s",
+                    type(self._provider).__name__,
+                    self.model_name,
+                )
+                raise map_exception(exc) from exc
+
+        return await acall_with_retry(_do)
 
     async def _chat_with_tools_openai_compat(
         self,
