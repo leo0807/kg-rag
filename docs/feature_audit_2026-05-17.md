@@ -490,7 +490,7 @@
 ### 高优先级（直接影响生产安全）
 - ~~**F113 文件上传防护**~~：🟢 verified_at: 2026-05-17, method: curl multi-cases (MIME/magic/size/empty)
 - ~~**F114 请求体大小限制**~~：🟢 verified_at: 2026-05-17, method: curl + 60MB body → 413
-- **F115 LLM API 重试与熔断**：无指数退避重试和熔断器（`tenacity`/`pybreaker`）
+- ~~**F115 LLM API 重试与熔断**~~：已实现（2026-05-24）：tenacity 指数退避 + 线程安全熔断器，接入 LLMService 全部方法
 - ~~**F116 优雅关闭（Graceful Shutdown）**~~：🟢 verified_at: 2026-05-18, method: SIGTERM + stream completion smoke test
   - Note: uvicorn on SIGTERM closes the listening socket immediately after entering shutdown. New connection attempts may show `curl` exit `000` rather than HTTP 503. This is acceptable operationally: load balancers treat both as instance-unavailable and route away. `ShutdownGateMiddleware` is kept as defense-in-depth for multi-worker / in-flight request windows.
 - ~~**F120 PDF 解析异常优雅降级**~~：🟢 verified_at: 2026-05-18, method: `curl /api/preview` + pytest route smoke test

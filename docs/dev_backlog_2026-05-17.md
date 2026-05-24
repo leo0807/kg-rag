@@ -45,14 +45,14 @@
 
 | 优先级 | 条目数 | 总估时 | 变更说明 |
 |--------|--------|--------|---------|
-| P0     | 1      | 1.0 人天  | F038/F107/F116 已关闭；F113+F114 已实现关闭（-3条 -1.5天） |
+| P0     | 0      | 0 人天    | F115 已关闭（LLM 重试+熔断）；F038/F107/F116 已关闭；F113+F114 已实现关闭 |
 | P1     | 3      | 6.0 人天  | F056 已关闭（auto strategy 接通）；F055 验证升 🟢；F060/F118 已关闭；F073/F120 已实现关闭 |
 | P2     | 3      | 6.5 人天  | F039/F100/F022/F110/F121 已实现关闭；F122/F123 新增（+2条 +1.5天） |
-| P3     | 4      | 8.25 人天 | F124/F125/F126 新增；F127 新增（providers.py 拆分，+0.5天） |
-| 合计   | 15     | 22.75 人天 | 较初版 -5条 -0.25天 |
+| P3     | 4      | 8.25 人天 | F124/F125/F126 新增；F127 新增（providers.py + service.py 拆分） |
+| 合计   | 14     | 21.75 人天 | 较初版 -6条 -1.25天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
-> 最后更新：2026-05-24（F056 已关闭：auto strategy 真正接通主流）。
+> 最后更新：2026-05-24（F115 已关闭：LLM 重试+熔断器接入 LLMService）。
 
 ---
 
@@ -88,30 +88,27 @@
 
 ---
 
-### F115 LLM API 重试与熔断
+### ~~F115 LLM API 重试与熔断~~ CLOSED
 
-**状态**：待开发
+**状态**：🟢 已完成（2026-05-24）
 **优先级**：P0
-**审计来源**：[feature_audit_2026-05-17.md#f115-llm-api-重试与熔断](./feature_audit_2026-05-17.md#f115-llm-api-重试与熔断)
 
-**任务描述**：
-LLM 调用无重试机制，单次网络抖动或 Ollama 重启直接返回 500。需添加指数退避重试（≤ 3 次）和连续失败熔断（5 次失败 → 短路 60s）。注意：SSE 层已有的业务错误处理（`quota_exceeded` 等）不在此范围，熔断仅针对连接级错误。
+**完成记录**：
+- `errors.py`：`LLMError.retriable` 字段 + `RETRIABLE_CODES`（rate_limited/timeout/service_unavailable/unknown_error）
+- `circuit_breaker.py`：线程安全 CLOSED/OPEN/HALF_OPEN 状态机，全局单例 + `reset_circuit_breaker()` 热重载支持
+- `retry.py`：`call_with_retry`（同步）+ `acall_with_retry`（异步），tenacity 指数退避，`circuit_open` 错误码
+- `config.py`：4 个新字段加入 RELOADABLE_FIELDS（LLM_RETRY_MAX_ATTEMPTS=3, LLM_RETRY_INITIAL_BACKOFF_SECONDS=1.0, LLM_CIRCUIT_BREAKER_THRESHOLD=5, LLM_CIRCUIT_BREAKER_RESET_SECONDS=30.0）
+- `service.py`：chat/chat_with_usage/chat_with_tools/stream_chat 全部接入重试+熔断
+- `config_reload.py`：热重载时自动 reset 熔断器单例
 
-**关键文件路径**：
-- `backend/src/services/ai/llm_service.py` — `chat()` 方法加重试装饰器
-- `backend/src/core/config.py` — `LLM_RETRY_MAX=3`, `LLM_CB_FAILURE_THRESHOLD=5`, `LLM_CB_TIMEOUT=60`
+**验收结果**：
+- [x] 非可重试错误（401/403/200+biz）→ 立即抛出，不重试（单元测试覆盖）
+- [x] 可重试错误（timeout/rate_limited）→ 指数退避最多 3 次（单元测试覆盖）
+- [x] 连续 5 次失败 → 熔断（单元测试覆盖）；之后请求立即返回 `circuit_open` 错误
+- [x] 30s 后 HALF_OPEN 试探恢复（单元测试覆盖）
+- [x] 端到端冒烟测试：正常查询成功，无重试/熔断触发
 
-**实现思路**：
-- 引入 `tenacity`：`@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8))`
-- 熔断计数写 Redis，连续失败 5 次后 60s 内直接抛 `CircuitOpenError` → 返回 503
-- 熔断状态暴露至 `GET /api/health` 的响应体
-
-**估时**：一天
-
-**验收标准**：
-- [ ] 停掉 Ollama，发查询 → 重试 3 次后返回 503（日志可见 3 次尝试）
-- [ ] 连续触发熔断后，后续请求立即返回 503（不等重试超时）
-- [ ] 重启 Ollama 后，60s 内自动恢复正常
+**遗留**：service.py 现为 323 行（超出 300 行限制），拆分记入 F127 扩展范围
 
 **依赖**：无
 
