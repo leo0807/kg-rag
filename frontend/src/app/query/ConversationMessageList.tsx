@@ -147,11 +147,7 @@ export function ConversationMessageList({
             isAdmin={isAdmin}
             onSourceClick={onSourceClick}
             onQuoteSource={onQuoteSource}
-            onBranch={
-              msg.role === "assistant" && !streaming
-                ? () => onBranch(i)
-                : undefined
-            }
+            onBranch={!streaming ? () => onBranch(i) : undefined}
             onFollowUp={(q, sourceDocIds) => onFollowUpSelect(q, sourceDocIds)}
             onRetry={
               msg.role === "assistant" && msg.errorInfo

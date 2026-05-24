@@ -24,6 +24,7 @@ export function useChat() {
     setActiveId,
     createConversation,
     updateConversation,
+    refetch,
   } = conversations;
 
   const [input, _setInput] = useState("");
@@ -298,16 +299,20 @@ export function useChat() {
   }
 
   async function handleBranch(upToIndex: number) {
-    if (!activeConv) return;
-    const msgs = activeConv.messages.slice(0, upToIndex + 1);
-    const title = `分支: ${msgs[0]?.content?.slice(0, 18) || "新分支"}`;
+    if (!activeConv || !activeId) return;
     try {
-      const conv = await fetchApi<{ id?: string }>("/api/conversations", {
+      const result = await fetchApi<{ id?: string }>("/api/conversations/branch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, strategy, messages: msgs }),
+        body: JSON.stringify({
+          source_conversation_id: activeId,
+          message_index: upToIndex,
+        }),
       });
-      if (conv?.id) setActiveId(conv.id);
+      if (result?.id) {
+        await refetch();
+        setActiveId(result.id);
+      }
     } catch (e) {
       console.error("分支创建失败:", e);
     }

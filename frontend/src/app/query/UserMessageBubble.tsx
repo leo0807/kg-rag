@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 interface Props {
   content: string;
   images?: string[];
+  onBranch?: () => void;
   onEditQuestion?: () => void;
   onResend?: () => void;
   isEditing?: boolean;
@@ -19,6 +20,7 @@ interface Props {
 export function UserMessageBubble({
   content,
   images,
+  onBranch,
   onEditQuestion,
   onResend,
   isEditing,
@@ -109,6 +111,26 @@ export function UserMessageBubble({
               aria-label="编辑重答"
             >
               <PencilLine size={12} />
+            </button>
+          )}
+          {onBranch && (
+            <button
+              type="button"
+              onClick={onBranch}
+              className="rounded-full border border-gray-800 bg-gray-950 p-1.5 text-gray-500 shadow-lg transition-colors hover:border-indigo-500 hover:text-indigo-300"
+              title="从此处开始新的分支对话"
+              aria-label="分支对话"
+            >
+              <svg
+                aria-hidden="true"
+                className="h-3 w-3"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path d="M2 2v4a2 2 0 002 2h4M10 4l-2-2 2-2" />
+              </svg>
             </button>
           )}
         </div>

@@ -88,6 +88,7 @@ export default function MessageBubble({
       <UserMessageBubble
         content={content}
         images={images}
+        onBranch={onBranch}
         onEditQuestion={onEditQuestion}
         onResend={onResend}
         isEditing={isEditing}
