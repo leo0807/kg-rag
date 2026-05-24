@@ -68,3 +68,21 @@ async def init_tables():
                 ))
             except Exception:
                 pass
+        # F079: 对话分支
+        for col, ctype in [
+            ("branch_from_conversation_id", "VARCHAR(36)"),
+            ("branch_from_message_index",   "INTEGER"),
+        ]:
+            try:
+                await conn.execute(text(
+                    f"ALTER TABLE conversations ADD COLUMN IF NOT EXISTS {col} {ctype}"
+                ))
+            except Exception:
+                pass
+        try:
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_conversations_branch_from_conversation_id "
+                "ON conversations (branch_from_conversation_id)"
+            ))
+        except Exception:
+            pass

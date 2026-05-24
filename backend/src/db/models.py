@@ -80,6 +80,20 @@ class Conversation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # F079: 对话分支（形状 Y）——普通对话两字段均为 NULL
+    branch_from_conversation_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("conversations.id"),
+        nullable=True,
+        index=True,
+        comment="若为分支对话，记录源对话 id",
+    )
+    branch_from_message_index: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="若为分支对话，记录从源对话的第几条消息分出",
+    )
+
 
 class LLMUsage(Base):
     """每次 LLM 调用的 token 用量与费用记录，用于成本分摊报表"""
