@@ -28,6 +28,10 @@ RELOADABLE_FIELDS = frozenset(
         "RERANKER_CANDIDATE_K",
         "LLM_TIMEOUT",
         "LLM_MAX_TOKENS",
+        "LLM_RETRY_MAX_ATTEMPTS",
+        "LLM_RETRY_INITIAL_BACKOFF_SECONDS",
+        "LLM_CIRCUIT_BREAKER_THRESHOLD",
+        "LLM_CIRCUIT_BREAKER_RESET_SECONDS",
         "MAX_REQUEST_BODY_BYTES",
         "MAX_UPLOAD_FILE_BYTES",
         "SHUTDOWN_GRACE_PERIOD_SECONDS",
@@ -96,6 +100,10 @@ class Settings(BaseSettings):
     LLM_MODEL:    str = "qwen2.5:7b"
     LLM_TIMEOUT:  int = 120
     LLM_MAX_TOKENS: int = 800
+    LLM_RETRY_MAX_ATTEMPTS: int = 3
+    LLM_RETRY_INITIAL_BACKOFF_SECONDS: float = 1.0
+    LLM_CIRCUIT_BREAKER_THRESHOLD: int = 5
+    LLM_CIRCUIT_BREAKER_RESET_SECONDS: float = 30.0
 
     # 各提供方专用模型名（空则使用默认值）
     LLM_QWEN_MODEL:     str = "qwen-plus"

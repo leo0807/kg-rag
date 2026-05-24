@@ -4,6 +4,17 @@ from __future__ import annotations
 
 import re
 
+RETRIABLE_CODES: frozenset[str] = frozenset({
+    "rate_limited",
+    "timeout",
+    "service_unavailable",
+    "unknown_error",
+})
+
+
+def _is_retriable(code: str) -> bool:
+    return code in RETRIABLE_CODES
+
 
 class LLMError(Exception):
     """LLM 调用失败，携带用户可见的错误码和消息。"""
@@ -15,6 +26,7 @@ class LLMError(Exception):
         status_code: int | None = None,
         endpoint: str = "",
         provider_code: int | None = None,
+        retriable: bool = False,
     ):
         super().__init__(message)
         self.code = code
@@ -22,6 +34,7 @@ class LLMError(Exception):
         self.status_code = status_code
         self.endpoint = endpoint
         self.provider_code = provider_code
+        self.retriable = retriable
 
 
 def trim_preview(text: str, limit: int = 400) -> str:
@@ -34,7 +47,7 @@ def trim_preview(text: str, limit: int = 400) -> str:
 def classify_llm_error(status: int, response_text: str = "", model: str = "") -> LLMError:
     """将 HTTP 状态码 + 响应体映射为 LLMError，供 map_exception 和单元测试复用。"""
     if status == 401:
-        return LLMError("auth_failed", "API key 无效或已失效", status_code=401)
+        return LLMError("auth_failed", "API key 无效或已失效", status_code=401, retriable=_is_retriable("auth_failed"))
 
     if status == 403:
         body = (response_text or "").lower()
@@ -43,19 +56,20 @@ def classify_llm_error(status: int, response_text: str = "", model: str = "") ->
                 "model_unavailable",
                 f"LLM 模型不可用，请检查配置或更换模型(model={model})",
                 status_code=403,
+                retriable=_is_retriable("model_unavailable"),
             )
         if any(kw in body for kw in ("quota", "额度", "balance", "余额", "insufficient")):
-            return LLMError("quota_exceeded", "API 额度不足，请联系管理员充值", status_code=403)
+            return LLMError("quota_exceeded", "API 额度不足，请联系管理员充值", status_code=403, retriable=_is_retriable("quota_exceeded"))
         excerpt = response_text[:200] if response_text else "(no body)"
-        return LLMError("forbidden", f"LLM 服务拒绝访问: {excerpt}", status_code=403)
+        return LLMError("forbidden", f"LLM 服务拒绝访问: {excerpt}", status_code=403, retriable=_is_retriable("forbidden"))
 
     if status == 429:
-        return LLMError("rate_limited", "调用频率超限，请稍后重试", status_code=429)
+        return LLMError("rate_limited", "调用频率超限，请稍后重试", status_code=429, retriable=_is_retriable("rate_limited"))
 
     if status in (408, 504):
-        return LLMError("timeout", "模型响应超时，请重试", status_code=status)
+        return LLMError("timeout", "模型响应超时，请重试", status_code=status, retriable=_is_retriable("timeout"))
 
-    return LLMError("unknown_error", "AI 服务异常，请联系管理员", status_code=status)
+    return LLMError("unknown_error", "AI 服务异常，请联系管理员", status_code=status, retriable=_is_retriable("unknown_error"))
 
 
 def parse_response_for_business_error(data: dict) -> LLMError | None:
@@ -77,6 +91,7 @@ def parse_response_for_business_error(data: dict) -> LLMError | None:
         f"LLM API 拒绝请求: {message}",
         status_code=200,
         provider_code=provider_code,
+        retriable=_is_retriable("api_invalid_request"),
     )
 
 
@@ -124,8 +139,8 @@ def map_exception(exc: Exception, endpoint: str = "", model: str = "") -> LLMErr
         return err
 
     if isinstance(exc, (_req_to, _hx_to)):
-        return LLMError("timeout", "模型响应超时，请重试", endpoint=endpoint)
+        return LLMError("timeout", "模型响应超时，请重试", endpoint=endpoint, retriable=_is_retriable("timeout"))
     if isinstance(exc, (_req_conn, _hx_conn)):
-        return LLMError("service_unavailable", "AI 服务暂时不可用，请稍后再试", endpoint=endpoint)
+        return LLMError("service_unavailable", "AI 服务暂时不可用，请稍后再试", endpoint=endpoint, retriable=_is_retriable("service_unavailable"))
 
-    return LLMError("unknown_error", "AI 服务异常，请联系管理员", endpoint=endpoint)
+    return LLMError("unknown_error", "AI 服务异常，请联系管理员", endpoint=endpoint, retriable=_is_retriable("unknown_error"))
