@@ -86,3 +86,22 @@ async def init_tables():
             ))
         except Exception:
             pass
+        # F079: FK constraint (ON DELETE SET NULL — branch survives source deletion)
+        try:
+            await conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.table_constraints
+                        WHERE constraint_name = 'fk_conv_branch_from'
+                    ) THEN
+                        ALTER TABLE conversations
+                          ADD CONSTRAINT fk_conv_branch_from
+                          FOREIGN KEY (branch_from_conversation_id)
+                          REFERENCES conversations(id)
+                          ON DELETE SET NULL;
+                    END IF;
+                END $$;
+            """))
+        except Exception:
+            pass
