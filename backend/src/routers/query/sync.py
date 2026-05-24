@@ -21,6 +21,7 @@ from .core   import do_retrieval
 from .clarification_utils import build_clarification_payload, detect_clarification
 from .context_utils import build_llm_context, reorder_sources_for_llm
 from .mcq_utils import maybe_answer_mcq_sync
+from ...services.qa.strategy_router import select_strategy
 logger = logging.getLogger(__name__)
 
 _MODEL_PRICE = {"gpt-4o": (0.005, 0.015), "gpt-4o-mini": (0.00015, 0.0006), "claude-3-5-sonnet": (0.003, 0.015), "claude-3-haiku": (0.00025, 0.00125), "qwen2.5-7b": (0.0, 0.0)}
@@ -82,6 +83,9 @@ async def query_sync(
     )
     if mcq_response is not None:
         return mcq_response
+    _strategy_reason: str | None = None
+    if req.strategy == "auto":
+        req.strategy, _strategy_reason = select_strategy(req.question)
     cached = get_cached_result(cache_question, req.strategy, top_k)
     if cached:
         return QueryResponse(**cached)
@@ -113,7 +117,7 @@ async def query_sync(
                     top_k,
                     {"answer": answer, "sources": [s.model_dump() for s in sources]},
                 )
-                return QueryResponse(answer=answer, sources=sources)
+                return QueryResponse(answer=answer, sources=sources, strategy_used="pipeline")
             except Exception as e:
                 logger.warning("自定义链路执行失败，降级到标准策略: %s", e)
     # ── 标准四策略路径（fallback）────────────────────────────────────────
@@ -135,8 +139,9 @@ async def query_sync(
                 model_name=get_llm_service().model_name,
             )
             set_cached_result(cache_question, req.strategy, top_k,
-                              {"answer": answer, "sources": [s.model_dump() for s in sources]})
-            return QueryResponse(answer=answer, sources=sources)
+                              {"answer": answer, "sources": [s.model_dump() for s in sources],
+                               "strategy_used": "multi_hop"})
+            return QueryResponse(answer=answer, sources=sources, strategy_used="multi_hop")
         except Exception as e:
             logger.warning("多跳推理失败，降级: %s", e)
 
@@ -178,6 +183,7 @@ async def query_sync(
                 sources=sources,
                 images=images,
                 iterations=result.get("iterations"),
+                strategy_used="agent",
             )
         except Exception as e:
             logger.warning("Agent 推理失败，降级到标准检索: %s", e)
@@ -216,12 +222,16 @@ async def query_sync(
                         "answer": answer,
                         "sources": [s.model_dump() for s in sources],
                         "images": compare_result.get("images", []),
+                        "strategy_used": req.strategy,
+                        "strategy_reason": _strategy_reason,
                     },
                 )
                 return QueryResponse(
                     answer=answer,
                     sources=sources,
                     images=compare_result.get("images", []),
+                    strategy_used=req.strategy,
+                    strategy_reason=_strategy_reason,
                 )
         except Exception as e:
             logger.warning("比较题专用检索失败，回退到通用检索: %s", e)
@@ -292,6 +302,9 @@ async def query_sync(
     )
     set_cached_result(cache_question, req.strategy, top_k,
                       {"answer": answer, "sources": [s.model_dump() for s in sources],
-                       "expansion_info": expansion_info})
+                       "expansion_info": expansion_info,
+                       "strategy_used": req.strategy,
+                       "strategy_reason": _strategy_reason})
     return QueryResponse(answer=answer, sources=sources, expansion_info=expansion_info,
-                         metrics=metrics)
+                         metrics=metrics, strategy_used=req.strategy,
+                         strategy_reason=_strategy_reason)

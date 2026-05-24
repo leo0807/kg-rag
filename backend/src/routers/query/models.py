@@ -60,3 +60,5 @@ class QueryResponse(BaseModel):
     original_question: str | None = None
     mcq_meta:       dict | None = None
     mcq_type:       str | None = None
+    strategy_used:  str | None = None   # 实际执行的检索策略
+    strategy_reason: str | None = None  # auto 模式的选择理由

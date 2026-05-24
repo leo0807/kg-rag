@@ -25,6 +25,7 @@ from .context_utils import build_llm_context, reorder_sources_for_llm
 from .stream_compare import build_compare_stream_events
 from .stream_agent import stream_agent_query
 from .mcq_utils import maybe_answer_mcq_stream, forward_mcq_stream
+from ...services.qa.strategy_router import select_strategy
 from .stream_utils import _error_event, _emit_follow_ups, build_metrics_event, clean_stream_chunk, emit_status_event, estimate_answer_max_tokens, get_question_handler_for, serialize_sources, stream_semantic_cache_hit, try_semantic_cache_lookup, stream_with_first_token_logging
 logger = logging.getLogger(__name__)
 async def query_stream(request: Request, req: QueryRequest, driver: Driver = Depends(get_driver), current_user: Optional[User] = None, db: AsyncSession | None = None):
@@ -69,6 +70,8 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                         async for event in forward_mcq_stream(mcq_events):
                             yield event
                         return
+                    if req.strategy == "auto":
+                        req.strategy, _ = select_strategy(req.question)
                     if req.strategy == "multi_hop":
                         try:
                             from ...services.retrieval.multi_hop import multi_hop_query_stream
