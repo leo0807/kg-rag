@@ -15,8 +15,10 @@ from .retrieval_harness_support import (
     score_against_gold,
     unique_doc_ids,
 )
+from ..infra.task_state import TaskState, get_task_state_store
 
-_tasks: dict[str, dict[str, Any]] = {}
+_STORE_PREFIX = "eval:retrieval:"
+_store = get_task_state_store()
 DO_RETRIEVAL: Any | None = None
 
 
@@ -42,9 +44,12 @@ async def _run_task(
     top_k: int,
     driver: Driver,
 ) -> None:
-    task = _tasks[task_id]
+    key = f"{_STORE_PREFIX}{task_id}"
+    _state = _store.get(key)
+    task = _state.progress if _state else {}
     task["status"] = "running"
     task["started_at"] = _now()
+    _store.update(key, status="running", progress=task)
 
     results: list[dict[str, Any]] = []
 
@@ -129,6 +134,7 @@ async def _run_task(
             task["matched"] = sum(1 for item in results if item["matched"])
             task["unmatched"] = idx - task["matched"]
             task["results_preview"] = results[-20:]
+            _store.update(key, progress=task)
             await asyncio.sleep(0)
 
         total = len(results)
@@ -158,10 +164,12 @@ async def _run_task(
             "chunk_target_count": chunk_target_count,
             "doc_target_count": doc_target_count,
         }
+        _store.update(key, status="completed", progress=task)
     except Exception as exc:
         task["status"] = "failed"
         task["finished_at"] = _now()
         task["error"] = str(exc)
+        _store.update(key, status="failed", progress=task)
 
 
 async def start_retrieval_harness(
@@ -176,7 +184,8 @@ async def start_retrieval_harness(
 
     rows = rows_from_upload(filename, data)
     task_id = uuid.uuid4().hex
-    _tasks[task_id] = {
+    key = f"{_STORE_PREFIX}{task_id}"
+    initial_progress = {
         "task_id": task_id,
         "filename": filename,
         "status": "queued",
@@ -195,24 +204,22 @@ async def start_retrieval_harness(
         "results_preview": [],
         "results": [],
     }
+    _store.set(key, TaskState(task_id=task_id, status="queued", progress=initial_progress))
     asyncio.create_task(_run_task(task_id, rows, strategy, top_k, driver))
     return get_retrieval_task(task_id)
 
 
 def get_retrieval_task(task_id: str) -> dict[str, Any]:
-    task = _tasks.get(task_id)
-    if not task:
+    key = f"{_STORE_PREFIX}{task_id}"
+    state = _store.get(key)
+    if state is None:
         raise KeyError(task_id)
-    return task
+    return state.progress
 
 
 def list_retrieval_tasks(limit: int = 20) -> list[dict[str, Any]]:
-    rows = sorted(
-        _tasks.values(),
-        key=lambda task: str(task.get("finished_at") or task.get("started_at") or task.get("created_at") or ""),
-        reverse=True,
-    )
-    return rows[: max(limit, 1)]
+    states = _store.list_by_prefix(_STORE_PREFIX, limit=max(limit, 1))
+    return [s.progress for s in states]
 
 
 def export_retrieval_task_csv(task_id: str) -> str:

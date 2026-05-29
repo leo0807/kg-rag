@@ -508,25 +508,24 @@ F049：已完成浏览器目视检查，Tool / Material / Process / Constraint �
 | Group C backfill | ✅ 已完成 | `run_backfill.delay(doc_ids)`，driver 显式传递，commit `39281f8` |
 | Group C batch_ingest | ✅ 已完成 | `run_batch_ingest.delay(file_paths)`，driver 显式传递，commit `39281f8` |
 | Group D health monitor | ✅ 永久保留 asyncio | lifespan shutdown 已有 `task.cancel()`，无需迁移 |
-| F122-A 评测服务（5处） | 🔴 BLOCKED | 进程内 `_tasks` dict 需先迁 Redis，估时 2-3 天 |
-| F122-C conflict_scan | 🔴 BLOCKED | 同上，进程内 `_scans` dict，可与 F122-A 合并处理 |
+| F122-state TaskStateStore | ✅ 已完成 | Redis+InMemory 抽象层 + 18 unit tests，commit `a44c072`/`600b6d8` |
+| faithfulness_service.py | ✅ 已完成 | `_tasks` → Redis store，修复completion/failure未持久化的bug |
+| dataset_eval_service.py | ✅ 已完成 | `_tasks` → Redis store |
+| retrieval_harness_service.py | ✅ 已完成 | `_tasks` → Redis store |
+| ab_test_service.py | ✅ 已完成 | `_tasks` → Redis store |
+| conflict_scan.py | ✅ 已完成 | `_scans` → Redis store（prefix: `scan:conflict:`）|
+| objective_doc_eval_service.py | 🟡 留尾 | 已有 DB 持久化（`ObjectiveDocEvalTask` ORM），runner 以 `task_store` dict 传参，重构成本高；DB fallback 已可跨进程读取 |
 | F122-B gnn.py | ⚫ 永久排除 | `get_gnn_service().reload()` 必须在 FastAPI 进程，不迁 Celery |
 | F128 stream_agent | ⚫ 独立追踪 | SSE 实时路径保留 asyncio；timeout/retry 作为 F128 独立需求 |
 
-**F122-A 子任务详情**（BLOCKED ON state migration）：
-- `src/services/evaluation/objective_doc_eval_service.py`
-- `src/services/evaluation/faithfulness_service.py`
-- `src/services/evaluation/dataset_eval_service.py`（含 User ORM 序列化问题）
-- `src/services/evaluation/retrieval_harness_service.py`
-- `src/services/evaluation/ab_test_service.py`
-- `src/services/quality/conflict_scan.py`
-- **前置条件**：将 `_tasks`/`_scans` dict 改为 Redis 键（`eval_task:{task_id}`），GET 端点改从 Redis 读状态，再 Celery 化任务函数。
-
-**验收（已完成部分）**：
+**验收**：
 - [x] `POST /api/admin/graph/predict` → Celery task，Redis dedup
 - [x] backfill / batch_ingest → Celery task，driver 显式传递
 - [x] health monitor lifespan shutdown 验证通过
 - [x] 11/11 unit tests pass（test_neo4j_writer + test_ingest_task）
+- [x] 18/18 TaskStateStore unit tests pass
+- [x] 5 eval服务 + conflict_scan `_tasks`/`_scans` dict 完全迁 Redis
+- [ ] objective_doc_eval_service.py Redis 迁移（留尾，已有 DB fallback）
 
 ---
 

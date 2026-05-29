@@ -4,7 +4,10 @@ import asyncio
 import uuid
 from typing import Any
 
-_tasks: dict[str, dict[str, Any]] = {}
+from ..infra.task_state import TaskState, get_task_state_store
+
+_STORE_PREFIX = "eval:faithfulness:"
+_store = get_task_state_store()
 
 _SYSTEM_PROMPT = (
     "你是一个严格的答案忠实度审核员。"
@@ -63,9 +66,12 @@ async def _run_faithfulness_task(
     task_id: str,
     rows: list[dict[str, Any]],
 ) -> None:
-    task = _tasks[task_id]
+    key = f"{_STORE_PREFIX}{task_id}"
+    _state = _store.get(key)
+    task = _state.progress if _state else {}
     task["status"] = "running"
     task["started_at"] = _now()
+    _store.update(key, status="running", progress=task)
     results: list[dict[str, Any]] = []
 
     try:
@@ -100,6 +106,7 @@ async def _run_faithfulness_task(
             task["completed"] = idx
             task["faithful_count"] = sum(1 for r in results if r["faithful"])
             task["results_preview"] = results[-20:]
+            _store.update(key, progress=task)
             await asyncio.sleep(0)
 
         total = len(results)
@@ -118,10 +125,12 @@ async def _run_faithfulness_task(
                 4,
             ),
         }
+        _store.update(key, status="completed", progress=task)
     except Exception as exc:
         task["status"] = "failed"
         task["finished_at"] = _now()
         task["error"] = str(exc)
+        _store.update(key, status="failed", progress=task)
 
 
 def _parse_rows(filename: str, data: bytes) -> list[dict[str, Any]]:
@@ -178,7 +187,8 @@ async def start_faithfulness_eval(
 ) -> dict[str, Any]:
     rows = _parse_rows(filename, data)
     task_id = uuid.uuid4().hex
-    _tasks[task_id] = {
+    key = f"{_STORE_PREFIX}{task_id}"
+    initial_progress = {
         "task_id": task_id,
         "filename": filename,
         "status": "queued",
@@ -194,24 +204,22 @@ async def start_faithfulness_eval(
         "results_preview": [],
         "results": [],
     }
+    _store.set(key, TaskState(task_id=task_id, status="queued", progress=initial_progress))
     asyncio.create_task(_run_faithfulness_task(task_id, rows))
     return get_faithfulness_task(task_id)
 
 
 def get_faithfulness_task(task_id: str) -> dict[str, Any]:
-    task = _tasks.get(task_id)
-    if not task:
+    key = f"{_STORE_PREFIX}{task_id}"
+    state = _store.get(key)
+    if state is None:
         raise KeyError(task_id)
-    return task
+    return state.progress
 
 
 def list_faithfulness_tasks(limit: int = 20) -> list[dict[str, Any]]:
-    rows = sorted(
-        _tasks.values(),
-        key=lambda t: str(t.get("finished_at") or t.get("started_at") or t.get("created_at") or ""),
-        reverse=True,
-    )
-    return rows[: max(limit, 1)]
+    states = _store.list_by_prefix(_STORE_PREFIX, limit=max(limit, 1))
+    return [s.progress for s in states]
 
 
 def export_faithfulness_csv(task_id: str) -> str:

@@ -15,8 +15,10 @@ from .retrieval_harness_support import (
     score_against_gold,
     unique_doc_ids,
 )
+from ..infra.task_state import TaskState, get_task_state_store
 
-_tasks: dict[str, dict[str, Any]] = {}
+_STORE_PREFIX = "eval:ab:"
+_store = get_task_state_store()
 _DO_RETRIEVAL: Any | None = None
 
 
@@ -36,9 +38,12 @@ async def _run_ab_task(
     top_k: int,
     driver: Driver,
 ) -> None:
-    task = _tasks[task_id]
+    key = f"{_STORE_PREFIX}{task_id}"
+    _state = _store.get(key)
+    task = _state.progress if _state else {}
     task["status"] = "running"
     task["started_at"] = _now()
+    _store.update(key, status="running", progress=task)
 
     per_strategy: dict[str, list[dict[str, Any]]] = {s: [] for s in strategies}
     total_rows = len(rows)
@@ -92,6 +97,7 @@ async def _run_ab_task(
 
             processed += 1
             task["completed"] = processed
+            _store.update(key, progress=task)
             await asyncio.sleep(0)
 
         strategy_summaries: list[dict[str, Any]] = []
@@ -123,10 +129,12 @@ async def _run_ab_task(
                 for s in strategy_summaries
             ],
         }
+        _store.update(key, status="completed", progress=task)
     except Exception as exc:
         task["status"] = "failed"
         task["finished_at"] = _now()
         task["error"] = str(exc)
+        _store.update(key, status="failed", progress=task)
 
 
 async def start_ab_test(
@@ -144,7 +152,8 @@ async def start_ab_test(
 
     rows = rows_from_upload(filename, data)
     task_id = uuid.uuid4().hex
-    _tasks[task_id] = {
+    key = f"{_STORE_PREFIX}{task_id}"
+    initial_progress = {
         "task_id": task_id,
         "filename": filename,
         "status": "queued",
@@ -160,24 +169,22 @@ async def start_ab_test(
         "summary": None,
         "strategy_summaries": [],
     }
+    _store.set(key, TaskState(task_id=task_id, status="queued", progress=initial_progress))
     asyncio.create_task(_run_ab_task(task_id, rows, strategies, top_k, driver))
     return get_ab_task(task_id)
 
 
 def get_ab_task(task_id: str) -> dict[str, Any]:
-    task = _tasks.get(task_id)
-    if not task:
+    key = f"{_STORE_PREFIX}{task_id}"
+    state = _store.get(key)
+    if state is None:
         raise KeyError(task_id)
-    return task
+    return state.progress
 
 
 def list_ab_tasks(limit: int = 20) -> list[dict[str, Any]]:
-    rows = sorted(
-        _tasks.values(),
-        key=lambda t: str(t.get("finished_at") or t.get("started_at") or t.get("created_at") or ""),
-        reverse=True,
-    )
-    return rows[: max(limit, 1)]
+    states = _store.list_by_prefix(_STORE_PREFIX, limit=max(limit, 1))
+    return [s.progress for s in states]
 
 
 def export_ab_csv(task_id: str) -> str:

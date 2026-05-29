@@ -13,10 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...db.models import ConflictRecord
 from ...db.session import AsyncSessionLocal
 from .conflict_detectors import detect_constraint_conflicts, fetch_entity_pairs, judge_pair
+from ..infra.task_state import TaskState, get_task_state_store
 
 logger = logging.getLogger(__name__)
 
-_scans: dict[str, dict[str, Any]] = {}
+_STORE_PREFIX = "scan:conflict:"
+_store = get_task_state_store()
 
 
 def _now() -> str:
@@ -48,17 +50,22 @@ async def _save_conflicts(scan_id: str, rows: list[dict]) -> int:
 
 
 async def _run_scan(scan_id: str, driver: Driver, entity_limit: int, constraint_limit: int) -> None:
-    scan = _scans[scan_id]
+    key = f"{_STORE_PREFIX}{scan_id}"
+    _state = _store.get(key)
+    scan = _state.progress if _state else {}
     scan["status"] = "running"
     scan["started_at"] = _now()
+    _store.update(key, status="running", progress=scan)
     try:
         scan["phase"] = "constraint"
         constraint_rows = await asyncio.to_thread(detect_constraint_conflicts, driver, constraint_limit)
         scan["constraint_count"] = len(constraint_rows)
+        _store.update(key, progress=scan)
 
         scan["phase"] = "entity_pairs"
         entity_pairs = await asyncio.to_thread(fetch_entity_pairs, driver, entity_limit)
         scan["entity_pairs_total"] = len(entity_pairs)
+        _store.update(key, progress=scan)
 
         semantic_rows: list[dict] = []
         for i, pair in enumerate(entity_pairs):
@@ -66,6 +73,7 @@ async def _run_scan(scan_id: str, driver: Driver, entity_limit: int, constraint_
             result = await judge_pair(pair)
             if result:
                 semantic_rows.append(result)
+            _store.update(key, progress=scan)
             await asyncio.sleep(0)
 
         scan["semantic_count"] = len(semantic_rows)
@@ -74,11 +82,13 @@ async def _run_scan(scan_id: str, driver: Driver, entity_limit: int, constraint_
         scan["status"] = "completed"
         scan["finished_at"] = _now()
         scan["total_conflicts"] = len(all_rows)
+        _store.update(key, status="completed", progress=scan)
     except Exception as exc:
         logger.exception("冲突检测扫描失败 scan_id=%s", scan_id)
         scan["status"] = "failed"
         scan["finished_at"] = _now()
         scan["error"] = str(exc)
+        _store.update(key, status="failed", progress=scan)
 
 
 async def start_conflict_scan(
@@ -87,23 +97,27 @@ async def start_conflict_scan(
     constraint_limit: int = 200,
 ) -> dict[str, Any]:
     scan_id = uuid.uuid4().hex
-    _scans[scan_id] = {
+    key = f"{_STORE_PREFIX}{scan_id}"
+    initial_progress = {
         "scan_id": scan_id, "status": "queued", "phase": "",
         "created_at": _now(), "started_at": None, "finished_at": None,
         "constraint_count": 0, "semantic_count": 0,
         "entity_pairs_total": 0, "entity_pairs_done": 0,
         "total_conflicts": 0, "error": "",
     }
+    _store.set(key, TaskState(task_id=scan_id, status="queued", progress=initial_progress))
     asyncio.create_task(_run_scan(scan_id, driver, entity_limit, constraint_limit))
-    return _scans[scan_id]
+    return get_scan(scan_id)
 
 
 def get_scan(scan_id: str) -> dict[str, Any]:
-    scan = _scans.get(scan_id)
-    if not scan:
+    key = f"{_STORE_PREFIX}{scan_id}"
+    state = _store.get(key)
+    if state is None:
         raise KeyError(scan_id)
-    return scan
+    return state.progress
 
 
 def list_scans(limit: int = 10) -> list[dict[str, Any]]:
-    return sorted(_scans.values(), key=lambda s: str(s.get("created_at") or ""), reverse=True)[:limit]
+    states = _store.list_by_prefix(_STORE_PREFIX, limit=max(limit, 1))
+    return [s.progress for s in states]

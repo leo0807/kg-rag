@@ -16,8 +16,10 @@ from neo4j import Driver
 from ...db.models import User
 from ...routers.query.models import QueryRequest
 from ...routers.query.sync import query_sync
+from ..infra.task_state import TaskState, get_task_state_store
 
-_tasks: dict[str, dict[str, Any]] = {}
+_STORE_PREFIX = "eval:dataset:"
+_store = get_task_state_store()
 
 _NS = {
     "a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -163,9 +165,12 @@ async def _run_task(
     driver: Driver,
     current_user: User,
 ) -> None:
-    task = _tasks[task_id]
+    key = f"{_STORE_PREFIX}{task_id}"
+    _state = _store.get(key)
+    task = _state.progress if _state else {}
     task["status"] = "running"
     task["started_at"] = _now()
+    _store.update(key, status="running", progress=task)
 
     results: list[dict[str, Any]] = []
 
@@ -203,6 +208,7 @@ async def _run_task(
             task["failed"] = idx - task["passed"]
             task["current_question"] = row["question"][:80]
             task["results_preview"] = results[-20:]
+            _store.update(key, progress=task)
 
             await asyncio.sleep(0)
 
@@ -216,10 +222,12 @@ async def _run_task(
             "failed": task["failed"],
             "pass_rate": round(task["passed"] / max(len(results), 1), 4),
         }
+        _store.update(key, status="completed", progress=task)
     except Exception as exc:
         task["status"] = "failed"
         task["finished_at"] = _now()
         task["error"] = str(exc)
+        _store.update(key, status="failed", progress=task)
 
 
 async def start_dataset_eval(
@@ -232,7 +240,8 @@ async def start_dataset_eval(
 ) -> dict[str, Any]:
     rows = _rows_from_upload(filename, data)
     task_id = uuid.uuid4().hex
-    _tasks[task_id] = {
+    key = f"{_STORE_PREFIX}{task_id}"
+    initial_progress = {
         "task_id": task_id,
         "filename": filename,
         "status": "queued",
@@ -251,24 +260,22 @@ async def start_dataset_eval(
         "results_preview": [],
         "results": [],
     }
+    _store.set(key, TaskState(task_id=task_id, status="queued", progress=initial_progress))
     asyncio.create_task(_run_task(task_id, rows, strategy, top_k, driver, current_user))
     return get_task(task_id)
 
 
 def get_task(task_id: str) -> dict[str, Any]:
-    task = _tasks.get(task_id)
-    if not task:
+    key = f"{_STORE_PREFIX}{task_id}"
+    state = _store.get(key)
+    if state is None:
         raise KeyError(task_id)
-    return task
+    return state.progress
 
 
 def list_dataset_eval_tasks(limit: int = 20) -> list[dict[str, Any]]:
-    rows = sorted(
-        _tasks.values(),
-        key=lambda task: str(task.get("finished_at") or task.get("started_at") or task.get("created_at") or ""),
-        reverse=True,
-    )
-    return rows[: max(limit, 1)]
+    states = _store.list_by_prefix(_STORE_PREFIX, limit=max(limit, 1))
+    return [s.progress for s in states]
 
 
 def export_task_csv(task_id: str) -> str:
