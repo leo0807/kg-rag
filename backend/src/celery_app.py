@@ -14,7 +14,7 @@ celery_app = Celery(
     "kg_rag",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["src.tasks.reprocess_tasks"],
+    include=["src.tasks.reprocess_tasks", "src.tasks.ingest_tasks"],
 )
 
 celery_app.conf.update(
