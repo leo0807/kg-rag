@@ -488,10 +488,10 @@ F049：已完成浏览器目视检查，Tool / Material / Process / Constraint �
 
 ### F122 全局长任务优雅关闭
 
-**状态**：🟢 已关闭（部分留尾，见下）
+**状态**：🟡 部分完成（核心路径已 Celery 化，3 子任务留尾）
 **优先级**：P2
 **审计来源**：F116 调研发现
-**关闭日期**：2026-05-30
+**最后更新**：2026-05-30
 
 **完成内容**：
 - **Group B predict.py**：`asyncio.create_task` → `run_graph_prediction.delay(top_k)`；进程内 `_running` bool 替换为 Redis TTL key；移除 `driver=Depends(get_driver)`。Commit: `3c1b6ec`
@@ -500,29 +500,32 @@ F049：已完成浏览器目视检查，Tool / Material / Process / Constraint �
 - **Group D health monitor**：`startup.py` 已在 lifespan shutdown 调用 `health_monitor.stop_background_task()` → `_task.cancel()`，无需修改，验证通过。
 - 新增 Celery task 文件：`src/tasks/graph_tasks.py`、`src/tasks/ingestion_tasks.py`。Commit: `39281f8`
 
-**留尾（未迁移，需新 issue）**：
+**子任务状态**：
 
-#### F122-A留尾：评测服务 5 处（in-memory `_tasks` dict）
+| 子任务 | 状态 | 说明 |
+|--------|------|------|
+| Group B graph_prediction | ✅ 已完成 | `run_graph_prediction.delay()`，Redis TTL dedup，commit `3c1b6ec` |
+| Group C backfill | ✅ 已完成 | `run_backfill.delay(doc_ids)`，driver 显式传递，commit `39281f8` |
+| Group C batch_ingest | ✅ 已完成 | `run_batch_ingest.delay(file_paths)`，driver 显式传递，commit `39281f8` |
+| Group D health monitor | ✅ 永久保留 asyncio | lifespan shutdown 已有 `task.cancel()`，无需迁移 |
+| F122-A 评测服务（5处） | 🔴 BLOCKED | 进程内 `_tasks` dict 需先迁 Redis，估时 2-3 天 |
+| F122-C conflict_scan | 🔴 BLOCKED | 同上，进程内 `_scans` dict，可与 F122-A 合并处理 |
+| F122-B gnn.py | ⚫ 永久排除 | `get_gnn_service().reload()` 必须在 FastAPI 进程，不迁 Celery |
+| F128 stream_agent | ⚫ 独立追踪 | SSE 实时路径保留 asyncio；timeout/retry 作为 F128 独立需求 |
+
+**F122-A 子任务详情**（BLOCKED ON state migration）：
 - `src/services/evaluation/objective_doc_eval_service.py`
 - `src/services/evaluation/faithfulness_service.py`
-- `src/services/evaluation/dataset_eval_service.py`（含 User ORM 对象序列化问题）
+- `src/services/evaluation/dataset_eval_service.py`（含 User ORM 序列化问题）
 - `src/services/evaluation/retrieval_harness_service.py`
 - `src/services/evaluation/ab_test_service.py`
-- **原因**：均用进程内 `_tasks: dict` 存状态，GET 端点从同进程读取。Celery worker 无法更新 FastAPI 进程的内存字典，迁移需先将状态层改为 Redis。
+- `src/services/quality/conflict_scan.py`
+- **前置条件**：将 `_tasks`/`_scans` dict 改为 Redis 键（`eval_task:{task_id}`），GET 端点改从 Redis 读状态，再 Celery 化任务函数。
 
-#### F122-B留尾：GNN 训练（`src/routers/graph_api/gnn.py`）
-- **原因**：训练结束后调用 `get_gnn_service().reload()`，必须在 FastAPI 进程中执行才能更新 API 使用的模型。迁移需要进程间通知机制，超出 F122 范围。
-
-#### F122-C留尾：冲突扫描（`src/services/quality/conflict_scan.py`）
-- **原因**：同评测服务，用进程内 `_scans: dict` 存状态。
-
-#### F128：stream_agent 监控（`src/routers/query/stream_agent.py:64`）
-- **原因**：SSE 实时用户路径，`asyncio.create_task` 在此场景正确（随 SSE 连接生命周期），不应迁移到 Celery。如需监控/超时保护，作为独立需求跟踪。
-
-**验收**：
-- [x] Group B: `POST /api/admin/graph/predict` → Celery task，Redis dedup
-- [x] Group C: backfill/batch_ingest → Celery task，driver 显式传递
-- [x] Group D: health monitor lifespan shutdown 已有 `task.cancel()`，验证通过
+**验收（已完成部分）**：
+- [x] `POST /api/admin/graph/predict` → Celery task，Redis dedup
+- [x] backfill / batch_ingest → Celery task，driver 显式传递
+- [x] health monitor lifespan shutdown 验证通过
 - [x] 11/11 unit tests pass（test_neo4j_writer + test_ingest_task）
 
 ---

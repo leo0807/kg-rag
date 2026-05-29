@@ -519,43 +519,23 @@ PDF 入库同步阻塞（耗时 > 30s），HTTP worker 长期被占用。需将 
 
 ### 任务 12：F122 全局长任务优雅关闭
 **优先级**：P2
-**估时**：1-2 周
+**状态**：🟡 部分完成，3 子任务留尾（2026-05-30）
 **类型**：架构层大重构
 **依赖 LLM**：否
 **审计来源**：F116 调研发现
 
-⚠️ 此任务是 F116 调研发现的，覆盖 17 处 fire-and-forget 任务。必须等用户决策三个选项才能开始。
+#### 已完成
+- graph_prediction、backfill、batch_ingest 均已 Celery 化（commits `3c1b6ec`, `39281f8`）
+- health monitor 验证保留 asyncio（lifespan shutdown 已正确处理）
 
-#### 背景
-SIGTERM 时，除了 SSE 流（F116 已覆盖），还有约 17 处 `asyncio.create_task()` 启动的后台长任务（PDF 入库、评测、GNN 训练、批量 OCR 等）。当前这些任务在 SIGTERM 时被直接 cancel，可能造成：
-- PDF 入库中途崩，知识库状态不一致
-- 评测任务部分结果丢失
-- GNN 训练 checkpoint 未保存
+#### 留尾子任务（等用户决策优先级）
+- **F122-A**（BLOCKED）：评测服务 5 处 + conflict_scan — 需先将进程内 `_tasks`/`_scans` dict 迁为 Redis 键，估时 2-3 天
+- **F122-B gnn.py**（永久排除）：`get_gnn_service().reload()` 必须在 FastAPI 进程，不迁 Celery
+- **F128 stream_agent**（独立追踪）：SSE 实时路径保留 asyncio；timeout/retry 作为独立需求
 
-#### 涉及位置
-- `backend/src/routers/docs/ingest.py:230`
-- `backend/src/routers/docs/entities.py:104`
-- `backend/src/routers/docs/reprocess.py`
-- `backend/src/routers/docs/images.py:205`
-- `backend/src/services/ingestion/backfill_runtime.py:104`
-- `backend/src/services/ingestion/batch_ingest_service.py`
-- `backend/src/services/evaluation/*`
-- `backend/src/routers/query/stream_agent.py:64`
-- `backend/src/routers/graph_api/predict.py:52`
-- `backend/src/routers/graph_api/gnn.py:109`
-- `backend/src/services/quality/conflict_scan.py:97`
-
-#### 设计选项
-- 选项 A：每类任务自己实现 checkpoint + resume（工作量大但鲁棒）
-- 选项 B：建一个全局 TaskRegistry，SIGTERM 时统一 cancel + 等待 N 秒（工作量中等，无 checkpoint 但有 grace）
-- 选项 C：依赖 Celery 接管所有长任务（依赖 F117，彻底解决但属于大重构）
-
-#### 验收
-- [ ] SIGTERM 后 30s 内，正在跑的任务要么完成，要么保存了 checkpoint 可恢复，不能“中途消失”
-
-#### Commits
-- Commit A: feat(F122): global background task graceful shutdown
-- Commit B: docs: mark F122 closed
+#### 验收（已通过）
+- [x] SIGTERM 时 backfill/batch_ingest/graph_prediction 不会 mid-flight cancel
+- [x] 11/11 unit tests pass
 
 ---
 

@@ -509,7 +509,9 @@
   - Note: `validate_upload()` now accepts `allowed_types`; `/api/preview` remains PDF-only by default, `/api/ingest` uses `DOCUMENT_TYPES` and magic-byte checks per MIME type.
 
 ### 中优先级（影响稳定性/可维护性）
-- **F117 异步任务队列**：PDF 入库仍同步阻塞（Celery 已有框架但未接入主入库流程）
+- ~~**F117 异步任务队列**~~：🟢 已实现（2026-05-29）：PDF 入库、增量更新均已 Celery 化，driver 显式传递，Redis 持久化验证通过。
+- **F122 全局长任务 Celery 化**：🟡 部分实现（2026-05-30）：backfill、batch_ingest、graph_prediction 已迁移 Celery。评测服务（5处）/ conflict_scan 因进程内 `_tasks` dict 状态尚未迁 Redis 而阻塞；gnn.py 决策保留 FastAPI 进程（永久排除）；stream_agent 决策保留 asyncio 实时路径（F128 独立追踪）。
+  - F122-A 子任务（评测服务 + conflict_scan）：需先把 `_tasks`/`_scans` dict 改为 Redis 键，再 Celery 化，估时 2-3 天。
 - **F079 对话分支功能**（上节标 🔴，代码完全不存在）
 - **F038 WebSocket 进度推送**（上节标 🔴，WebSocket 完全不存在，当前为 Redis + HTTP 轮询）
 - **F073 PostgreSQL 索引补齐**（conversations 表缺 user_id 索引）
