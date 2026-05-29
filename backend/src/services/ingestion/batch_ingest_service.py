@@ -14,13 +14,12 @@ import time as _time
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, List
+from typing import List
 
 from ..parsing.parser import parse
 from ..graph.neo4j_writer import write_document
 from ..infra.cache import get_redis
 from ..alert_service import alert_service
-from ...core.database import get_driver
 from .processing_tracker import (
     task_create, task_update_stage, task_complete, task_fail,
     get_processing_status as _get_proc_status, clear_stats,
@@ -42,9 +41,6 @@ K_BATCH_LOGS    = "batch_ingest:logs"
 _ALL_KEYS = (K_BATCH_STATUS, K_BATCH_TOTAL, K_BATCH_DONE, K_BATCH_FAILED,
              K_BATCH_CURRENT, K_BATCH_PAUSE, K_BATCH_STOP, K_BATCH_LOGS)
 
-_task: Optional[asyncio.Task] = None
-
-
 def _redis():
     return get_redis()
 
@@ -61,10 +57,8 @@ def _add_log(msg: str, level: str = "INFO"):
         logger.info("[BatchIngest] %s", msg)
 
 
-async def _ingest_loop(file_paths: List[Path]):
+async def _ingest_loop(file_paths: List[Path], driver=None):
     r = _redis()
-    get_driver()  # warm up connection
-
     total = len(file_paths)
     r.set(K_BATCH_TOTAL, total)
     r.set(K_BATCH_DONE, 0)
@@ -101,7 +95,7 @@ async def _ingest_loop(file_paths: List[Path]):
         try:
             task_update_stage(tid, "解析章节", 10)
             doc = await asyncio.to_thread(parse, path)
-            await asyncio.to_thread(write_document, doc, _on_stage)
+            await asyncio.to_thread(write_document, doc, _on_stage, driver=driver)
             task_complete(tid)
             r.incr(K_BATCH_DONE)
             _add_log(f"成功入库: {doc.doc_id} ({len(doc.sections)} 章节)", "SUCCESS")
@@ -122,21 +116,19 @@ async def _ingest_loop(file_paths: List[Path]):
     # 批量失败告警：失败数 > 5
     fail_count = int(r.get(K_BATCH_FAILED) or 0)
     if fail_count > 5:
-        import asyncio
-        failed_names = [p.name for p in file_paths if r.get(f"task_failed_{p.stem}")][:5]
-        asyncio.create_task(alert_service.send_alert(
+        await alert_service.send_alert(
             "文档解析批量失败",
             f"本次批量处理已有 **{fail_count}** 份文档解析失败\n"
             f"共处理：{total} 份，成功：{total - fail_count} 份",
             level="error",
-        ))
+        )
 
 
 async def start_batch_ingest(directory: str) -> dict:
-    global _task
-    r = _redis()
+    from ...tasks.ingestion_tasks import run_batch_ingest
 
-    if _task and not _task.done():
+    r = _redis()
+    if r.get(K_BATCH_STATUS) in (b"running", b"paused", "running", "paused"):
         return {"ok": False, "reason": "已有任务在运行"}
 
     path = Path(directory)
@@ -151,7 +143,7 @@ async def start_batch_ingest(directory: str) -> dict:
 
     r.delete(*_ALL_KEYS)
     r.set(K_BATCH_STATUS, "running")
-    _task = asyncio.create_task(_ingest_loop(files))
+    run_batch_ingest.delay([str(f) for f in files])
     return {"ok": True, "total": len(files)}
 
 

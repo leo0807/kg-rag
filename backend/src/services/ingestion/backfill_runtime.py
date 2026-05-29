@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Optional
-
 from .backfill_helpers import (
     K_CURRENT,
     K_DONE,
@@ -23,15 +21,14 @@ from .backfill_helpers import (
 
 logger = logging.getLogger(__name__)
 
-_task: Optional[asyncio.Task] = None
 
-
-async def _backfill_loop(doc_ids: list[str]) -> None:
-    from ...core.database import get_driver
+async def _backfill_loop(doc_ids: list[str], driver=None) -> None:
+    if driver is None:
+        from ...core.database import get_driver
+        driver = get_driver()
     from .reprocess_service import load_sections
 
     redis_client = _redis()
-    driver = get_driver()
     stopped = False
 
     for doc_id in doc_ids:
@@ -78,11 +75,11 @@ async def _backfill_loop(doc_ids: list[str]) -> None:
 
 
 async def start_backfill(done_offset: int = 0) -> dict:
-    global _task
     from ...core.database import get_driver
+    from ...tasks.ingestion_tasks import run_backfill
 
     redis_client = _redis()
-    if _task and not _task.done():
+    if redis_client.get(K_STATUS) in (b"running", b"paused", "running", "paused"):
         return {"status": "already_running"}
 
     driver = get_driver()
@@ -101,7 +98,7 @@ async def start_backfill(done_offset: int = 0) -> dict:
     redis_client.set(K_STATUS, "running")
     redis_client.delete(K_PAUSE)
 
-    _task = asyncio.create_task(_backfill_loop(pending))
+    run_backfill.delay(list(pending))
     logger.info("[backfill] 任务启动 total=%d pending=%d", total, len(pending))
     return {"status": "started", "total": total, "pending": len(pending)}
 
@@ -122,14 +119,11 @@ def resume_backfill() -> dict:
 
 
 def stop_backfill() -> dict:
-    global _task
     redis_client = _redis()
     status = redis_client.get(K_STATUS)
-    if status not in ("running", "paused"):
+    if status not in (b"running", b"paused", "running", "paused"):
         return {"ok": False, "reason": "任务未在运行中"}
     redis_client.set(K_STOP, "1")
-    if _task and not _task.done():
-        _task.cancel()
     return {"ok": True, "message": "停止信号已发送，任务将在当前文档处理完后停止"}
 
 
