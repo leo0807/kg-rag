@@ -277,12 +277,15 @@ SIGTERM 未处理，重启部署时正在进行的 SSE 流被立即切断，前�
 - Stage 2 (`412c711`): 新建 `src/tasks/ingest_tasks.py`（`ingest_document` task，asyncio.run 包装 async 逻辑，env var 重建 Neo4j driver，progress via update_state）；celery_app.include 加入；5 个单元测试
 - Stage 3 (`372a88b`): `/api/ingest` 改为 `ingest_document.delay()`；`/api/ingest/status` 改读 `AsyncResult`；移除 fire-and-forget 旧代码（ingest.py 239→104 行）
 - Stage 4: 端对端验证（worker ready + task FAILURE on nonexistent file — 正确传播）
+- Bug-fix (`544bc4e` + `a8a3d31` + `b326524`): `write_document`/`write_document_incremental` 原来硬调 `get_driver()`（仅在 FastAPI lifespan 初始化），worker 进程中会 RuntimeError。修复：提取 `driver_helpers.make_celery_driver()`，两函数加 `driver=None` 可选参数，`ingest_tasks._run` 显式传入 task-scoped driver。11 个单元测试全绿，真实 PDF（CPS9999，新文档）走完全路径验证。
 
 **验收确认**：
 - [x] `POST /api/ingest` 立即返回 `{task_id, status:queued}`（< 1s）
 - [x] `GET /api/ingest/status/{task_id}` 映射 Celery 状态
 - [x] 任务失败时 Celery 标记 FAILURE，AsyncResult.info 含错误信息
 - [x] celery worker 启动时注册 `ingest_document` + `reprocess_batch`
+- [x] **新文档完整写入路径**：upload → write_document(driver=celery_driver) → Neo4j Document 节点创建（CPS9999 验证，2026-05-29）
+- [x] **重启恢复**：kill uvicorn → restart → 同 task_id 仍返回 done（Redis 持久化验证）
 
 ---
 
