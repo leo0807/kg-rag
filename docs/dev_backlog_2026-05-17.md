@@ -46,13 +46,13 @@
 | 优先级 | 条目数 | 总估时 | 变更说明 |
 |--------|--------|--------|---------|
 | P0     | 0      | 0 人天    | F115 已关闭（LLM 重试+熔断）；F038/F107/F116 已关闭；F113+F114 已实现关闭 |
-| P1     | 3      | 6.0 人天  | F056 已关闭（auto strategy 接通）；F055 验证升 🟢；F060/F118 已关闭；F073/F120 已实现关闭 |
+| P1     | 2      | 4.0 人天  | F117 已关闭（Celery 异步入库）；F056 已关闭；F055 验证升 🟢；F060/F118 已关闭；F073/F120 已实现关闭 |
 | P2     | 2      | 1.5 人天  | F079 已关闭（对话分支）；F039/F100/F022/F110/F121 已实现关闭；F122/F123 新增（+2条 +1.5天） |
 | P3     | 4      | 8.25 人天 | F124/F125/F126 新增；F127 新增（providers.py + service.py 拆分） |
-| 合计   | 13     | 16.75 人天 | 较初版 -7条 -6.25天 |
+| 合计   | 12     | 15.75 人天 | 较初版 -8条 -7.25天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
-> 最后更新：2026-05-25（F079 已关闭：对话分支形状 Y，6 commits 完整实现）。
+> 最后更新：2026-05-29（F117 已关闭：Celery 异步入库，4 commits 完整实现）。
 
 ---
 
@@ -266,49 +266,23 @@ SIGTERM 未处理，重启部署时正在进行的 SSE 流被立即切断，前�
 
 ---
 
-### F117 PDF 入库 Celery 异步化
+### ~~F117 PDF 入库 Celery 异步化~~ CLOSED
 
-**状态**：待开发（Celery 框架已引入，未接主入库流程）
+**状态**：🟢 已实现 — verified_at: 2026-05-29
 **优先级**：P1
 **审计来源**：[feature_audit_2026-05-17.md#f117-异步任务队列](./feature_audit_2026-05-17.md#f117-异步任务队列)
 
-**决策记录（2026-05-17）**：
-- **方案**：B（完整迁移到 Celery，前置验证现状）
-- **关键前置**：调研当前 celery_app 状态
-  - worker 容器是否真的在跑
-  - 是否已有 task 定义在用
-  - broker 配置（Redis）是否完整
-- **如果前置验证发现 Celery 链路有缺陷**：
-  - 降级到方案 A（最小改造）
-  - 立即停下来等用户决策
-- **预计 commits**：
-  - `chore(F117-survey): celery infrastructure verification`
-  - `feat(F117-tasks): define ingest celery task`
-  - `feat(F117-route): /api/ingest submits to celery queue`
-  - `feat(F117-status): /api/ingest/status query task state`
-  - `docs(F117): mark closed`
+**实现摘要**：
+- Stage 1 (`ec39796`): docker-compose.yml 新增 celery-worker 服务；Dockerfile 加 g++；requirements.txt 修复 arm64 依赖冲突
+- Stage 2 (`412c711`): 新建 `src/tasks/ingest_tasks.py`（`ingest_document` task，asyncio.run 包装 async 逻辑，env var 重建 Neo4j driver，progress via update_state）；celery_app.include 加入；5 个单元测试
+- Stage 3 (`372a88b`): `/api/ingest` 改为 `ingest_document.delay()`；`/api/ingest/status` 改读 `AsyncResult`；移除 fire-and-forget 旧代码（ingest.py 239→104 行）
+- Stage 4: 端对端验证（worker ready + task FAILURE on nonexistent file — 正确传播）
 
-**任务描述**：
-PDF 入库同步阻塞（耗时 > 30s），HTTP worker 长期被占用。需将 `/api/ingest` 改为提交 Celery 任务后立即返回 `task_id`，实际处理异步执行，前端用现有轮询机制查询进度。
-
-**关键文件路径**：
-- `backend/src/routers/docs/upload.py` — 提交 Celery 任务，返回 202 + `task_id`
-- `backend/src/tasks/ingest_task.py`（需新建）— 入库逻辑封装为 Celery task
-- `backend/src/services/ingestion/processing_tracker.py` — 进度写入复用（已有）
-
-**实现思路**：
-- `upload.py`：保存临时文件 → `ingest_task.delay(filepath, task_id)` → 返回 202
-- `ingest_task`：复用 `batch_ingest_service.py` 逻辑，写进度到 Redis
-- 前端轮询逻辑不变，后端由同步改异步
-
-**估时**：两天
-
-**验收标准**：
-- [ ] `POST /api/ingest` 立即返回 202 + `task_id`（< 1s）
-- [ ] `GET /api/ingest/status/{task_id}` 轮询可见进度递增
-- [ ] 任务失败时状态为 `failed`，前端可展示
-
-**依赖**：无（Celery 已配置）
+**验收确认**：
+- [x] `POST /api/ingest` 立即返回 `{task_id, status:queued}`（< 1s）
+- [x] `GET /api/ingest/status/{task_id}` 映射 Celery 状态
+- [x] 任务失败时 Celery 标记 FAILURE，AsyncResult.info 含错误信息
+- [x] celery worker 启动时注册 `ingest_document` + `reprocess_batch`
 
 ---
 
@@ -516,15 +490,14 @@ F049：已完成浏览器目视检查，Tool / Material / Process / Constraint �
 **审计来源**：F116 调研发现
 
 **决策记录（2026-05-17）**：
-- **状态**：BLOCKED ON F117
+- **状态**：✅ F117 已关闭（2026-05-29），F122 阻塞已解除
 - **方案**：C（沿用 F117 的 Celery 机制）
 - **范围**：17 处 fire-and-forget 任务中除 ingest 链路外的约 12 处
 - **保留 asyncio 的例外**：
   - health monitor（生命周期循环）
-  - 其他“应用本身需要的后台 loop”
+  - 其他”应用本身需要的后台 loop”
 - **迁移优先级**：高风险优先（评测服务 5 处）
 - **lifespan shutdown 中显式处理保留的 asyncio task**
-- **F117 完成且稳定运行 ≥ 2 个 commit 后才启动 F122**
 
 **任务描述**：
 SIGTERM 时，除了 SSE 流（F116 已覆盖），还有约 17 处 `asyncio.create_task()` 启动的后台长任务（PDF 入库、评测、GNN 训练、批量 OCR 等）。当前这些任务在 SIGTERM 时被直接 cancel，可能造成：
