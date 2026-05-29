@@ -5,6 +5,7 @@ WORKDIR /app
 # 安装系统依赖（pdfplumber + LibreOffice .doc 转换）
 RUN apt-get update && apt-get install -y \
     gcc \
+    g++ \
     libreoffice \
     libreoffice-writer \
     fonts-wqy-zenhei \

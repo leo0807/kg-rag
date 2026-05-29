@@ -5,6 +5,9 @@ paddleocr>=2.8.0
 pymupdf>=1.24.0
 # 视觉质量检测（可选，YOLOv11 缺陷检测）
 ultralytics==8.4.38
+# 固定版本解决 paddleocr[ocr-core]/ultralytics 在 arm64 的依赖冲突
+opencv-contrib-python==4.10.0.84
+matplotlib>=3.9.0
 # 公式识别（可选，pix2tex/LatexOCR）
 # pix2tex>=0.1.3
 # 表格提取（可选，camelot 原生 PDF 表格；需同时安装 ghostscript）
