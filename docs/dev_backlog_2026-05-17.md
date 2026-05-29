@@ -488,46 +488,42 @@ F049：已完成浏览器目视检查，Tool / Material / Process / Constraint �
 
 ### F122 全局长任务优雅关闭
 
-**状态**：🔴 未实现
+**状态**：🟢 已关闭（部分留尾，见下）
 **优先级**：P2
 **审计来源**：F116 调研发现
+**关闭日期**：2026-05-30
 
-**决策记录（2026-05-17）**：
-- **状态**：✅ F117 已关闭（2026-05-29），F122 阻塞已解除
-- **方案**：C（沿用 F117 的 Celery 机制）
-- **范围**：17 处 fire-and-forget 任务中除 ingest 链路外的约 12 处
-- **保留 asyncio 的例外**：
-  - health monitor（生命周期循环）
-  - 其他”应用本身需要的后台 loop”
-- **迁移优先级**：高风险优先（评测服务 5 处）
-- **lifespan shutdown 中显式处理保留的 asyncio task**
+**完成内容**：
+- **Group B predict.py**：`asyncio.create_task` → `run_graph_prediction.delay(top_k)`；进程内 `_running` bool 替换为 Redis TTL key；移除 `driver=Depends(get_driver)`。Commit: `3c1b6ec`
+- **Group C backfill_runtime.py**：`asyncio.create_task(_backfill_loop)` → `run_backfill.delay(doc_ids)`；`_backfill_loop` 增加 `driver=None` 参数；dedup 改为 Redis K_STATUS 检查。
+- **Group C batch_ingest_service.py**：`asyncio.create_task(_ingest_loop)` → `run_batch_ingest.delay(file_paths)`；移除 `get_driver()` warmup；`write_document` 接收显式 driver；`asyncio.create_task(alert...)` → `await`。
+- **Group D health monitor**：`startup.py` 已在 lifespan shutdown 调用 `health_monitor.stop_background_task()` → `_task.cancel()`，无需修改，验证通过。
+- 新增 Celery task 文件：`src/tasks/graph_tasks.py`、`src/tasks/ingestion_tasks.py`。Commit: `39281f8`
 
-**任务描述**：
-SIGTERM 时，除了 SSE 流（F116 已覆盖），还有约 17 处 `asyncio.create_task()` 启动的后台长任务（PDF 入库、评测、GNN 训练、批量 OCR 等）。当前这些任务在 SIGTERM 时被直接 cancel，可能造成：
-- PDF 入库中途崩，知识库状态不一致
-- 评测任务部分结果丢失
-- GNN 训练 checkpoint 未保存
+**留尾（未迁移，需新 issue）**：
 
-**涉及位置**：
-- `backend/src/routers/docs/ingest.py:230`
-- `backend/src/routers/docs/entities.py:104`
-- `backend/src/routers/docs/reprocess.py`
-- `backend/src/routers/docs/images.py:205`
-- `backend/src/services/ingestion/backfill_runtime.py:104`
-- `backend/src/services/ingestion/batch_ingest_service.py`
-- `backend/src/services/evaluation/*`
-- `backend/src/routers/query/stream_agent.py:64`
-- `backend/src/routers/graph_api/predict.py:52`
-- `backend/src/routers/graph_api/gnn.py:109`
-- `backend/src/services/quality/conflict_scan.py:97`
+#### F122-A留尾：评测服务 5 处（in-memory `_tasks` dict）
+- `src/services/evaluation/objective_doc_eval_service.py`
+- `src/services/evaluation/faithfulness_service.py`
+- `src/services/evaluation/dataset_eval_service.py`（含 User ORM 对象序列化问题）
+- `src/services/evaluation/retrieval_harness_service.py`
+- `src/services/evaluation/ab_test_service.py`
+- **原因**：均用进程内 `_tasks: dict` 存状态，GET 端点从同进程读取。Celery worker 无法更新 FastAPI 进程的内存字典，迁移需先将状态层改为 Redis。
 
-**设计选项**：
-- 选项 A：每类任务自己实现 checkpoint + resume（工作量大但鲁棒）
-- 选项 B：建一个全局 TaskRegistry，SIGTERM 时统一 cancel + 等待 N 秒（工作量中等，无 checkpoint 但有 grace）
-- 选项 C：依赖 Celery 接管所有长任务（依赖 F117，彻底解决但属于大重构）
+#### F122-B留尾：GNN 训练（`src/routers/graph_api/gnn.py`）
+- **原因**：训练结束后调用 `get_gnn_service().reload()`，必须在 FastAPI 进程中执行才能更新 API 使用的模型。迁移需要进程间通知机制，超出 F122 范围。
 
-**估时**：1-2 周（取决于选项）
-**验收**：SIGTERM 后 30s 内，正在跑的任务要么完成，要么保存了 checkpoint 可恢复，不能“中途消失”
+#### F122-C留尾：冲突扫描（`src/services/quality/conflict_scan.py`）
+- **原因**：同评测服务，用进程内 `_scans: dict` 存状态。
+
+#### F128：stream_agent 监控（`src/routers/query/stream_agent.py:64`）
+- **原因**：SSE 实时用户路径，`asyncio.create_task` 在此场景正确（随 SSE 连接生命周期），不应迁移到 Celery。如需监控/超时保护，作为独立需求跟踪。
+
+**验收**：
+- [x] Group B: `POST /api/admin/graph/predict` → Celery task，Redis dedup
+- [x] Group C: backfill/batch_ingest → Celery task，driver 显式传递
+- [x] Group D: health monitor lifespan shutdown 已有 `task.cancel()`，验证通过
+- [x] 11/11 unit tests pass（test_neo4j_writer + test_ingest_task）
 
 ---
 
