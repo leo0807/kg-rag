@@ -9,23 +9,12 @@ import os
 import time
 
 from src.celery_app import celery_app
+from src.tasks.driver_helpers import make_celery_driver
 
 logger = logging.getLogger(__name__)
 
 # Redis key 前缀：用于前端/API 发送取消信号
 CANCEL_KEY_PREFIX = "reprocess_cancel_"
-
-
-def _make_driver():
-    """Worker 进程独立创建 Neo4j 连接（不复用 FastAPI 全局 driver）。"""
-    from neo4j import GraphDatabase
-    return GraphDatabase.driver(
-        os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-        auth=(
-            os.getenv("NEO4J_USER", "neo4j"),
-            os.getenv("NEO4J_PASSWORD", "aviation123"),
-        ),
-    )
 
 
 def _make_redis():
@@ -45,7 +34,7 @@ def reprocess_batch_task(self, doc_ids: list[str], pipelines: list[str]):
     """
     from src.services.ingestion.reprocess_service import reprocess_document
 
-    driver = _make_driver()
+    driver = make_celery_driver()
     redis_client = _make_redis()
     cancel_key = f"{CANCEL_KEY_PREFIX}{self.request.id}"
 
