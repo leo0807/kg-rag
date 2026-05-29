@@ -10,21 +10,11 @@ from ..celery_app import celery_app
 from ..services.parsing.parser import parse
 from ..services.graph.neo4j_writer import write_document, write_document_incremental
 from ..routers.docs.ingest_helpers import run_image_analysis
+from .driver_helpers import make_celery_driver
 
 logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = Path("uploads")
-
-
-def _make_driver():
-    from neo4j import GraphDatabase
-    return GraphDatabase.driver(
-        os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-        auth=(
-            os.getenv("NEO4J_USER", "neo4j"),
-            os.getenv("NEO4J_PASSWORD", "aviation123"),
-        ),
-    )
 
 
 @celery_app.task(bind=True, name="ingest_document")
@@ -33,7 +23,7 @@ def ingest_document(self, tmp_path_str: str, incremental: bool = True) -> dict:
 
     Returns: {"status": "done" | "skipped", "doc_id": str, "sections": int}
     """
-    driver = _make_driver()
+    driver = make_celery_driver()
     try:
         return asyncio.run(_run(self, Path(tmp_path_str), driver, incremental))
     finally:
@@ -63,13 +53,13 @@ async def _run(task, tmp_path: Path, driver, incremental: bool) -> dict:
         if rec and rec["cnt"] > 0:
             if incremental:
                 _progress("writing")
-                inc_stats = await asyncio.to_thread(write_document_incremental, doc)
+                inc_stats = await asyncio.to_thread(write_document_incremental, doc, driver=driver)
                 return {"status": "done", "doc_id": doc.doc_id,
                         "sections": doc.total_sections, "incremental_stats": inc_stats}
             return {"status": "skipped", "doc_id": doc.doc_id, "sections": doc.total_sections}
 
         _progress("writing")
-        await asyncio.to_thread(write_document, doc)
+        await asyncio.to_thread(write_document, doc, driver=driver)
 
         if tmp_path.suffix.lower() in (".docx", ".doc"):
             _progress("converting")
