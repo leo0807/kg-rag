@@ -4,7 +4,7 @@ neo4j_writer 的单元测试
 """
 from unittest.mock import MagicMock, patch
 from src.models.schemas import DocumentSchema, SectionSchema
-from src.services.graph.neo4j_writer import write_document
+from src.services.graph.neo4j_writer import write_document, write_document_incremental
 
 
 def make_doc(**kwargs) -> DocumentSchema:
@@ -67,3 +67,24 @@ class TestWriteDocument:
         run_write(make_doc(refs=[]), driver)
         calls = [c for c in session.run.call_args_list if "refs" in (c.kwargs or {})]
         assert len(calls) == 0
+
+    def test_explicit_driver_bypasses_get_driver(self):
+        """driver kwarg が渡された時 get_driver() を呼ばない"""
+        driver, _ = make_mock_driver()
+        with patch("src.services.graph.neo4j_writer.get_driver") as mock_get, \
+             patch("src.services.graph.neo4j_writer.embed_texts",
+                   return_value=[[0.1] * 1024] * 2), \
+             patch("src.services.graph.neo4j_writer.upsert_sections"):
+            write_document(make_doc(), driver=driver)
+        mock_get.assert_not_called()
+
+    def test_no_driver_arg_uses_get_driver(self):
+        """driver kwarg を省略した時 get_driver() にフォールバックする"""
+        driver, _ = make_mock_driver()
+        with patch("src.services.graph.neo4j_writer.get_driver",
+                   return_value=driver) as mock_get, \
+             patch("src.services.graph.neo4j_writer.embed_texts",
+                   return_value=[[0.1] * 1024] * 2), \
+             patch("src.services.graph.neo4j_writer.upsert_sections"):
+            write_document(make_doc())
+        mock_get.assert_called_once()

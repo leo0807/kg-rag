@@ -120,8 +120,13 @@ def write_formulas(doc_id: str, formulas: list[dict]) -> int:
     return written
 
 
-def write_document(doc: DocumentSchema, on_stage=None) -> None:
-    """on_stage(stage_name, progress_pct) 是可选进度回调，不影响原有调用方。"""
+def write_document(doc: DocumentSchema, on_stage=None, driver=None) -> None:
+    """on_stage(stage_name, progress_pct) 是可选进度回调，不影响原有调用方。
+
+    Args:
+        driver: 显式传入时使用该 driver（Celery task 场景）；
+                None 时退回全局 get_driver()（FastAPI 场景）。
+    """
     def _notify(stage: str, pct: int):
         if on_stage:
             try:
@@ -129,7 +134,8 @@ def write_document(doc: DocumentSchema, on_stage=None) -> None:
             except Exception:
                 pass
 
-    driver = get_driver()
+    if driver is None:
+        driver = get_driver()
     milvus_rows, sections_data, texts = build_section_payloads(doc.doc_id, doc.sections)
     embeddings = embed_texts(texts) if texts else []
     _notify("向量化", 35)
@@ -189,12 +195,18 @@ def write_document(doc: DocumentSchema, on_stage=None) -> None:
     logger.info("写入完成 doc_id=%s sections=%d", doc.doc_id, len(doc.sections))
 
 
-def write_document_incremental(doc: DocumentSchema) -> dict:
-    """段落级增量更新：只对内容变化的章节重新嵌入和写入。返回变更统计。"""
+def write_document_incremental(doc: DocumentSchema, driver=None) -> dict:
+    """段落级增量更新：只对内容变化的章节重新嵌入和写入。返回变更统计。
+
+    Args:
+        driver: 显式传入时使用该 driver（Celery task 场景）；
+                None 时退回全局 get_driver()（FastAPI 场景）。
+    """
     from ..storage.milvus_store import delete_by_chunk_ids
     from ..storage.es_store import delete_chunks
 
-    driver = get_driver()
+    if driver is None:
+        driver = get_driver()
     new_hashes = {s.chunk_id: section_content_hash(s.number, s.title, s.content) for s in doc.sections}
 
     with driver.session() as session:
