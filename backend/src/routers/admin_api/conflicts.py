@@ -42,7 +42,7 @@ async def trigger_scan(
     driver=Depends(get_driver),
     _: User = Depends(get_admin_user),
 ):
-    return await start_conflict_scan(
+    return start_conflict_scan(
         driver=driver,
         entity_limit=entity_limit,
         constraint_limit=constraint_limit,

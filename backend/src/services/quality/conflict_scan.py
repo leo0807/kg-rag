@@ -91,7 +91,7 @@ async def _run_scan(scan_id: str, driver: Driver, entity_limit: int, constraint_
         _store.update(key, status="failed", progress=scan)
 
 
-async def start_conflict_scan(
+def start_conflict_scan(
     driver: Driver,
     entity_limit: int = 60,
     constraint_limit: int = 200,
@@ -106,7 +106,8 @@ async def start_conflict_scan(
         "total_conflicts": 0, "error": "",
     }
     _store.set(key, TaskState(task_id=scan_id, status="queued", progress=initial_progress))
-    asyncio.create_task(_run_scan(scan_id, driver, entity_limit, constraint_limit))
+    from ...tasks.quality_tasks import run_conflict_scan
+    run_conflict_scan.delay(scan_id=scan_id, entity_limit=entity_limit, constraint_limit=constraint_limit)
     return get_scan(scan_id)
 
 

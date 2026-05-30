@@ -7,10 +7,9 @@ Covers:
   - A second store instance (simulating process restart) also reads it back
 
 Services:
-  faithfulness, dataset_eval, retrieval_harness, ab_test — Celery-backed
-    (Sub-stage 4b): .delay() is mocked to suppress actual task submission.
-  conflict_scan — asyncio.create_task still used (Sub-stage 4c).
-  objective_doc_eval — asyncio.create_task + DB-backed (Sub-stage 4c).
+  faithfulness, dataset_eval, retrieval_harness, ab_test — Celery-backed (4b)
+  conflict_scan — Celery-backed (4c): .delay() mocked
+  objective_doc_eval — Celery-backed + DB-backed (4c): .delay() mocked
 """
 from __future__ import annotations
 
@@ -24,11 +23,6 @@ from src.services.infra.task_state import RedisTaskStateStore, get_task_state_st
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
-
-def _noop_create_task(coro, **_):
-    """Swallow asyncio.create_task without scheduling anything."""
-    coro.close()
-
 
 def _fresh_redis_store() -> RedisTaskStateStore:
     return RedisTaskStateStore("redis://localhost:6379/0")
@@ -157,10 +151,8 @@ def test_conflict_scan_start_status_and_restart_read():
 
     mock_driver = MagicMock()
 
-    with patch.object(asyncio, "create_task", side_effect=_noop_create_task):
-        result = asyncio.run(
-            svc.start_conflict_scan(driver=mock_driver, entity_limit=1, constraint_limit=1)
-        )
+    with patch("src.tasks.quality_tasks.run_conflict_scan.delay"):
+        result = svc.start_conflict_scan(driver=mock_driver, entity_limit=1, constraint_limit=1)
 
     scan_id = result["scan_id"]
     assert result["status"] == "queued"
@@ -192,7 +184,7 @@ def test_objective_doc_eval_start_status_and_restart_read():
                return_value=""), \
          patch("src.services.evaluation.objective_doc_eval_service._persist_task",
                new_callable=AsyncMock), \
-         patch.object(asyncio, "create_task", side_effect=_noop_create_task):
+         patch("src.tasks.quality_tasks.run_objective_doc_eval.delay"):
         result = asyncio.run(
             svc.start_objective_doc_eval(
                 filename="test.docx",

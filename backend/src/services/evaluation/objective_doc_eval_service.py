@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import csv
 import io
 import logging
@@ -14,7 +13,6 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ...db.models import ObjectiveDocEvalTask
 from .objective_doc_eval_parser import extract_objective_questions
-from .objective_doc_eval_runner import run_eval_task
 from .objective_doc_source_detection import resolve_source_doc_id
 
 from ..infra.task_state import TaskState, get_task_state_store
@@ -185,7 +183,8 @@ async def start_objective_doc_eval(
         await _persist_task(task)
         raise ValueError(str(exc)) from exc
 
-    asyncio.create_task(run_eval_task(task_id, questions, strategy, top_k, driver, _store, _persist_task, _now))
+    from ...tasks.quality_tasks import run_objective_doc_eval
+    run_objective_doc_eval.delay(task_id=task_id, questions=questions, strategy=strategy, top_k=top_k)
     return get_objective_task(task_id)
 
 
