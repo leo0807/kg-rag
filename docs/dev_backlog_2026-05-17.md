@@ -729,6 +729,31 @@ F022 移动端评估时发现，登录页未在当前会话下直接验证，且
 
 ---
 
+### F129 TaskStateStore TTL 可配置化
+
+**状态**：🔴 未实现
+**优先级**：P3
+**估时**：0.25 天
+**审计来源**：F122-state Sub-stage 4a 设计（2026-05-30）
+
+**任务描述**：
+当前 `RedisTaskStateStore` 的默认 TTL 硬编码 `DEFAULT_TTL = 604800` 秒（7 天）。
+未来如果不同业务需要不同 TTL（比如评测要 30 天，扫描要 1 天），应该：
+- `TaskState` 加 `ttl_seconds` 字段（默认 604800）
+- `set` / `update` 时读 `TaskState.ttl_seconds` 而非硬编码常量
+- 现有 6 个服务行为不变（都用默认 604800）
+
+**当前状态**：所有服务统一使用 `DEFAULT_TTL`，`refresh_ttl=True` 也重置为该常量，无按任务类型差异化能力。
+
+**验收**：
+- [ ] `TaskState` 支持自定义 `ttl_seconds`
+- [ ] `set()` / `update(refresh_ttl=True)` 优先读 `state.ttl_seconds`
+- [ ] 现有 6 个服务零改动（默认值兜底）
+
+**依赖**：F122-state（已完成）
+
+---
+
 ### F039 前端 Vitest 测试补全
 
 **状态**：~~待开发~~ **🟢 CLOSED 2026-05-19**
