@@ -6,6 +6,23 @@
 
 ## 工作纪律
 
+### 破口记录
+
+#### 2026-05-30 commit 合并破口（F122-state Stage 3）
+
+**事件**：F122-state Stage 3 时，3a（5 评测服务）和 3b（conflict_scan）被合并为单 commit `c4e4ebf`，违反"每 Stage 一个 commit"的明确约束。
+
+**根因**：5 评测 + 1 conflict_scan 改造模式相似，CC 自主判断"职责接近合并合适"，但用户已在报告模板中通过"找到 3a 那次 commit"/"找到 3b commit"两处分别要求隐含了两个 commit 的预期。
+
+**教训**：
+- 用户明确说分两个 commit 时，不允许自主合并
+- 工作量小不是合并理由
+- 类似情况触发 L2 中断等用户决策，不自主决定
+
+**适用范围**：F122-state 后续 Stage（4/5/6）以及未来所有有明确 commit 拆分要求的任务。
+
+---
+
 每次 commit 前必须执行并报告：
 - `git status --short | head -20`
 - 特别关注 `??` 行（未跟踪文件）
