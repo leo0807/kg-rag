@@ -56,7 +56,7 @@ class TaskStateStore(Protocol):
 
     def set(self, key: str, state: TaskState, ttl_seconds: int = DEFAULT_TTL) -> None: ...
     def get(self, key: str) -> TaskState | None: ...
-    def update(self, key: str, **fields: Any) -> TaskState | None: ...
+    def update(self, key: str, refresh_ttl: bool = False, **fields: Any) -> TaskState | None: ...
     def delete(self, key: str) -> None: ...
     def list_by_prefix(self, prefix: str, limit: int = 100) -> list[TaskState]: ...
 
@@ -84,15 +84,19 @@ class RedisTaskStateStore:
             return None
         return TaskState.from_dict(json.loads(raw))
 
-    def update(self, key: str, **fields: Any) -> TaskState | None:
+    def update(self, key: str, refresh_ttl: bool = False, **fields: Any) -> TaskState | None:
         state = self.get(key)
         if state is None:
             return None
         for k, v in fields.items():
             if hasattr(state, k):
                 setattr(state, k, v)
-        ttl = self._r.ttl(key)
-        self.set(key, state, ttl_seconds=ttl if ttl > 0 else DEFAULT_TTL)
+        if refresh_ttl:
+            ttl = DEFAULT_TTL
+        else:
+            ttl = self._r.ttl(key)
+            ttl = ttl if ttl > 0 else DEFAULT_TTL
+        self.set(key, state, ttl_seconds=ttl)
         return state
 
     def delete(self, key: str) -> None:
@@ -136,7 +140,7 @@ class InMemoryTaskStateStore:
             return None
         return TaskState.from_dict(s.to_dict())
 
-    def update(self, key: str, **fields: Any) -> TaskState | None:
+    def update(self, key: str, refresh_ttl: bool = False, **fields: Any) -> TaskState | None:  # noqa: ARG002
         s = self._data.get(key)
         if s is None:
             return None

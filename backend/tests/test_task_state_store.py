@@ -169,3 +169,36 @@ class TestTaskStateSerialization:
         restored = TaskState.from_dict(json.loads(dumped))
         assert restored.task_id == "t1"
         assert restored.result[0]["q"] == "test"
+
+
+class TestRefreshTTLInMemory:
+
+    def test_update_with_refresh_ttl_true_still_updates_status(self):
+        store = InMemoryTaskStateStore()
+        store.set("t1", TaskState(task_id="t1", status="queued"))
+        store.update("t1", refresh_ttl=True, status="running")
+        s = store.get("t1")
+        assert s is not None
+        assert s.status == "running"
+
+    def test_update_with_refresh_ttl_false_still_updates_status(self):
+        store = InMemoryTaskStateStore()
+        store.set("t1", TaskState(task_id="t1", status="queued"))
+        store.update("t1", refresh_ttl=False, status="running")
+        s = store.get("t1")
+        assert s is not None
+        assert s.status == "running"
+
+    def test_update_default_refresh_ttl_is_false(self):
+        """Default call (no refresh_ttl kwarg) works unchanged."""
+        store = InMemoryTaskStateStore()
+        store.set("t1", TaskState(task_id="t1", status="queued", progress={"n": 0}))
+        store.update("t1", status="running", progress={"n": 5})
+        s = store.get("t1")
+        assert s.status == "running"
+        assert s.progress["n"] == 5
+
+    def test_update_missing_key_returns_none_regardless_of_refresh_ttl(self):
+        store = InMemoryTaskStateStore()
+        assert store.update("nonexistent", refresh_ttl=True, status="running") is None
+        assert store.update("nonexistent", refresh_ttl=False, status="running") is None
