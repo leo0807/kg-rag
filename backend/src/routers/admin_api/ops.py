@@ -89,7 +89,7 @@ async def run_retrieval_baseline(
     if not sample_path.exists():
         raise HTTPException(status_code=404, detail="仓库内置 retrieval case 不存在")
 
-    task = await start_retrieval_harness(
+    task = start_retrieval_harness(
         filename=sample_path.name,
         data=sample_path.read_bytes(),
         strategy=req.strategy,

@@ -42,7 +42,7 @@ async def create_eval_task(
 ):
     data = await file.read()
     try:
-        return await start_dataset_eval(
+        return start_dataset_eval(
             filename=file.filename or "dataset.xlsx",
             data=data,
             strategy=strategy,
@@ -146,7 +146,7 @@ async def create_retrieval_harness_task(
     del current_user
     data = await file.read()
     try:
-        return await start_retrieval_harness(
+        return start_retrieval_harness(
             filename=file.filename or "retrieval_cases.jsonl",
             data=data,
             strategy=strategy,
@@ -196,7 +196,7 @@ async def create_faithfulness_task(
 ):
     data = await file.read()
     try:
-        return await start_faithfulness_eval(
+        return start_faithfulness_eval(
             filename=file.filename or "faithfulness.jsonl",
             data=data,
         )
@@ -247,7 +247,7 @@ async def create_ab_test_task(
     data = await file.read()
     strategy_list = [s.strip() for s in strategies.split(",") if s.strip()]
     try:
-        return await start_ab_test(
+        return start_ab_test(
             filename=file.filename or "ab_cases.jsonl",
             data=data,
             strategies=strategy_list,

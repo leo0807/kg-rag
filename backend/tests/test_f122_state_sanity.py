@@ -1,5 +1,5 @@
 """
-Stage 3 sanity tests for F122-state migration.
+Stage 3/4 sanity tests for F122-state migration.
 
 Covers:
   - start_xxx() writes initial "queued" state to Redis-backed store
@@ -7,11 +7,10 @@ Covers:
   - A second store instance (simulating process restart) also reads it back
 
 Services:
-  faithfulness, dataset_eval, retrieval_harness, ab_test, conflict_scan,
-  objective_doc_eval (DB-backed, different path).
-
-All background task execution is suppressed (asyncio.create_task patched to
-a no-op). LLM / Neo4j calls never happen.
+  faithfulness, dataset_eval, retrieval_harness, ab_test — Celery-backed
+    (Sub-stage 4b): .delay() is mocked to suppress actual task submission.
+  conflict_scan — asyncio.create_task still used (Sub-stage 4c).
+  objective_doc_eval — asyncio.create_task + DB-backed (Sub-stage 4c).
 """
 from __future__ import annotations
 
@@ -45,8 +44,8 @@ JSONL_FAITHFULNESS = (
 def test_faithfulness_start_status_and_restart_read():
     import src.services.evaluation.faithfulness_service as svc
 
-    with patch.object(asyncio, "create_task", side_effect=_noop_create_task):
-        result = asyncio.run(svc.start_faithfulness_eval("test.jsonl", JSONL_FAITHFULNESS))
+    with patch("src.tasks.eval_tasks.run_faithfulness_eval.delay"):
+        result = svc.start_faithfulness_eval("test.jsonl", JSONL_FAITHFULNESS)
 
     task_id = result["task_id"]
     assert result["status"] == "queued"
@@ -93,15 +92,13 @@ def test_retrieval_harness_start_status_and_restart_read():
 
     mock_driver = MagicMock()
 
-    with patch.object(asyncio, "create_task", side_effect=_noop_create_task):
-        result = asyncio.run(
-            svc.start_retrieval_harness(
-                filename="cases.jsonl",
-                data=JSONL_RETRIEVAL,
-                strategy="parallel",
-                top_k=5,
-                driver=mock_driver,
-            )
+    with patch("src.tasks.eval_tasks.run_retrieval_harness.delay"):
+        result = svc.start_retrieval_harness(
+            filename="cases.jsonl",
+            data=JSONL_RETRIEVAL,
+            strategy="parallel",
+            top_k=5,
+            driver=mock_driver,
         )
 
     task_id = result["task_id"]
@@ -130,15 +127,13 @@ def test_ab_test_start_status_and_restart_read():
 
     mock_driver = MagicMock()
 
-    with patch.object(asyncio, "create_task", side_effect=_noop_create_task):
-        result = asyncio.run(
-            svc.start_ab_test(
-                filename="cases.jsonl",
-                data=JSONL_AB,
-                strategies=["parallel", "sequential"],
-                top_k=5,
-                driver=mock_driver,
-            )
+    with patch("src.tasks.eval_tasks.run_ab_test.delay"):
+        result = svc.start_ab_test(
+            filename="cases.jsonl",
+            data=JSONL_AB,
+            strategies=["parallel", "sequential"],
+            top_k=5,
+            driver=mock_driver,
         )
 
     task_id = result["task_id"]

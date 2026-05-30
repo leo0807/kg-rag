@@ -19,6 +19,7 @@ celery_app = Celery(
         "src.tasks.ingest_tasks",
         "src.tasks.graph_tasks",
         "src.tasks.ingestion_tasks",
+        "src.tasks.eval_tasks",
     ],
 )
 

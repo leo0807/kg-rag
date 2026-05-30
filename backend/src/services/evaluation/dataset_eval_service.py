@@ -230,7 +230,7 @@ async def _run_task(
         _store.update(key, status="failed", progress=task)
 
 
-async def start_dataset_eval(
+def start_dataset_eval(
     filename: str,
     data: bytes,
     strategy: str,
@@ -261,7 +261,14 @@ async def start_dataset_eval(
         "results": [],
     }
     _store.set(key, TaskState(task_id=task_id, status="queued", progress=initial_progress))
-    asyncio.create_task(_run_task(task_id, rows, strategy, top_k, driver, current_user))
+    from ...tasks.eval_tasks import run_dataset_eval
+    run_dataset_eval.delay(
+        task_id=task_id,
+        rows=rows,
+        strategy=strategy,
+        top_k=top_k,
+        user_id=current_user.id,
+    )
     return get_task(task_id)
 
 

@@ -181,7 +181,7 @@ def _parse_rows(filename: str, data: bytes) -> list[dict[str, Any]]:
     return rows
 
 
-async def start_faithfulness_eval(
+def start_faithfulness_eval(
     filename: str,
     data: bytes,
 ) -> dict[str, Any]:
@@ -205,7 +205,8 @@ async def start_faithfulness_eval(
         "results": [],
     }
     _store.set(key, TaskState(task_id=task_id, status="queued", progress=initial_progress))
-    asyncio.create_task(_run_faithfulness_task(task_id, rows))
+    from ...tasks.eval_tasks import run_faithfulness_eval
+    run_faithfulness_eval.delay(task_id=task_id, rows=rows)
     return get_faithfulness_task(task_id)
 
 

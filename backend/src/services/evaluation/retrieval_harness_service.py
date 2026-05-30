@@ -172,7 +172,7 @@ async def _run_task(
         _store.update(key, status="failed", progress=task)
 
 
-async def start_retrieval_harness(
+def start_retrieval_harness(
     filename: str,
     data: bytes,
     strategy: str,
@@ -205,7 +205,8 @@ async def start_retrieval_harness(
         "results": [],
     }
     _store.set(key, TaskState(task_id=task_id, status="queued", progress=initial_progress))
-    asyncio.create_task(_run_task(task_id, rows, strategy, top_k, driver))
+    from ...tasks.eval_tasks import run_retrieval_harness
+    run_retrieval_harness.delay(task_id=task_id, rows=rows, strategy=strategy, top_k=top_k)
     return get_retrieval_task(task_id)
 
 

@@ -137,7 +137,7 @@ async def _run_ab_task(
         _store.update(key, status="failed", progress=task)
 
 
-async def start_ab_test(
+def start_ab_test(
     filename: str,
     data: bytes,
     strategies: list[str],
@@ -170,7 +170,8 @@ async def start_ab_test(
         "strategy_summaries": [],
     }
     _store.set(key, TaskState(task_id=task_id, status="queued", progress=initial_progress))
-    asyncio.create_task(_run_ab_task(task_id, rows, strategies, top_k, driver))
+    from ...tasks.eval_tasks import run_ab_test
+    run_ab_test.delay(task_id=task_id, rows=rows, strategies=strategies, top_k=top_k)
     return get_ab_task(task_id)
 
 
