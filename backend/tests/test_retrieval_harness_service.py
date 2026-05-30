@@ -3,15 +3,15 @@ import asyncio
 import pytest
 
 from src.services.evaluation import retrieval_harness_service as svc
+from src.services.infra.task_state import InMemoryTaskStateStore, TaskState
 
 
 @pytest.fixture(autouse=True)
-def clear_tasks():
-    svc._tasks.clear()
-    svc.DO_RETRIEVAL = None
-    yield
-    svc._tasks.clear()
-    svc.DO_RETRIEVAL = None
+def isolated_store(monkeypatch):
+    store = InMemoryTaskStateStore()
+    monkeypatch.setattr(svc, "_store", store)
+    monkeypatch.setattr(svc, "DO_RETRIEVAL", None)
+    yield store
 
 
 def test_rows_from_upload_supports_jsonl_and_csv():
@@ -45,7 +45,7 @@ def test_rows_from_upload_requires_gold_labels():
         )
 
 
-def test_run_task_computes_chunk_and_doc_metrics(monkeypatch):
+def test_run_task_computes_chunk_and_doc_metrics(isolated_store, monkeypatch):
     def fake_retrieval(driver, question, strategy, top_k, use_hyde=False, hyde_alpha=0.5, doc_id=""):
         if question == "chunk":
             return (
@@ -54,6 +54,7 @@ def test_run_task_computes_chunk_and_doc_metrics(monkeypatch):
                     {"chunk_id": "DOC_1", "doc_id": "CPS0200", "number": "1", "title": "范围"},
                 ],
                 {},
+                [],
             )
         return (
             [
@@ -61,11 +62,13 @@ def test_run_task_computes_chunk_and_doc_metrics(monkeypatch):
                 {"chunk_id": "X_2", "doc_id": "CPS0201", "number": "6", "title": "性能"},
             ],
             {},
+            [],
         )
 
     monkeypatch.setattr(svc, "DO_RETRIEVAL", fake_retrieval)
     task_id = "task-1"
-    svc._tasks[task_id] = {
+    key = f"{svc._STORE_PREFIX}{task_id}"
+    initial_progress = {
         "task_id": task_id,
         "filename": "cases.jsonl",
         "status": "queued",
@@ -84,6 +87,7 @@ def test_run_task_computes_chunk_and_doc_metrics(monkeypatch):
         "results_preview": [],
         "results": [],
     }
+    isolated_store.set(key, TaskState(task_id=task_id, status="queued", progress=initial_progress))
 
     asyncio.run(
         svc._run_task(
@@ -137,9 +141,11 @@ def test_start_retrieval_harness_rejects_invalid_strategy():
         )
 
 
-def test_export_retrieval_task_csv():
-    svc._tasks["done"] = {
-        "task_id": "done",
+def test_export_retrieval_task_csv(isolated_store):
+    task_id = "done"
+    key = f"{svc._STORE_PREFIX}{task_id}"
+    progress = {
+        "task_id": task_id,
         "status": "completed",
         "results": [
             {
@@ -152,6 +158,15 @@ def test_export_retrieval_task_csv():
                 "hit_rank": 1,
                 "recall": 1.0,
                 "reciprocal_rank": 1.0,
+                "ndcg": 1.0,
+                "chunk_hit": True,
+                "chunk_hit_rank": 1,
+                "chunk_recall": 1.0,
+                "chunk_mrr": 1.0,
+                "doc_hit": True,
+                "doc_hit_rank": 1,
+                "doc_recall": 1.0,
+                "doc_mrr": 1.0,
                 "gold_chunk_ids": ["DOC_1"],
                 "gold_doc_ids": [],
                 "retrieved_chunk_ids": ["DOC_1"],
@@ -160,8 +175,9 @@ def test_export_retrieval_task_csv():
             }
         ],
     }
+    isolated_store.set(key, TaskState(task_id=task_id, status="completed", progress=progress))
 
-    text = svc.export_retrieval_task_csv("done")
+    text = svc.export_retrieval_task_csv(task_id)
 
     assert "target_type" in text
     assert "PASS" in text
