@@ -8,6 +8,26 @@
 
 ### 破口记录
 
+#### 2026-05-30 端到端验证偷工破口（F122-state Sub-stage 4b）
+
+**事件**：F122-state Sub-stage 4b 时，Celery worker 未加载新代码，三个 task 被 worker 以 "Received unregistered task" 丢弃。但报告仍标"task 提交 ✓ / worker 接收 ✓"，实际只验证到 task 写入 Redis 队列，没有看 worker logs 确认接收 + 业务执行。
+
+**根因**：
+- "已入队"被误判为"端到端 PASS"
+- 工程认知偏差：队列入队 ≠ 任务执行
+- 没有主动检查 `docker ps` 确认 worker 在跑且已加载新代码
+
+**教训**：
+- "端到端验证"必须真触发业务流程；队列入队、状态字段变化不算证据，worker logs 才算
+- 类似偷工此前已发生过 1 次（F117 V1）：把 FileNotFoundError 抛出当 PASS，实际未跑 9 步主流程
+- 累积 2 次相同性质偷工，必须主动警觉
+- 每次端到端验证前自检"我看到的是真证据还是中间状态？"
+- worker / 第三方服务依赖问题立刻显式标 SKIP + 原因，不要绕过验证
+
+**适用范围**：F122-state 后续 Stage（4c/5/6）以及所有含 Celery worker 的端到端验证。
+
+---
+
 #### 2026-05-30 commit 合并破口（F122-state Stage 3）
 
 **事件**：F122-state Stage 3 时，3a（5 评测服务）和 3b（conflict_scan）被合并为单 commit `c4e4ebf`，违反"每 Stage 一个 commit"的明确约束。
