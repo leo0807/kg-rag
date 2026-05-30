@@ -17,9 +17,12 @@ from .objective_doc_eval_parser import extract_objective_questions
 from .objective_doc_eval_runner import run_eval_task
 from .objective_doc_source_detection import resolve_source_doc_id
 
+from ..infra.task_state import TaskState, get_task_state_store
+
 logger = logging.getLogger(__name__)
 
-_tasks: dict[str, dict[str, Any]] = {}
+_STORE_PREFIX = "eval:objective_doc:"
+_store = get_task_state_store()
 
 
 def _now() -> str:
@@ -46,6 +49,10 @@ def _task_snapshot(task: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _persist_task(task: dict[str, Any]) -> None:
+    _tid = (task or {}).get("task_id", "")
+    if _tid:
+        _store.update(f"{_STORE_PREFIX}{_tid}", status=task.get("status", ""), progress=task)
+
     from ...db.session import AsyncSessionLocal, init_tables
 
     payload = _task_snapshot(task)
@@ -134,7 +141,7 @@ async def start_objective_doc_eval(
     doc_id: str = "",
 ) -> dict[str, Any]:
     task_id = uuid.uuid4().hex
-    _tasks[task_id] = {
+    task: dict[str, Any] = {
         "task_id": task_id, "filename": filename, "status": "queued",
         "strategy": strategy, "top_k": top_k,
         "source_doc_id": source_doc_id or "", "doc_id": doc_id or "",
@@ -144,7 +151,8 @@ async def start_objective_doc_eval(
         "current_question": "正在解析文档...", "error": "", "summary": None,
         "results_preview": [], "results": [],
     }
-    await _persist_task(_tasks[task_id])
+    _store.set(f"{_STORE_PREFIX}{task_id}", TaskState(task_id=task_id, status="queued", progress=task))
+    await _persist_task(task)
     try:
         questions = extract_objective_questions(filename, data)
         resolved_source_doc_id = resolve_source_doc_id(
@@ -153,44 +161,44 @@ async def start_objective_doc_eval(
             source_doc_id=source_doc_id,
             legacy_doc_id=doc_id,
         )
-        _tasks[task_id]["source_doc_id"] = resolved_source_doc_id
-        _tasks[task_id]["doc_id"] = resolved_source_doc_id
-        _tasks[task_id]["total"] = len(questions)
-        _tasks[task_id]["current_question"] = f"题目解析完成，准备评测 {len(questions)} 题"
-        await _persist_task(_tasks[task_id])
+        task["source_doc_id"] = resolved_source_doc_id
+        task["doc_id"] = resolved_source_doc_id
+        task["total"] = len(questions)
+        task["current_question"] = f"题目解析完成，准备评测 {len(questions)} 题"
+        await _persist_task(task)
         if resolved_source_doc_id:
             from .objective_doc_source_detection import baseline_retrieval_hit_rate
 
             hit_rate, _ = baseline_retrieval_hit_rate(questions, resolved_source_doc_id, strategy, top_k, driver)
             if hit_rate < 0.5:
-                _tasks[task_id]["status"] = "failed"
-                _tasks[task_id]["finished_at"] = _now()
-                _tasks[task_id]["error"] = f"基线命中率 {hit_rate:.0%} 过低，请检查 source_doc_id 设置"
-                _tasks[task_id]["current_question"] = f"基线检索未通过：{resolved_source_doc_id}"
-                await _persist_task(_tasks[task_id])
+                task["status"] = "failed"
+                task["finished_at"] = _now()
+                task["error"] = f"基线命中率 {hit_rate:.0%} 过低，请检查 source_doc_id 设置"
+                task["current_question"] = f"基线检索未通过：{resolved_source_doc_id}"
+                await _persist_task(task)
                 return get_objective_task(task_id)
     except Exception as exc:
-        _tasks[task_id]["status"] = "failed"
-        _tasks[task_id]["finished_at"] = _now()
-        _tasks[task_id]["error"] = f"{type(exc).__name__}: {exc}"
-        _tasks[task_id]["current_question"] = "文档解析失败"
-        await _persist_task(_tasks[task_id])
+        task["status"] = "failed"
+        task["finished_at"] = _now()
+        task["error"] = f"{type(exc).__name__}: {exc}"
+        task["current_question"] = "文档解析失败"
+        await _persist_task(task)
         raise ValueError(str(exc)) from exc
 
-    asyncio.create_task(run_eval_task(task_id, questions, strategy, top_k, driver, _tasks, _persist_task, _now))
+    asyncio.create_task(run_eval_task(task_id, questions, strategy, top_k, driver, _store, _persist_task, _now))
     return get_objective_task(task_id)
 
 
 def get_objective_task(task_id: str) -> dict[str, Any]:
-    task = _tasks.get(task_id)
-    if not task:
+    state = _store.get(f"{_STORE_PREFIX}{task_id}")
+    if state is None:
         raise KeyError(task_id)
-    return task
+    return state.progress
 
 
 def list_objective_eval_tasks(limit: int = 20) -> list[dict[str, Any]]:
     rows = sorted(
-        _tasks.values(),
+        [s.progress for s in _store.list_by_prefix(_STORE_PREFIX, limit=max(limit, 1))],
         key=lambda task: str(task.get("finished_at") or task.get("started_at") or task.get("created_at") or ""),
         reverse=True,
     )
@@ -198,9 +206,9 @@ def list_objective_eval_tasks(limit: int = 20) -> list[dict[str, Any]]:
 
 
 async def get_objective_task_record(task_id: str) -> dict[str, Any]:
-    task = _tasks.get(task_id)
-    if task:
-        return task
+    state = _store.get(f"{_STORE_PREFIX}{task_id}")
+    if state is not None:
+        return state.progress
     return await _load_task_from_db(task_id)
 
 

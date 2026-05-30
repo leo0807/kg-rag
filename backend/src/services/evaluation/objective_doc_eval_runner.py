@@ -129,11 +129,14 @@ def answer_objective_question(
 
 async def run_eval_task(
     task_id: str, questions: list[dict[str, Any]], strategy: str, top_k: int,
-    driver: Driver, task_store: dict[str, dict[str, Any]], persist_fn: Any, now_fn: Any,
+    driver: Driver, store: Any, persist_fn: Any, now_fn: Any,
 ) -> None:
-    task = task_store[task_id]
+    key = f"eval:objective_doc:{task_id}"
+    _state = store.get(key)
+    task = _state.progress if _state else {}
     task["status"] = "running"
     task["started_at"] = now_fn()
+    store.update(key, status="running", progress=task)
     results: list[dict[str, Any]] = []
     try:
         source_doc_id = str(task.get("source_doc_id") or task.get("doc_id") or "").strip().upper()
