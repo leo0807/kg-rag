@@ -180,17 +180,42 @@ def test_conflict_scan_start_status_and_restart_read():
     store2.delete(key)
 
 
-# ── objective_doc_eval (DB-backed, different path) ────────────────────────────
+# ── objective_doc_eval ────────────────────────────────────────────────────────
 
-def test_objective_doc_eval_skip_reason():
-    """
-    SKIP: objective_doc_eval_service uses SQLAlchemy ORM (ObjectiveDocEvalTask)
-    for persistence. It still uses a process-local _tasks dict internally, but
-    get_objective_task_record() has a DB fallback for cross-process reads.
-    Redis migration of this service is留尾 — requires refactoring runner
-    signature (task_store: dict param).  No start() sanity test here.
-    """
-    pytest.skip(
-        "objective_doc_eval: DB-backed, Redis migration deferred (留尾). "
-        "Runner takes task_store:dict by reference; requires separate refactor."
-    )
+def test_objective_doc_eval_start_status_and_restart_read():
+    import src.services.evaluation.objective_doc_eval_service as svc
+    from unittest.mock import MagicMock
+
+    fake_questions = [
+        {"display_no": "1", "question": "Q1", "options": [], "question_type": "judge",
+         "answer_key": "对", "doc_id": ""}
+    ]
+
+    with patch("src.services.evaluation.objective_doc_eval_service.extract_objective_questions",
+               return_value=fake_questions), \
+         patch("src.services.evaluation.objective_doc_eval_service.resolve_source_doc_id",
+               return_value=""), \
+         patch("src.services.evaluation.objective_doc_eval_service._persist_task",
+               new_callable=AsyncMock), \
+         patch.object(asyncio, "create_task", side_effect=_noop_create_task):
+        result = asyncio.run(
+            svc.start_objective_doc_eval(
+                filename="test.docx",
+                data=b"fake",
+                strategy="parallel",
+                top_k=3,
+                driver=MagicMock(),
+            )
+        )
+
+    task_id = result["task_id"]
+    assert result["status"] == "queued"
+
+    store2 = _fresh_redis_store()
+    key = f"eval:objective_doc:{task_id}"
+    state = store2.get(key)
+    assert state is not None, "State not found in Redis after 'restart'"
+    assert state.progress["task_id"] == task_id
+    assert state.progress["status"] == "queued"
+
+    store2.delete(key)
