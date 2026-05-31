@@ -84,12 +84,12 @@
 |--------|--------|--------|---------|
 | P0     | 0      | 0 人天    | F115 已关闭（LLM 重试+熔断）；F038/F107/F116 已关闭；F113+F114 已实现关闭 |
 | P1     | 2      | 4.0 人天  | F117 已关闭（Celery 异步入库）；F056 已关闭；F055 验证升 🟢；F060/F118 已关闭；F073/F120 已实现关闭 |
-| P2     | 2      | 1.5 人天  | F079 已关闭（对话分支）；F039/F100/F022/F110/F121 已实现关闭；F122/F123 新增（+2条 +1.5天） |
-| P3     | 4      | 8.25 人天 | F124/F125/F126 新增；F127 新增（providers.py + service.py 拆分） |
-| 合计   | 12     | 15.75 人天 | 较初版 -8条 -7.25天 |
+| P2     | 1      | 0.5 人天  | F122 已关闭（2026-05-31）；F123 待开发（登录页移动端响应式，P2 剩余 = 1） |
+| P3     | 5      | 8.5 人天  | F124/F125/F126/F127/F129 原有；F130 新增（Celery worker 日志可靠性） |
+| 合计   | 11     | 12.5 人天 | 较初版 -9条 -10.75天 |
 
 > 估时按"单人开发，串行"计，不含 code review 时间。
-> 最后更新：2026-05-29（F117 已关闭：Celery 异步入库，4 commits 完整实现）。
+> 最后更新：2026-05-31（F122 已关闭：全局长任务 Celery 化 + Redis 状态迁移，Stage 5 综合验证通过）。
 
 ---
 
@@ -523,12 +523,12 @@ F049：已完成浏览器目视检查，Tool / Material / Process / Constraint �
 
 ---
 
-### F122 全局长任务优雅关闭
+### ~~F122 全局长任务优雅关闭~~ **CLOSED 2026-05-31**
 
-**状态**：🟡 部分完成（核心路径已 Celery 化，3 子任务留尾）
+**状态**：🟢 已关闭（2026-05-31）
 **优先级**：P2
 **审计来源**：F116 调研发现
-**最后更新**：2026-05-30
+**最后更新**：2026-05-31
 
 **完成内容**：
 - **Group B predict.py**：`asyncio.create_task` → `run_graph_prediction.delay(top_k)`；进程内 `_running` bool 替换为 Redis TTL key；移除 `driver=Depends(get_driver)`。Commit: `3c1b6ec`
@@ -536,6 +536,10 @@ F049：已完成浏览器目视检查，Tool / Material / Process / Constraint �
 - **Group C batch_ingest_service.py**：`asyncio.create_task(_ingest_loop)` → `run_batch_ingest.delay(file_paths)`；移除 `get_driver()` warmup；`write_document` 接收显式 driver；`asyncio.create_task(alert...)` → `await`。
 - **Group D health monitor**：`startup.py` 已在 lifespan shutdown 调用 `health_monitor.stop_background_task()` → `_task.cancel()`，无需修改，验证通过。
 - 新增 Celery task 文件：`src/tasks/graph_tasks.py`、`src/tasks/ingestion_tasks.py`。Commit: `39281f8`
+- **F122-state（Sub-stage 4a）**：`TaskStateStore` 抽象层（`RedisTaskStateStore` + `InMemoryTaskStateStore`），18 unit tests，commits `a44c072`/`600b6d8`
+- **Sub-stage 4b（eval services Redis 迁移）**：faithfulness/dataset_eval/retrieval_harness/ab_test/objective_doc_eval `_tasks` dict → Redis store，write-through PostgreSQL（objective_doc_eval），commit `c4e4ebf`
+- **Sub-stage 4c（Celery 化）**：`run_conflict_scan`/`run_objective_doc_eval` Celery tasks，新增 `src/tasks/quality_tasks.py`（44行），commit `ad4388a`
+- **Stage 5 综合验证（2026-05-31）**：retrieval_harness/ab_test/conflict_scan 端到端 PASS（worker 真接收+业务数据真写入）；faithfulness I-4b-E（Ollama 未运行）；dataset_eval/objective_doc_eval I-S5-C（无合规测试文件，4c task 已独立验证 138s）；Uvicorn restart 后 Redis 状态全部存活（TTL ≈ 7天）
 
 **子任务状态**：
 
@@ -545,13 +549,13 @@ F049：已完成浏览器目视检查，Tool / Material / Process / Constraint �
 | Group C backfill | ✅ 已完成 | `run_backfill.delay(doc_ids)`，driver 显式传递，commit `39281f8` |
 | Group C batch_ingest | ✅ 已完成 | `run_batch_ingest.delay(file_paths)`，driver 显式传递，commit `39281f8` |
 | Group D health monitor | ✅ 永久保留 asyncio | lifespan shutdown 已有 `task.cancel()`，无需迁移 |
-| F122-state TaskStateStore | ✅ 已完成 | Redis+InMemory 抽象层 + 18 unit tests，commit `a44c072`/`600b6d8` |
-| faithfulness_service.py | ✅ 已完成 | `_tasks` → Redis store，修复completion/failure未持久化的bug |
+| F122-state TaskStateStore | ✅ 已完成 | Redis+InMemory 抽象层 + 18 unit tests，commits `a44c072`/`600b6d8` |
+| faithfulness_service.py | ✅ 已完成 | `_tasks` → Redis store，修复 completion/failure 未持久化的 bug |
 | dataset_eval_service.py | ✅ 已完成 | `_tasks` → Redis store |
 | retrieval_harness_service.py | ✅ 已完成 | `_tasks` → Redis store |
 | ab_test_service.py | ✅ 已完成 | `_tasks` → Redis store |
-| conflict_scan.py | ✅ 已完成 | `_scans` → Redis store（prefix: `scan:conflict:`）|
-| objective_doc_eval_service.py | 🟡 留尾 | 已有 DB 持久化（`ObjectiveDocEvalTask` ORM），runner 以 `task_store` dict 传参，重构成本高；DB fallback 已可跨进程读取 |
+| objective_doc_eval_service.py | ✅ 已完成 | `_tasks` → Redis store，write-through PostgreSQL；`run_objective_doc_eval.delay()` Celery 化 |
+| conflict_scan.py | ✅ 已完成 | `_scans` → Redis store（prefix: `scan:conflict:`）；`run_conflict_scan.delay()` Celery 化 |
 | F122-B gnn.py | ⚫ 永久排除 | `get_gnn_service().reload()` 必须在 FastAPI 进程，不迁 Celery |
 | F128 stream_agent | ⚫ 独立追踪 | SSE 实时路径保留 asyncio；timeout/retry 作为 F128 独立需求 |
 
@@ -561,8 +565,9 @@ F049：已完成浏览器目视检查，Tool / Material / Process / Constraint �
 - [x] health monitor lifespan shutdown 验证通过
 - [x] 11/11 unit tests pass（test_neo4j_writer + test_ingest_task）
 - [x] 18/18 TaskStateStore unit tests pass
-- [x] 5 eval服务 + conflict_scan `_tasks`/`_scans` dict 完全迁 Redis
-- [ ] objective_doc_eval_service.py Redis 迁移（留尾，已有 DB fallback）
+- [x] 6 eval服务 + conflict_scan `_tasks`/`_scans` dict 完全迁 Redis
+- [x] objective_doc_eval_service.py Redis 迁移 + Celery 化（write-through PostgreSQL）
+- [x] Stage 5 综合验证：retrieval_harness/ab_test/conflict_scan 端到端 PASS；Uvicorn restart 状态存活
 
 ---
 
@@ -769,6 +774,30 @@ F022 移动端评估时发现，登录页未在当前会话下直接验证，且
 - [ ] `TaskState` 支持自定义 `ttl_seconds`
 - [ ] `set()` / `update(refresh_ttl=True)` 优先读 `state.ttl_seconds`
 - [ ] 现有 6 个服务零改动（默认值兜底）
+
+**依赖**：F122-state（已完成）
+
+---
+
+### F130 Celery Worker 日志可靠性
+
+**状态**：🔴 未实现
+**优先级**：P3
+**估时**：0.25 天
+**审计来源**：F122-state Stage 5 综合验证（2026-05-31）
+
+**任务描述**：
+Stage 5 验证中发现 `run_conflict_scan` 任务 worker 日志（`Task run_conflict_scan received`）在 `docker logs` 偶发性缺失（业务数据已真实写入，队列已清空，判定为 docker logs 缓冲/竞争条件）。需要：
+- 确认 Celery worker `--loglevel=info` 输出是否被 Docker stdout buffering 截断
+- 必要时在 `quality_tasks.py` task 函数入口添加显式 `log.info("task received: ...")` 确保日志可观测
+- 评估是否需要结构化日志（JSON）以便 log aggregator 可靠采集
+
+**当前状态**：业务功能正确，仅日志可观测性存在偶发遗漏，不影响生产功能。
+
+**验收**：
+- [ ] `docker logs celery_worker` 中每个 `run_conflict_scan` 调用都有明确的 received/completed 日志行
+- [ ] `run_objective_doc_eval` 同上
+- [ ] 现有业务逻辑零改动
 
 **依赖**：F122-state（已完成）
 

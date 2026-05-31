@@ -519,23 +519,58 @@ PDF 入库同步阻塞（耗时 > 30s），HTTP worker 长期被占用。需将 
 
 ### 任务 12：F122 全局长任务优雅关闭
 **优先级**：P2
-**状态**：🟡 部分完成，3 子任务留尾（2026-05-30）
+**状态**：✅ 已闭环（2026-05-31）
 **类型**：架构层大重构
 **依赖 LLM**：否
 **审计来源**：F116 调研发现
 
-#### 已完成
+#### 完成记录
+
+**Stage 1-3（Graph/Ingest Celery 化）**：
 - graph_prediction、backfill、batch_ingest 均已 Celery 化（commits `3c1b6ec`, `39281f8`）
 - health monitor 验证保留 asyncio（lifespan shutdown 已正确处理）
 
-#### 留尾子任务（等用户决策优先级）
-- **F122-A**（BLOCKED）：评测服务 5 处 + conflict_scan — 需先将进程内 `_tasks`/`_scans` dict 迁为 Redis 键，估时 2-3 天
+**Sub-stage 4a（F122-state TaskStateStore 抽象层）**：
+- `src/services/infra/task_state.py` 新增：`TaskState` dataclass、`RedisTaskStateStore`（TTL=7天）、`InMemoryTaskStateStore`（测试用）、`get_task_state_store()` 工厂函数
+- 18/18 unit tests pass（`tests/test_task_state_store.py`）
+- Commits: `a44c072`/`600b6d8`
+
+**Sub-stage 4b（eval services + objective_doc_eval Redis 迁移）**：
+- faithfulness/dataset_eval/retrieval_harness/ab_test `_tasks` dict → Redis store
+- objective_doc_eval `_tasks` dict → Redis store，保留 write-through PostgreSQL（`ObjectiveDocEvalTask` ORM）
+- 5/6 sanity tests pass，dataset_eval SKIP（numpy 2.x ABI 不兼容，与 Redis 迁移无关）
+- Commit: `c4e4ebf`
+
+**Sub-stage 4c（conflict_scan + objective_doc_eval Celery 化）**：
+- 新增 `src/tasks/quality_tasks.py`（44行）：`run_conflict_scan`、`run_objective_doc_eval` Celery tasks，lazy import，`make_celery_driver()`，`asyncio.run()`
+- `celery_app.py` include 列表添加 `src.tasks.quality_tasks`
+- `start_conflict_scan` 改为同步函数，`.delay()` 派发
+- `start_objective_doc_eval` 保留 `async def`（仍 await `_persist_task`），`.delay()` 替换 `asyncio.create_task`
+- 孤立 import 清理（`asyncio`、`run_eval_task`）
+- conflicts router `await start_conflict_scan(...)` → `start_conflict_scan(...)`
+- 5/6 sanity tests pass（dataset_eval SKIP），sanity test patches 更新为 `run_conflict_scan.delay`/`run_objective_doc_eval.delay`
+- Commit: `ad4388a`
+
+**Stage 5 综合验证（2026-05-31）**：
+- retrieval_harness：端到端 PASS（worker `Task run_retrieval_harness received` 日志 + 真实结果写入）
+- ab_test：端到端 PASS（worker `Task run_ab_test received` 日志 + 真实结果写入）
+- conflict_scan：端到端 PASS（业务数据真实写入，constraint_count=10，total_conflicts=6；worker 日志 docker 缓冲遗漏，记录为 F130 跟进）
+- faithfulness：I-4b-E（Ollama 未运行，连接超时；Celery 调度正确）
+- dataset_eval：I-S5-C（无 xlsx 测试文件，与 Redis 迁移无关）
+- objective_doc_eval：I-S5-C（无合规 docx 测试文件；4c Celery task 已独立验证 138s 全流程成功）
+- Uvicorn restart 验证：restart 后全部 Redis key 存活（TTL ≈ 7天），Celery worker 不受影响
+
+**架构决策**：
 - **F122-B gnn.py**（永久排除）：`get_gnn_service().reload()` 必须在 FastAPI 进程，不迁 Celery
 - **F128 stream_agent**（独立追踪）：SSE 实时路径保留 asyncio；timeout/retry 作为独立需求
 
-#### 验收（已通过）
+#### 验收（全部通过）
 - [x] SIGTERM 时 backfill/batch_ingest/graph_prediction 不会 mid-flight cancel
-- [x] 11/11 unit tests pass
+- [x] 11/11 unit tests pass（test_neo4j_writer + test_ingest_task）
+- [x] 18/18 TaskStateStore unit tests pass
+- [x] 5/6 sanity tests pass（dataset_eval SKIP，与迁移无关）
+- [x] retrieval_harness/ab_test/conflict_scan 端到端 PASS（worker 真接收+业务真写入）
+- [x] Uvicorn restart 后 Redis 状态全部存活
 
 ---
 
