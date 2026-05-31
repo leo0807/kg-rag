@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     EMBEDDING_QWEN_MODEL: str = "text-embedding-v3"
     EMBEDDING_QWEN_DIM:   int = 1024
 
+    REMOTE_EMBEDDING_BATCH_SIZE: int = 25   # 远程 Embedding API 单批最大条数（F125）
+    EMBEDDING_DEVICE: str = "auto"          # auto / cpu / cuda / mps（F126）
+
     RERANKER_MODE:        str  = "local"
     RERANKER_MODEL:       str  = "models/bge-reranker-v2-m3"
     RERANKER_API_URL:     str  = ""

@@ -30,6 +30,21 @@ from ..runtime.model_settings import get_runtime_settings_namespace
 logger = logging.getLogger(__name__)
 
 
+def _resolve_device(device: str) -> str:
+    """将 device 设置（auto/cpu/cuda/mps）解析为实际可用的 device 字符串。"""
+    if device != "auto":
+        return device
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+    except ImportError:
+        pass
+    return "cpu"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 底层提供方
 # ─────────────────────────────────────────────────────────────────────────────
@@ -39,8 +54,9 @@ class _LocalBGEProvider:
 
     _DIM = 1024
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, device: str = "auto"):
         self._model_path = model_path
+        self._device = device
         self._model = None   # lazy load
 
     @property
@@ -55,11 +71,7 @@ class _LocalBGEProvider:
         if self._model is not None:
             return
         from sentence_transformers import SentenceTransformer
-        try:
-            import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        except ImportError:
-            device = "cpu"
+        device = _resolve_device(self._device)
         logger.info("加载本地 Embedding 模型: %s (device=%s)", self._model_path, device)
         self._model = SentenceTransformer(str(self._model_path), device=device)
         logger.info("Embedding 模型加载完成")
@@ -72,11 +84,12 @@ class _LocalBGEProvider:
 class _OpenAICompatEmbeddingProvider:
     """通用 OpenAI 兼容 Embedding API（含通义千问 DashScope 兼容端点）。"""
 
-    def __init__(self, api_url: str, api_key: str, model: str, dim: int = 1024):
-        self._url   = api_url.rstrip("/")
-        self._key   = api_key
-        self._model = model
-        self._dim   = dim
+    def __init__(self, api_url: str, api_key: str, model: str, dim: int = 1024, batch_size: int = 25):
+        self._url        = api_url.rstrip("/")
+        self._key        = api_key
+        self._model      = model
+        self._dim        = dim
+        self._batch_size = batch_size
 
     @property
     def model_name(self) -> str:
@@ -88,11 +101,9 @@ class _OpenAICompatEmbeddingProvider:
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         import requests
-        # DashScope 每次最多 25 条，分批发送
-        batch_size = 25
         results: list[list[float]] = []
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i : i + batch_size]
+        for i in range(0, len(texts), self._batch_size):
+            batch = texts[i : i + self._batch_size]
             resp  = requests.post(
                 f"{self._url}/embeddings",
                 headers={"Authorization": f"Bearer {self._key}",
@@ -136,28 +147,33 @@ class EmbeddingService:
         if mode == "local":
             model_path = Path(s.EMBEDDING_MODEL) if s.EMBEDDING_MODEL else \
                          Path(__file__).parent.parent.parent.parent / "models" / "bge-m3"
-            logger.info("EmbeddingService → 本地 BGE-M3 path=%s", model_path)
-            return _LocalBGEProvider(str(model_path))
+            device = getattr(s, "EMBEDDING_DEVICE", "auto")
+            logger.info("EmbeddingService → 本地 BGE-M3 path=%s device=%s", model_path, device)
+            return _LocalBGEProvider(str(model_path), device=device)
+
+        batch_size = getattr(s, "REMOTE_EMBEDDING_BATCH_SIZE", 25)
 
         # API 模式
         if provider == "qwen":
             model = s.EMBEDDING_MODEL or s.EMBEDDING_QWEN_MODEL or "text-embedding-v3"
             dim   = s.EMBEDDING_QWEN_DIM   or 1024
-            logger.info("EmbeddingService → 通义文本向量 model=%s dim=%d", model, dim)
+            logger.info("EmbeddingService → 通义文本向量 model=%s dim=%d batch_size=%d", model, dim, batch_size)
             return _OpenAICompatEmbeddingProvider(
-                api_url = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                api_key = s.EMBEDDING_API_KEY or s.DASHSCOPE_API_KEY,
-                model   = model,
-                dim     = dim,
+                api_url    = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                api_key    = s.EMBEDDING_API_KEY or s.DASHSCOPE_API_KEY,
+                model      = model,
+                dim        = dim,
+                batch_size = batch_size,
             )
 
         # 通用 OpenAI 兼容（向后兼容旧 EMBEDDING_API_URL/KEY/MODEL 配置）
         model = s.EMBEDDING_MODEL or "text-embedding-ada-002"
-        logger.info("EmbeddingService → 通用 API url=%s model=%s", s.EMBEDDING_API_URL, model)
+        logger.info("EmbeddingService → 通用 API url=%s model=%s batch_size=%d", s.EMBEDDING_API_URL, model, batch_size)
         return _OpenAICompatEmbeddingProvider(
-            api_url = s.EMBEDDING_API_URL,
-            api_key = s.EMBEDDING_API_KEY,
-            model   = model,
+            api_url    = s.EMBEDDING_API_URL,
+            api_key    = s.EMBEDDING_API_KEY,
+            model      = model,
+            batch_size = batch_size,
         )
 
     @staticmethod
@@ -229,6 +245,8 @@ def _service_key(runtime_settings) -> tuple:
         runtime_settings.EMBEDDING_MODEL,
         runtime_settings.EMBEDDING_API_URL,
         runtime_settings.EMBEDDING_API_KEY,
+        getattr(runtime_settings, "EMBEDDING_DEVICE", "auto"),
+        getattr(runtime_settings, "REMOTE_EMBEDDING_BATCH_SIZE", 25),
     )
 
 
