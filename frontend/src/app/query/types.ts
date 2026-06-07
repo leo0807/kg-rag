@@ -102,6 +102,7 @@ export type Strategy =
   | "parallel"
   | "sequential"
   | "graph_augmented"
+  | "multimodal"
   | "multi_hop"
   | "agent"
   | "counterfactual";

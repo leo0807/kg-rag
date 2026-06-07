@@ -70,6 +70,7 @@ from .routers.graph_api.predict    import router as graph_predict_router
 from .routers.admin_api.health       import router as admin_health_router
 from .routers.admin_api.associations import router as admin_associations_router
 from .routers.admin_api.feedback_admin import router as admin_feedback_router
+from .routers.blueprint              import router as blueprint_router
 
 from .services.infra.health import health_monitor
 from .services.ops.presence_service import track_request_activity
@@ -235,5 +236,6 @@ app.include_router(graph_predict_router)
 app.include_router(admin_health_router)
 app.include_router(admin_associations_router)
 app.include_router(admin_feedback_router)
+app.include_router(blueprint_router)
 
 app.mount("/uploads/images", StaticFiles(directory=str(UPLOAD_DIR / "images")), name="uploads_images")

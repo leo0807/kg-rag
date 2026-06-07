@@ -24,6 +24,7 @@ from .clarification_utils import build_clarification_event, detect_clarification
 from .context_utils import build_llm_context, reorder_sources_for_llm
 from .stream_compare import build_compare_stream_events
 from .stream_agent import stream_agent_query
+from .stream_multimodal import stream_multimodal_query
 from .mcq_utils import maybe_answer_mcq_stream, forward_mcq_stream
 from ...services.qa.strategy_router import select_strategy
 from .stream_utils import _error_event, _emit_follow_ups, build_metrics_event, clean_stream_chunk, emit_status_event, estimate_answer_max_tokens, get_question_handler_for, serialize_sources, stream_semantic_cache_hit, try_semantic_cache_lookup, stream_with_first_token_logging
@@ -99,6 +100,9 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                             return
                         except Exception as e:
                             logger.warning("多跳流式推理失败，降级: %s", e)
+                    if req.strategy == "multimodal":
+                        async for ev in stream_multimodal_query(driver, req.question, top_k, req.use_hyde, req.hyde_alpha, resolve_retrieval_doc_id(req.question, req.doc_hints), req.history or [], req.image_context or "", t_start, user_id, department): yield ev
+                        return
                     if req.strategy == "agent":
                         try:
                             async for event in stream_agent_query(

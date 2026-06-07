@@ -7,6 +7,7 @@ const STRATEGIES: { value: Strategy; label: string; title: string }[] = [
   { value: "parallel", label: "并行RRF", title: "全文 + 向量 RRF 融合" },
   { value: "sequential", label: "ES混合", title: "全文优先，精确查询" },
   { value: "graph_augmented", label: "图谱增强", title: "向量召回 + 图谱扩展" },
+  { value: "multimodal", label: "多模态", title: "文字 + 图片混合检索，支持图示引用" },
   { value: "multi_hop", label: "多跳推理", title: "多跳推理，复杂因果" },
   { value: "agent", label: "Agent", title: "工具调用式多步推理" },
   {
