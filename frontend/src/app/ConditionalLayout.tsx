@@ -6,7 +6,7 @@ import Sidebar from "./Sidebar";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ShortcutsModal from "@/components/ShortcutsModal";
 import { useGlobalKeyboard } from "@/hooks/useKeyboard";
-import { Menu, X } from "lucide-react";
+import { LogOut, Menu, X } from "lucide-react";
 
 const NO_SIDEBAR_PATHS = ["/login"];
 
@@ -21,6 +21,12 @@ export default function ConditionalLayout({
     const [mobileOpen, setMobileOpen] = useState(false);
 
     const { showShortcuts, setShowShortcuts } = useGlobalKeyboard();
+
+    function handleMobileLogout() {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        router.push("/login");
+    }
 
     useEffect(() => {
         if (!showSidebar) return;
@@ -105,6 +111,13 @@ export default function ConditionalLayout({
                         {mobileOpen ? <X size={18} /> : <Menu size={18} />}
                     </button>
                     <span className="text-sm font-medium text-white">商飞大模型</span>
+                    <button
+                        onClick={handleMobileLogout}
+                        className="ml-auto p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-gray-800 transition-colors"
+                        aria-label="退出登录"
+                    >
+                        <LogOut size={18} />
+                    </button>
                 </div>
 
                 <main className="flex-1 overflow-auto">

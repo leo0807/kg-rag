@@ -62,7 +62,7 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-[#F4F7FC] to-[#EBF1F8] dark:bg-[#050813] dark:bg-none relative overflow-hidden flex items-center justify-center px-4">
+        <div className="min-h-screen bg-gradient-to-br from-[#F4F7FC] to-[#EBF1F8] dark:bg-[#050813] dark:bg-none relative flex items-start justify-center pt-8 px-4 sm:items-center sm:pt-0">
 
             {/* 背景光晕（日间：淡蓝，深色：原有深蓝紫） */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -115,7 +115,7 @@ export default function LoginPage() {
             <div className="relative z-10 w-full max-w-sm">
 
                 {/* Logo 区域 */}
-                <div className="text-center mb-8">
+                <div className="text-center mb-5 sm:mb-8">
                     <div className="inline-flex items-center justify-center w-16 h-16
                                     bg-[#1B6BB5]/15 border border-[#1B6BB5]/30 rounded-2xl mb-5
                                     shadow-lg shadow-[#1B6BB5]/10">
@@ -156,7 +156,7 @@ export default function LoginPage() {
 
                 {/* 登录卡片 */}
                 <div className="bg-white/90 dark:bg-gray-900/60 backdrop-blur-md border border-[#D4E2F0] dark:border-gray-700/40
-                                rounded-2xl p-7 shadow-xl shadow-[#1B6BB5]/8 dark:shadow-black/60">
+                                rounded-2xl p-5 sm:p-7 shadow-xl shadow-[#1B6BB5]/8 dark:shadow-black/60">
 
                     <h2 className="text-sm font-semibold text-[#3D5A7A] dark:text-gray-300 mb-5 tracking-wide uppercase">
                         账号登录
