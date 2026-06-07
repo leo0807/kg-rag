@@ -67,7 +67,12 @@ async def query_stream(request: Request, req: QueryRequest, driver: Driver = Dep
                     except Exception as _e:
                         logger.debug("语义缓存查找异常（跳过）: %s", _e)
                     mcq_events = maybe_answer_mcq_stream(req.question, req.strategy, top_k, driver, user_id, department, t_start, req.doc_hints, _q_emb)
-                    if mcq_events is not None:
+                    try:
+                        first_mcq_event = await anext(mcq_events)
+                    except StopAsyncIteration:
+                        pass  # 非选择题，继续标准检索流程
+                    else:
+                        yield first_mcq_event
                         async for event in forward_mcq_stream(mcq_events):
                             yield event
                         return

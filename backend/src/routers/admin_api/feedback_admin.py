@@ -9,7 +9,7 @@ import logging
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...auth.deps import get_admin_user
@@ -26,7 +26,7 @@ async def overview_stats(db: AsyncSession = Depends(get_db), _=Depends(get_admin
     result = await db.execute(
         select(
             func.count().label("total"),
-            func.avg(func.cast(QueryFeedback.rating, "FLOAT")).label("avg_rating"),
+            func.avg(QueryFeedback.rating).label("avg_rating"),
         )
     )
     row = result.one()
@@ -52,8 +52,8 @@ async def overview_stats(db: AsyncSession = Depends(get_db), _=Depends(get_admin
 
     pos_neg = await db.execute(
         select(
-            func.sum(func.cast(QueryFeedback.rating == 1, "INTEGER")).label("positive"),
-            func.sum(func.cast(QueryFeedback.rating == -1, "INTEGER")).label("negative"),
+            func.sum(case((QueryFeedback.rating == 1, 1), else_=0)).label("positive"),
+            func.sum(case((QueryFeedback.rating == -1, 1), else_=0)).label("negative"),
         )
     )
     pn = pos_neg.one()

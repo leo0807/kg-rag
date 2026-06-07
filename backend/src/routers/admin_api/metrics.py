@@ -6,7 +6,7 @@ GET /api/admin/metrics/volume       — 每小时查询量趋势
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select, text
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/admin/metrics", tags=["admin"])
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.utcnow()
 
 
 def _percentile_sql(col: str, p: float) -> str:
