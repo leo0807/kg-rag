@@ -37,6 +37,7 @@ export const mainNavItems: SidebarItem[] = [
   { href: "/library", label: "文档库", shortcut: "⌘B", Icon: BookOpen },
   { href: "/search", label: "全局搜索", shortcut: "⌘K", Icon: Search },
   { href: "/query", label: "智能问答", shortcut: "⌘/", Icon: MessageSquare },
+  { href: "/advanced-search", label: "高级查询", Icon: Search },
   { href: "/pipeline", label: "检索链路", Icon: Gauge },
   { href: "/graph", label: "图谱可视化", Icon: Network },
   { href: "/cypher", label: "Cypher 工具", Icon: Terminal },

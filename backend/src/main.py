@@ -57,6 +57,7 @@ from .routers.export               import router as export_router
 from .routers.favorites          import router as favorites_router
 from .routers.search_api.autocomplete import router as search_autocomplete_router
 from .routers.search_api.suggest      import router as search_suggest_router
+from .routers.search_api.advanced     import router as search_advanced_router
 from .routers.docs.ingest        import router as ingest_router, UPLOAD_DIR
 from .routers.pipeline           import router as pipeline_router
 from .routers.compare            import router as compare_router
@@ -238,6 +239,7 @@ app.include_router(export_router)
 app.include_router(favorites_router)
 app.include_router(search_autocomplete_router)
 app.include_router(search_suggest_router)
+app.include_router(search_advanced_router)
 app.include_router(pipeline_router)
 app.include_router(compare_router)
 app.include_router(graph_edit_router)
