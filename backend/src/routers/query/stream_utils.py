@@ -23,9 +23,6 @@ def clean_stream_chunk(chunk: str | None) -> str:
     if any(marker in chunk for marker in ("user##", "##assistant", "<|user|>", "<|im_start|>")):
         return ""
     chunk = chunk.replace("\ufffd", "")
-    chunk = re.sub(r'(?:is){3,}', '', chunk)
-    chunk = re.sub(r'N{3,}', '', chunk)
-    chunk = re.sub(r'isis[Nn]*', '', chunk)
     return chunk
 
 
