@@ -202,3 +202,22 @@ class TestRefreshTTLInMemory:
         store = InMemoryTaskStateStore()
         assert store.update("nonexistent", refresh_ttl=True, status="running") is None
         assert store.update("nonexistent", refresh_ttl=False, status="running") is None
+
+
+class TestTaskStateTTL:
+
+    def test_taskstate_default_ttl_604800(self):
+        state = TaskState(task_id="t1", status="queued")
+        assert state.ttl_seconds == 604800
+
+    def test_taskstate_custom_ttl_field(self):
+        state = TaskState(task_id="t1", status="queued", ttl_seconds=86400)
+        assert state.ttl_seconds == 86400
+
+    def test_inmemory_set_ignores_custom_ttl(self):
+        store = InMemoryTaskStateStore()
+        state = TaskState(task_id="t1", status="queued", ttl_seconds=86400)
+        store.set("k", state, ttl_seconds=3600)  # must not raise
+        s = store.get("k")
+        assert s is not None
+        assert s.ttl_seconds == 86400

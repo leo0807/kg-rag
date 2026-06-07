@@ -41,6 +41,7 @@ class TaskState:
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: float | None = None
     updated_at: float | None = None
+    ttl_seconds: int = 604800
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -54,7 +55,7 @@ class TaskState:
 class TaskStateStore(Protocol):
     """Task state storage abstraction (sync interface)."""
 
-    def set(self, key: str, state: TaskState, ttl_seconds: int = DEFAULT_TTL) -> None: ...
+    def set(self, key: str, state: TaskState, ttl_seconds: int | None = None) -> None: ...
     def get(self, key: str) -> TaskState | None: ...
     def update(self, key: str, refresh_ttl: bool = False, **fields: Any) -> TaskState | None: ...
     def delete(self, key: str) -> None: ...
@@ -71,12 +72,13 @@ class RedisTaskStateStore:
         url = redis_url or settings.REDIS_URL
         self._r = _redis.from_url(url, decode_responses=True)
 
-    def set(self, key: str, state: TaskState, ttl_seconds: int = DEFAULT_TTL) -> None:
+    def set(self, key: str, state: TaskState, ttl_seconds: int | None = None) -> None:
         now = time.time()
         if state.created_at is None:
             state.created_at = now
         state.updated_at = now
-        self._r.setex(key, ttl_seconds, json.dumps(state.to_dict(), ensure_ascii=False))
+        effective_ttl = ttl_seconds if ttl_seconds is not None else state.ttl_seconds
+        self._r.setex(key, effective_ttl, json.dumps(state.to_dict(), ensure_ascii=False))
 
     def get(self, key: str) -> TaskState | None:
         raw = self._r.get(key)
@@ -92,10 +94,10 @@ class RedisTaskStateStore:
             if hasattr(state, k):
                 setattr(state, k, v)
         if refresh_ttl:
-            ttl = DEFAULT_TTL
+            ttl = state.ttl_seconds
         else:
             ttl = self._r.ttl(key)
-            ttl = ttl if ttl > 0 else DEFAULT_TTL
+            ttl = ttl if ttl > 0 else state.ttl_seconds
         self.set(key, state, ttl_seconds=ttl)
         return state
 
@@ -126,7 +128,7 @@ class InMemoryTaskStateStore:
     def __init__(self) -> None:
         self._data: dict[str, TaskState] = {}
 
-    def set(self, key: str, state: TaskState, ttl_seconds: int = DEFAULT_TTL) -> None:
+    def set(self, key: str, state: TaskState, ttl_seconds: int | None = None) -> None:  # noqa: ARG002
         now = time.time()
         if state.created_at is None:
             state.created_at = now
