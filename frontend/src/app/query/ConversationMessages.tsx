@@ -141,10 +141,22 @@ export function ConversationMessages({
             />
           </>
         ) : !activeConv || historyLen === 0 ? (
-          <div className="flex flex-col items-center justify-center min-h-64 gap-5 py-10">
+          <div className="flex flex-col items-center justify-center min-h-64 gap-4 py-10 px-4">
             <div className="text-5xl">✈️</div>
-            <div className="text-gray-500 text-sm">
-              开始提问关于航空工艺规范的问题
+            <div className="text-gray-500 text-sm">开始提问关于航空工艺规范的问题</div>
+            <div className="text-xs text-gray-700 text-center">
+              <span className="font-mono bg-gray-900 border border-gray-800 px-1.5 py-0.5 rounded">⌘K</span>
+              {" "}聚焦输入框 &nbsp;·&nbsp;
+              <span className="font-mono bg-gray-900 border border-gray-800 px-1.5 py-0.5 rounded">⌘N</span>
+              {" "}新建对话
+            </div>
+            <div className="flex flex-wrap justify-center gap-2 mt-1 max-w-md">
+              {["铝合金焊接有哪些工艺要求？", "CPS 中对表面粗糙度有什么规定？", "复合材料修复的温度范围是多少？"].map(q => (
+                <button key={q} type="button" onClick={() => setInput(q)}
+                  className="text-xs px-3 py-1.5 bg-gray-900 border border-gray-800 rounded-full text-gray-400 hover:border-indigo-600 hover:text-indigo-300 transition-colors">
+                  {q}
+                </button>
+              ))}
             </div>
           </div>
         ) : (

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import { toast } from "sonner";
 
 const ACCURACY_OPTIONS = [
   { value: "correct",  label: "正确" },
@@ -66,6 +67,7 @@ export function FeedbackPanel({ question, answer, sources, strategy, onClose, on
       if (res.ok) {
         const d = await res.json();
         setDone(true);
+        toast.success("反馈已提交，感谢您的标注");
         onSubmitted?.(d.id);
       }
     } finally {

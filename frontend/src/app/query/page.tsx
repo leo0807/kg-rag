@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import NetToast from "@/components/NetToast";
 import { ChatPanel } from "./ChatPanel";
 import ConversationInput from "./ConversationInput";
 import ConversationSidebar from "./ConversationSidebar";
 import { InputBar } from "./InputBar";
 import { useChat } from "./useChat";
+import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
 export default function QueryPage() {
   const [mobileConversationOpen, setMobileConversationOpen] = useState(false);
@@ -65,6 +66,25 @@ export default function QueryPage() {
   } = chat;
 
   const historyLen = activeConv?.messages.length ?? 0;
+  const inputAreaRef = useRef<HTMLDivElement>(null);
+
+  // Draft auto-save: restore on mount, save on every change
+  useEffect(() => {
+    const saved = localStorage.getItem("query:draft");
+    if (saved && !input) setInput(saved);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (input) localStorage.setItem("query:draft", input);
+    else localStorage.removeItem("query:draft");
+  }, [input]);
+
+  useKeyboardShortcuts({
+    onNewConversation: () => createConversation(),
+    onFocusInput: () => inputAreaRef.current?.querySelector("textarea")?.focus(),
+    onStop: stream.cancel,
+    streaming: currentConversationStreaming,
+  });
 
   function handleLowScoreRetry(q: string) {
     setStrategy("graph_augmented");
@@ -171,6 +191,7 @@ export default function QueryPage() {
           onRetryMessage={handleRetryQuestion}
         />
 
+        <div ref={inputAreaRef}>
         <ConversationInput
           value={input}
           loading={currentConversationLoading}
@@ -195,6 +216,7 @@ export default function QueryPage() {
           onQueueQuestion={handleQueueQuestion}
           onCancelQueue={handleCancelQueue}
         />
+        </div>
       </div>
     </div>
   );
