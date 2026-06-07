@@ -57,6 +57,7 @@ export const mainNavItems: SidebarItem[] = [
 ];
 
 export const adminNavItems: SidebarItem[] = [
+  { href: "/admin/metrics",  label: "系统监控",  Icon: Activity },
   { href: "/admin/feedback", label: "反馈分析", Icon: MessageSquare },
   { href: "/admin/synonyms", label: "同义词词典", Icon: Languages },
   { href: "/admin/usage", label: "用量监控", Icon: Gauge },

@@ -70,6 +70,7 @@ from .routers.graph_api.predict    import router as graph_predict_router
 from .routers.admin_api.health       import router as admin_health_router
 from .routers.admin_api.associations import router as admin_associations_router
 from .routers.admin_api.feedback_admin import router as admin_feedback_router
+from .routers.admin_api.metrics      import router as admin_metrics_router
 from .routers.blueprint              import router as blueprint_router
 
 from .services.infra.health import health_monitor
@@ -141,6 +142,19 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception("500 unhandled on %s: %s: %s", request.url.path, type(exc).__name__, exc)
+    try:
+        from .db.session import AsyncSessionLocal
+        from .db.models import SystemErrorEvent
+        async with AsyncSessionLocal() as _db:
+            _db.add(SystemErrorEvent(
+                kind="server_error",
+                path=str(request.url.path)[:256],
+                error_type=type(exc).__name__,
+                message=str(exc)[:500],
+            ))
+            await _db.commit()
+    except Exception:
+        pass
     return JSONResponse(
         status_code=500,
         content={"detail": f"Internal error: {type(exc).__name__}"},
@@ -236,6 +250,7 @@ app.include_router(graph_predict_router)
 app.include_router(admin_health_router)
 app.include_router(admin_associations_router)
 app.include_router(admin_feedback_router)
+app.include_router(admin_metrics_router)
 app.include_router(blueprint_router)
 
 app.mount("/uploads/images", StaticFiles(directory=str(UPLOAD_DIR / "images")), name="uploads_images")

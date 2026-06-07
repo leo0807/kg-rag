@@ -23,7 +23,6 @@ interface BlueprintData {
 interface Props {
   imageId:  string;
   imageUrl: string;
-  docId:    string;
   onClose?: () => void;
 }
 
@@ -44,7 +43,7 @@ function _distributeAnnotations(annotations: BlueprintData["annotations"]): Hots
   });
 }
 
-export function BlueprintViewer({ imageId, imageUrl, docId, onClose }: Props) {
+export function BlueprintViewer({ imageId, imageUrl, onClose }: Props) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ w: 0, h: 0 });
   const [blueprint, setBlueprint] = useState<BlueprintData | null>(null);

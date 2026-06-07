@@ -19,7 +19,10 @@ async def request_logging_middleware(request: Request, call_next):
         response = await call_next(request)
         duration_ms = (time.time() - start) * 1000
         response.headers["X-Request-ID"] = req_id
-        log.info("[%s] <<< %s in %.0fms", req_id, response.status_code, duration_ms)
+        if duration_ms > 3000:
+            log.warning("[%s] SLOW %s %s%.0fms", req_id, request.method, request.url.path, duration_ms)
+        else:
+            log.info("[%s] <<< %s in %.0fms", req_id, response.status_code, duration_ms)
         return response
     except Exception as exc:
         duration_ms = (time.time() - start) * 1000

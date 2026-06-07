@@ -273,3 +273,17 @@ class Favorite(Base):
     created_at:   Mapped[datetime]      = mapped_column(DateTime,    server_default=func.now())
 
     user: Mapped["User"] = relationship()
+
+
+class SystemErrorEvent(Base):
+    """500 错误与 LLM 调用失败事件记录，用于故障追踪与报表。"""
+    __tablename__  = "system_error_events"
+    __table_args__ = (Index("ix_system_error_events_created_at", "created_at"),)
+
+    id:         Mapped[int]        = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind:       Mapped[str]        = mapped_column(String(32),  default="server_error")
+    path:       Mapped[str]        = mapped_column(String(256), default="")
+    error_type: Mapped[str]        = mapped_column(String(128), default="")
+    message:    Mapped[str]        = mapped_column(Text,        default="")
+    user_id:    Mapped[str | None] = mapped_column(String(36),  nullable=True)
+    created_at: Mapped[datetime]   = mapped_column(DateTime,    server_default=func.now())
