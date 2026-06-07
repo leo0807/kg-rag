@@ -61,6 +61,11 @@ async def init_tables():
             ("graph_score",        "INTEGER"),
             ("comment_text",       "TEXT"),
             ("sources_count",      "INTEGER"),
+            ("accuracy",           "VARCHAR(20)"),
+            ("error_types",        "TEXT"),
+            ("correct_answer",     "TEXT"),
+            ("chunk_ids_json",     "TEXT"),
+            ("feedback_status",    "VARCHAR(20) NOT NULL DEFAULT 'pending'"),
         ]:
             try:
                 await conn.execute(text(

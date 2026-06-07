@@ -3,13 +3,13 @@ src/routers/feedback.py
 查询结果用户反馈，支持数据飞轮
 """
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from ..db.session import get_db
 from ..db.models import Base
-from sqlalchemy import String, Integer, Text, DateTime, Boolean, Index
+from sqlalchemy import String, Integer, Text, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 from sqlalchemy import func
@@ -43,16 +43,41 @@ class QueryFeedback(Base):
     graph_score:        Mapped[int | None] = mapped_column(Integer, nullable=True)
     comment_text:       Mapped[str | None] = mapped_column(Text,    nullable=True)
     sources_count:      Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 错误标注字段（模块一）
+    accuracy:           Mapped[str | None] = mapped_column(String(20), nullable=True)  # correct/partial/wrong
+    error_types:        Mapped[str | None] = mapped_column(Text, nullable=True)        # JSON 数组
+    correct_answer:     Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunk_ids_json:     Mapped[str | None] = mapped_column(Text, nullable=True)        # JSON 数组
+    feedback_status:    Mapped[str]        = mapped_column(String(20), default="pending")
+
+
+class FeedbackAnalytics(Base):
+    """定期聚合快照，用于趋势分析。"""
+    __tablename__ = "feedback_analytics"
+
+    id            : Mapped[int]        = mapped_column(primary_key=True, autoincrement=True)
+    period_start  : Mapped[str]        = mapped_column(String(20))
+    period_end    : Mapped[str]        = mapped_column(String(20))
+    total_feedback: Mapped[int]        = mapped_column(Integer, default=0)
+    avg_rating    : Mapped[float | None] = mapped_column(nullable=True)
+    accuracy_dist : Mapped[str]        = mapped_column(Text, default="{}")  # JSON
+    top_errors    : Mapped[str]        = mapped_column(Text, default="{}")  # JSON
+    created_at    : Mapped[datetime]   = mapped_column(DateTime, server_default=func.now())
 
 
 class FeedbackRequest(BaseModel):
     question: str
     answer:   str
     sources:  list[dict] = []
-    rating:   int        # 1=👍 -1=👎 0=来源点击隐式
+    rating:   int        # 1=👍 -1=👎 0=来源点击隐式 0=标注
     strategy: str        = "parallel"
     user_id:  str        = ""
-    detail:   str        = ""   # e.g. "clicked_source:CPS1220_001"
+    detail:   str        = ""
+    # 可选标注字段（📝 流程）
+    accuracy:       str | None  = None
+    error_types:    list[str]   = []
+    correct_answer: str | None  = None
+    chunk_ids:      list[str]   = []
 
 
 @router.post("")
@@ -63,14 +88,19 @@ async def submit_feedback(
 ):
     import json
     feedback = QueryFeedback(
-        question      = req.question,
-        answer        = req.answer,
-        sources       = json.dumps(req.sources, ensure_ascii=False),
-        rating        = req.rating,
-        strategy      = req.strategy,
-        user_id       = req.user_id or user.id,
-        detail        = req.detail,
-        sources_count = len(req.sources),
+        question        = req.question,
+        answer          = req.answer,
+        sources         = json.dumps(req.sources, ensure_ascii=False),
+        rating          = req.rating,
+        strategy        = req.strategy,
+        user_id         = req.user_id or user.id,
+        detail          = req.detail,
+        sources_count   = len(req.sources),
+        accuracy        = req.accuracy,
+        error_types     = json.dumps(req.error_types, ensure_ascii=False) if req.error_types else None,
+        correct_answer  = req.correct_answer,
+        chunk_ids_json  = json.dumps(req.chunk_ids) if req.chunk_ids else None,
+        feedback_status = "annotated" if (req.accuracy or req.error_types) else "pending",
     )
     db.add(feedback)
     await db.flush()
