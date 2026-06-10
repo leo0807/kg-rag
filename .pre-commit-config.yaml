@@ -1,0 +1,44 @@
+repos:
+  # ── Python ────────────────────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  # ── JavaScript / TypeScript ──────────────────────────────────────────
+  - repo: https://github.com/biomejs/pre-commit
+    rev: "v0.5.0"
+    hooks:
+      - id: biome-check
+        additional_dependencies: ["@biomejs/biome@1.7.3"]
+        files: ^frontend/.*\.(ts|tsx|js|json)$
+
+  # ── 通用 ──────────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: "^(.*\\.md|.*\\.txt)$"
+      - id: end-of-file-fixer
+        exclude: "^(frontend/public/|.*\\.min\\.)"
+      - id: check-yaml
+        args: ["--unsafe"]        # YAML anchors like x-logging
+      - id: check-json
+        exclude: "tsconfig.*\\.json$"
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]    # 最大 2MB
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # ── Shell 脚本 ────────────────────────────────────────────────────────
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        files: ^scripts/.*\.sh$
+        args: ["--severity=warning"]

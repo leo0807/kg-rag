@@ -1,0 +1,89 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────
+# 测试环境覆盖层
+# 用法：docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+# 特点：隔离命名卷、最小化资源占用、禁用外部告警推送
+# ─────────────────────────────────────────────────────────────
+
+services:
+  # 后端 — 测试模式，使用独立配置
+  backend:
+    build: ./backend
+    container_name: aviation-backend-test
+    restart: "no"
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env.test
+    environment:
+      APP_ENV: test
+      LOG_LEVEL: WARNING
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: aviation123
+      MILVUS_HOST: milvus
+      MILVUS_PORT: "19530"
+      REDIS_URL: redis://redis:6379/1
+      DATABASE_URL: postgresql+asyncpg://aviation:aviation123@app-db:5432/aviation_test
+      STORAGE_ENDPOINT: http://minio:9000
+      DINGTALK_WEBHOOK: ""
+      WECOM_WEBHOOK: ""
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      app-db:
+        condition: service_healthy
+    volumes:
+      - uploads_test:/app/uploads
+    command: >
+      uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 1
+
+  # Neo4j — 低内存配置
+  neo4j:
+    environment:
+      NEO4J_dbms_memory_heap_initial__size: 256m
+      NEO4J_dbms_memory_heap_max__size: 512m
+    restart: "no"
+
+  redis:
+    restart: "no"
+
+  etcd:
+    restart: "no"
+
+  minio:
+    restart: "no"
+
+  milvus:
+    restart: "no"
+
+  app-db:
+    restart: "no"
+    environment:
+      POSTGRES_USER: aviation
+      POSTGRES_PASSWORD: aviation123
+      POSTGRES_DB: aviation_test
+
+  # 测试环境禁用 Langfuse、Kibana、Celery
+  langfuse-db:
+    profiles: ["disabled"]
+
+  langfuse:
+    profiles: ["disabled"]
+
+  kibana:
+    profiles: ["disabled"]
+
+  attu:
+    profiles: ["disabled"]
+
+  celery-worker:
+    profiles: ["disabled"]
+
+volumes:
+  uploads_test:
