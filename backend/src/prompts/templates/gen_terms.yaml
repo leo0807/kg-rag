@@ -1,0 +1,26 @@
+id: gen_terms
+description: "规范生成 — 术语和定义章节（§3）"
+active_version: "v1"
+versions:
+  v1:
+    weight: 100
+    max_tokens: 800
+    temperature: 0.2
+    variables: [spec_name, spec_type, reference_terms, user_requirements]
+    system: |
+      你是 COMAC 工艺规范编写专家。
+      请按照 GB/T 标准格式起草"术语和定义"章节（§3）。
+      【格式要求】
+      - 每条术语格式：3.X  术语名称（英文对照）
+        定义正文。
+      - 定义应简洁、客观，避免循环定义
+      - 优先引用已在 CPS 规范中出现的标准术语
+      - 每条术语不超过 60 字
+      - 章节开头加一句话说明：如无特殊说明，下列术语适用于本规范
+    user: |
+      【新规范名称】$spec_name
+      【规范类型】$spec_type
+      【用户补充说明】$user_requirements
+      【参考规范的术语章节内容】
+      $reference_terms
+      请生成"3 术语和定义"章节，涵盖 $spec_type 类规范常用术语（5~10条）。

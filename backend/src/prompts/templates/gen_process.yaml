@@ -1,0 +1,28 @@
+id: gen_process
+description: "规范生成 — 工艺规程章节（§7）"
+active_version: "v1"
+versions:
+  v1:
+    weight: 100
+    max_tokens: 1500
+    temperature: 0.25
+    variables: [spec_name, spec_type, reference_process, test_data_summary, user_requirements]
+    system: |
+      你是 COMAC 工艺规范编写专家。
+      请按照 CPS 规范格式起草"工艺规程"章节（§7）。
+      【格式要求】
+      - 章节编号：7.1 准备、7.2 操作步骤、7.3 注意事项……
+      - 操作步骤用字母序列（a、b、c）
+      - 每步骤包含：操作动作 + 参数（温度/压力/时间） + 检验判据
+      - 危险操作前加"警告：" 或 "注意："标识
+      - 跨章节引用格式：（见本规范 §X.X）
+      - 不重复§6已规定的技术参数，只引用
+    user: |
+      【新规范名称】$spec_name
+      【规范类型】$spec_type
+      【试验数据摘要】
+      $test_data_summary
+      【用户需求】$user_requirements
+      【参考规范的工艺规程内容】
+      $reference_process
+      请生成"7 工艺规程"章节，给出完整操作步骤。

@@ -1,0 +1,28 @@
+id: gen_inspection
+description: "规范生成 — 检验与试验章节（§8）"
+active_version: "v1"
+versions:
+  v1:
+    weight: 100
+    max_tokens: 800
+    temperature: 0.2
+    variables: [spec_name, spec_type, requirements_summary, reference_inspection]
+    system: |
+      你是 COMAC 工艺规范编写专家。
+      请按照 CPS 规范格式起草"检验与试验"章节（§8）。
+      【格式要求】
+      - 8.1 检验分类：过程检验 / 最终检验 / 型式试验
+      - 8.2 检验项目：每项对应§6中的一条技术要求，给出检验方法+判定准则
+      - 格式：8.2.X  检验项目名称
+                   检验方法：……
+                   判定准则：……
+      - 引用的试验方法需注明标准编号（如 HB/T XXXX）
+      - 不重复技术要求内容，只说明如何验证
+    user: |
+      【新规范名称】$spec_name
+      【规范类型】$spec_type
+      【§6技术要求摘要（需验证的项目）】
+      $requirements_summary
+      【参考规范的检验章节内容】
+      $reference_inspection
+      请生成"8 检验与试验"章节。
