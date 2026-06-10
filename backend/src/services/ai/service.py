@@ -8,6 +8,7 @@ from typing import AsyncGenerator
 
 from ...services.runtime.model_settings import get_runtime_settings_namespace
 from .errors import LLMError, map_exception
+from .provider_pool import build_pool_from_settings
 from .providers import AnthropicProvider, ErnieProvider, OpenAICompatProvider
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ class LLMService:
     def __init__(self, runtime_settings=None):
         self._settings = runtime_settings or get_runtime_settings_namespace()
         self._provider = self._build_provider()
+        self._pool = build_pool_from_settings(self._settings)
 
     def _build_provider(self):
         from ._provider_factory import _build_llm_provider
@@ -34,6 +36,8 @@ class LLMService:
 
     @property
     def model_name(self) -> str:
+        if self._pool:
+            return self._pool.model_name
         return self._provider.model_name
 
     def _apply_defaults(self, kwargs: dict) -> dict:
@@ -43,12 +47,16 @@ class LLMService:
         return call_kwargs
 
     def chat(self, messages: list[dict], system_prompt: str = "", **kwargs) -> str:
-        from .retry import call_with_retry
         msgs = prepend_system(messages, system_prompt)
+        kw = self._apply_defaults(kwargs)
+        if self._pool:
+            return self._pool.chat_with_fallback(msgs, **kw)
+
+        from .retry import call_with_retry
 
         def _do() -> str:
             try:
-                return self._provider.chat(msgs, **self._apply_defaults(kwargs))
+                return self._provider.chat(msgs, **kw)
             except LLMError:
                 raise
             except Exception as exc:
@@ -63,12 +71,17 @@ class LLMService:
         system_prompt: str = "",
         **kwargs,
     ) -> tuple[str, dict]:
-        from .retry import call_with_retry
         msgs = prepend_system(messages, system_prompt)
+        kw = self._apply_defaults(kwargs)
+        if self._pool:
+            text = self._pool.chat_with_fallback(msgs, **kw)
+            return text, {"prompt_tokens": 0, "completion_tokens": 0}
+
+        from .retry import call_with_retry
 
         def _do() -> tuple[str, dict]:
             try:
-                return self._provider.chat_with_usage(msgs, **self._apply_defaults(kwargs))
+                return self._provider.chat_with_usage(msgs, **kw)
             except LLMError:
                 raise
             except Exception as exc:
@@ -83,13 +96,18 @@ class LLMService:
         system_prompt: str = "",
         **kwargs,
     ) -> AsyncGenerator[str, None]:
-        from .retry import acall_with_retry
         msgs = prepend_system(messages, system_prompt)
+        kw = self._apply_defaults(kwargs)
 
-        # 只对"建立 stream"做熔断检查；async generator 内部失败不重试，
-        # 以免产生重复输出
+        if self._pool:
+            async for chunk in self._pool.stream_chat_with_fallback(msgs, **kw):
+                yield chunk
+            return
+
+        from .retry import acall_with_retry
+
         async def _get_stream():
-            return self._provider.stream_chat(msgs, **self._apply_defaults(kwargs))
+            return self._provider.stream_chat(msgs, **kw)
 
         try:
             stream = await acall_with_retry(_get_stream)

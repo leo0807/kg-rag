@@ -181,3 +181,15 @@ async def get_query_volume(
     ]
 
     return {"days": days, "hourly": hourly, "daily": daily_data}
+
+
+@router.get("/llm-providers")
+async def get_llm_provider_status(
+    _user=Depends(get_admin_user),
+):
+    """返回 LLM Provider Pool 的健康状态；故障转移未启用时返回 enabled=false。"""
+    from ...services.ai.provider_pool import get_provider_pool
+    pool = get_provider_pool()
+    if pool is None:
+        return {"enabled": False, "providers": []}
+    return {"enabled": True, "providers": pool.get_status()}

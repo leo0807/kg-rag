@@ -48,6 +48,22 @@ async def lifespan(app: FastAPI):
     init_db()
     await init_tables()
 
+    # F2.2: seed built-in RBAC roles/permissions
+    try:
+        from .services.auth.rbac_seed import seed_rbac
+        async with AsyncSessionLocal() as _db:
+            await seed_rbac(_db)
+    except Exception as _e:
+        logger.warning("RBAC seed failed (non-fatal): %s", _e)
+
+    # F3.1: seed default retention policies
+    try:
+        from .services.governance.lifecycle_runner import seed_default_policies
+        async with AsyncSessionLocal() as _db:
+            await seed_default_policies(_db)
+    except Exception as _e:
+        logger.warning("Lifecycle policy seed failed (non-fatal): %s", _e)
+
     # ... (existing user creation logic)
 
     # 初始化 Milvus + ES
@@ -76,6 +92,12 @@ async def lifespan(app: FastAPI):
             id="cleanup_audit_logs",
             replace_existing=True,
         )
+        try:
+            from .services.governance.lifecycle_runner import run_lifecycle
+            scheduler.add_job(run_lifecycle, "cron", hour=2, minute=0,
+                              id="lifecycle_runner", replace_existing=True)
+        except Exception as _e:
+            logger.warning("Failed to schedule lifecycle runner: %s", _e)
         scheduler.start()
         logger.info("APScheduler 已启动，审计日志清理任务 (365天保留) 已注册")
 
@@ -101,6 +123,19 @@ async def lifespan(app: FastAPI):
         logger.warning("启动健康检查异常: %s", e)
     health_monitor.start_background_task()
 
+    # 启动告警规则定期评估（每5分钟）
+    async def _alert_loop() -> None:
+        import asyncio as _asyncio
+        from .services.monitoring.alert_rules import evaluate_rules
+        while True:
+            await _asyncio.sleep(300)
+            try:
+                await evaluate_rules()
+            except Exception as _e:
+                logger.debug("告警规则评估异常: %s", _e)
+
+    asyncio.create_task(_alert_loop())
+
     try:
         await asyncio.to_thread(get_cached_embedding, "启动预热")
         logger.info("Embedding 预热完成")
@@ -113,6 +148,15 @@ async def lifespan(app: FastAPI):
 
     # 服务重启后图片补全任务不自动续跑，由用户在管理页面手动控制
     # Redis 中的进度数据保留，用户点击"启动任务"时从断点继续
+
+    # H6 Webhook dispatcher 初始化
+    try:
+        from .services.integration.webhook_dispatcher import init_dispatcher
+        from .db.session import AsyncSessionLocal
+        init_dispatcher(AsyncSessionLocal)
+        logger.info("WebhookDispatcher 已初始化")
+    except Exception as e:
+        logger.warning("WebhookDispatcher 初始化失败: %s", e)
 
     print(">>> lifespan 启动：数据库连接已建立")
     yield

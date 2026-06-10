@@ -110,6 +110,15 @@ class Settings(BaseSettings):
     LLM_CIRCUIT_BREAKER_THRESHOLD: int = 5
     LLM_CIRCUIT_BREAKER_RESET_SECONDS: float = 30.0
 
+    # Provider 故障转移
+    LLM_FAILOVER_ENABLED:    bool = False
+    LLM_FALLBACK_1_URL:      str  = ""
+    LLM_FALLBACK_1_KEY:      str  = ""
+    LLM_FALLBACK_1_MODEL:    str  = ""
+    LLM_FALLBACK_2_URL:      str  = ""
+    LLM_FALLBACK_2_KEY:      str  = ""
+    LLM_FALLBACK_2_MODEL:    str  = ""
+
     # 各提供方专用模型名（空则使用默认值）
     LLM_QWEN_MODEL:     str = "qwen-plus"
     LLM_DEEPSEEK_MODEL: str = "deepseek-chat"

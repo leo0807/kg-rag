@@ -6,6 +6,10 @@ import { Toaster } from "sonner";
 export const metadata: Metadata = {
   title: "CPS 知识库",
   description: "航空工艺规范智能问答系统",
+  manifest: "/manifest.json",
+  themeColor: "#030712",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "CPS知识库" },
+  viewport: { width: "device-width", initialScale: 1, maximumScale: 1 },
 };
 
 export default function RootLayout({
@@ -18,6 +22,11 @@ export default function RootLayout({
       <body>
         <ConditionalLayout>{children}</ConditionalLayout>
         <Toaster position="top-center" richColors closeButton />
+        <script dangerouslySetInnerHTML={{ __html: `
+          if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+          }
+        `}} />
       </body>
     </html>
   );

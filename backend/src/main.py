@@ -30,6 +30,12 @@ from .routers.settings           import router as settings_router
 from .routers.users              import router as users_router
 from .routers.feedback           import router as feedback_router
 from .routers.conversations      import router as conversations_router
+from .routers.conversations_ext  import router as conversations_ext_router
+from .routers.sharing            import router as sharing_router, public_router as shared_public_router
+from .routers.notes              import router as notes_router
+from .routers.recommend          import router as recommend_router
+from .routers.wiki               import router as wiki_router
+from .routers.preferences        import router as preferences_router
 from .routers.admin_api.entities import router as admin_entities_router
 from .routers.admin_api.activity import router as admin_activity_router
 from .routers.admin_api.analytics import router as admin_analytics_router
@@ -72,7 +78,39 @@ from .routers.admin_api.health       import router as admin_health_router
 from .routers.admin_api.associations import router as admin_associations_router
 from .routers.admin_api.feedback_admin import router as admin_feedback_router
 from .routers.admin_api.metrics      import router as admin_metrics_router
+from .routers.admin_api.experiments  import router as admin_experiments_router
+from .routers.admin_api.backup       import router as admin_backup_router
+from .routers.admin_api.logs         import router as admin_logs_router
+from .routers.admin_api.spec_templates import router as admin_spec_templates_router
+from .routers.generation             import router as generation_router
 from .routers.blueprint              import router as blueprint_router
+from .routers.admin_api.eval_datasets import router as admin_eval_datasets_router
+from .routers.admin_api.eval_runs     import router as admin_eval_runs_router
+from .routers.admin_api.audit         import router as admin_audit_router
+from .routers.admin_api.permissions   import router as admin_rbac_router
+from .routers.admin_api.lifecycle     import router as admin_lifecycle_router
+from .routers.admin_api.compliance    import router as compliance_router
+from .routers.admin_api.data_quality  import router as admin_data_quality_router
+from .routers.admin_api.doc_versions      import router as doc_versions_router
+from .routers.admin_api.compliance_report import router as admin_compliance_report_router
+from .middleware.audit_middleware     import AuditMiddleware
+from .middleware.tenant_middleware   import TenantMiddleware
+from .middleware.rate_limit          import RateLimitMiddleware
+from .routers.platform.tenants       import router as platform_tenants_router
+from .routers.platform.isolation     import router as platform_isolation_router
+from .routers.platform.operations    import router as platform_operations_router
+from .routers.admin_api.quota        import router as admin_quota_router
+from .routers.admin_api.billing      import router as admin_billing_router
+from .routers.admin_api.tenant_settings import router as admin_tenant_settings_router
+
+# H 模块：业务系统集成
+from .routers.admin_api.integrations  import router as admin_integrations_router
+from .routers.admin_api.webhooks      import router as admin_webhooks_router
+from .routers.admin_api.api_keys      import router as admin_api_keys_router
+from .routers.v1.open_api             import router as v1_open_api_router
+from .routers.shopfloor               import router as shopfloor_router
+from .routers.sso                     import router as sso_router
+from .middleware.api_key_auth         import ApiKeyMiddleware
 
 from .services.infra.health import health_monitor
 from .services.ops.presence_service import track_request_activity
@@ -123,6 +161,10 @@ app.add_middleware(
 )
 
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BODY_BYTES)
+app.add_middleware(AuditMiddleware)
+app.add_middleware(TenantMiddleware)
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(ApiKeyMiddleware)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -130,8 +172,13 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.exception_handler(RequestValidationError)
 async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.warning("422 validation error on %s: %s", request.url.path, exc.errors())
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    errors = exc.errors(include_url=False)
+    safe_errors = [
+        {k: (str(v) if not isinstance(v, (str, int, float, bool, list, dict, type(None))) else v)
+         for k, v in e.items()} for e in errors
+    ]
+    logger.warning("422 validation error on %s: %s", request.url.path, safe_errors)
+    return JSONResponse(status_code=422, content={"detail": safe_errors})
 
 
 @app.exception_handler(HTTPException)
@@ -179,16 +226,30 @@ async def activity_presence_middleware(request: Request, call_next):
 app.add_middleware(ShutdownGateMiddleware)
 
 
+_START_TIME = __import__("time").time()
+
 @app.get("/api/health")
 async def health():
     import time
     services = health_monitor.to_dict()
-    overall  = "OK" if all(v["state"] == "ok" for v in services.values()) else "DEGRADED"
+    all_ok   = all(v.get("state") == "ok" for v in services.values())
+    overall  = "OK" if all_ok else "DEGRADED"
+    # Check postgres connectivity
+    try:
+        from .db.session import AsyncSessionLocal
+        from sqlalchemy import text as _text
+        async with AsyncSessionLocal() as _db:
+            await _db.execute(_text("SELECT 1"))
+        services["postgres"] = {"state": "ok", "latency_ms": 0}
+    except Exception as _e:
+        services["postgres"] = {"state": "down", "error": str(_e)[:100]}
+        overall = "DEGRADED"
     return {
-        "status":   overall,
-        "version":  settings.APP_VERSION,
-        "services": services,
-        "time":     int(time.time()),
+        "status":         overall,
+        "version":        settings.APP_VERSION,
+        "services":       services,
+        "uptime_seconds": int(time.time() - _START_TIME),
+        "time":           int(time.time()),
     }
 
 
@@ -213,6 +274,13 @@ app.include_router(settings_router)
 app.include_router(users_router)
 app.include_router(feedback_router)
 app.include_router(conversations_router)
+app.include_router(conversations_ext_router)
+app.include_router(sharing_router)
+app.include_router(shared_public_router)
+app.include_router(notes_router)
+app.include_router(recommend_router)
+app.include_router(wiki_router)
+app.include_router(preferences_router)
 app.include_router(admin_entities_router)
 app.include_router(admin_activity_router)
 app.include_router(admin_analytics_router)
@@ -253,6 +321,36 @@ app.include_router(admin_health_router)
 app.include_router(admin_associations_router)
 app.include_router(admin_feedback_router)
 app.include_router(admin_metrics_router)
+app.include_router(admin_experiments_router)
+app.include_router(admin_backup_router)
+app.include_router(admin_logs_router)
+app.include_router(admin_spec_templates_router)
+app.include_router(generation_router)
 app.include_router(blueprint_router)
+app.include_router(admin_eval_datasets_router)
+app.include_router(admin_eval_runs_router)
+app.include_router(admin_audit_router)
+app.include_router(admin_rbac_router)
+app.include_router(admin_lifecycle_router)
+app.include_router(compliance_router)
+app.include_router(admin_data_quality_router)
+app.include_router(doc_versions_router)
+app.include_router(admin_compliance_report_router)
+
+# H 模块：业务系统集成
+app.include_router(admin_integrations_router)
+app.include_router(admin_webhooks_router)
+app.include_router(admin_api_keys_router)
+app.include_router(v1_open_api_router)
+app.include_router(shopfloor_router)
+app.include_router(sso_router)
+
+# G 模块：多租户支持
+app.include_router(platform_tenants_router)
+app.include_router(platform_isolation_router)
+app.include_router(platform_operations_router)
+app.include_router(admin_quota_router)
+app.include_router(admin_billing_router)
+app.include_router(admin_tenant_settings_router)
 
 app.mount("/uploads/images", StaticFiles(directory=str(UPLOAD_DIR / "images")), name="uploads_images")

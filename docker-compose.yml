@@ -4,13 +4,22 @@ version: "3.9"
 # 基础设施层 —— 开发 / 生产共用
 # 启动开发环境：bash scripts/dev.sh
 # 启动生产环境：bash scripts/prod.sh
+# 启动测试环境：docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
 # ─────────────────────────────────────────────────────────────
+
+# 统一日志轮转配置（所有服务复用）
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "10"
 
 services:
   # ── Langfuse 依赖：PostgreSQL ─────────────
   langfuse-db:
     image: postgres:15
     container_name: aviation-langfuse-db
+    logging: *default-logging
     environment:
       POSTGRES_USER: langfuse
       POSTGRES_PASSWORD: langfuse123
@@ -27,6 +36,7 @@ services:
   langfuse:
     image: langfuse/langfuse:2
     container_name: aviation-langfuse
+    logging: *default-logging
     ports:
       - "3001:3000"
     environment:
@@ -44,6 +54,7 @@ services:
     image: redis:7-alpine
     container_name: aviation-redis
     restart: unless-stopped
+    logging: *default-logging
     command: redis-server --appendonly yes --appendfsync everysec
     ports:
       - "6379:6379"
@@ -60,6 +71,7 @@ services:
     image: neo4j:5.20-community
     container_name: aviation-neo4j
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "7474:7474"
       - "7687:7687"
@@ -82,6 +94,7 @@ services:
     image: quay.io/coreos/etcd:v3.5.14
     container_name: aviation-etcd
     restart: unless-stopped
+    logging: *default-logging
     environment:
       ETCD_AUTO_COMPACTION_MODE: revision
       ETCD_AUTO_COMPACTION_RETENTION: "1000"
@@ -101,6 +114,7 @@ services:
     image: minio/minio:RELEASE.2024-05-10T01-41-38Z
     container_name: aviation-minio
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -124,6 +138,7 @@ services:
     image: milvusdb/milvus:v2.4.9
     container_name: aviation-milvus
     restart: unless-stopped
+    logging: *default-logging
     command: [ "milvus", "run", "standalone" ]
     ports:
       - "19530:19530"
@@ -160,6 +175,7 @@ services:
     image: postgres:15
     container_name: aviation-app-db
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: aviation
       POSTGRES_PASSWORD: aviation123
@@ -214,6 +230,7 @@ services:
     platform: linux/amd64
     container_name: aviation-es
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false

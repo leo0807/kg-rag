@@ -1,31 +1,38 @@
-FROM python:3.12-slim
+FROM python:3.12-slim AS base
 
 WORKDIR /app
 
-# 安装系统依赖（pdfplumber + LibreOffice .doc 转换）
+# 系统依赖（pdfplumber + LibreOffice .doc 转换）
 RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    libreoffice \
-    libreoffice-writer \
-    fonts-wqy-zenhei \
-    fonts-wqy-microhei \
-    fonts-noto-cjk \
+    gcc g++ curl \
+    libreoffice libreoffice-writer \
+    fonts-wqy-zenhei fonts-wqy-microhei fonts-noto-cjk \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# 先复制依赖文件，利用 Docker 层缓存
-# 只要 requirements.txt 没变，这一层就不会重新构建
+# ── 依赖层（pip 缓存独立，requirements 不变就不重建）────────────────
+FROM base AS deps
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 再复制源码和运维脚本
+# ── 应用层 ──────────────────────────────────────────────────────────
+FROM deps AS app
+
+# 非 root 用户（UID 1001 避免与常见系统账号冲突）
+RUN groupadd -g 1001 appgroup && useradd -u 1001 -g appgroup -s /bin/sh appuser
+
 COPY src/ ./src/
 COPY scripts/ ./scripts/
 
-# 创建运行时目录
-RUN mkdir -p uploads uploads/snapshots
+RUN mkdir -p uploads uploads/snapshots logs \
+    && chown -R appuser:appgroup /app
+
+USER appuser
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" \
+    || exit 1
 
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

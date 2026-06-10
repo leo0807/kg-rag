@@ -89,6 +89,14 @@ export interface Message {
   timestamp: number;
 }
 
+export interface ConversationCategory {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  count: number;
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -96,6 +104,10 @@ export interface Conversation {
   timestamp: number;
   branch_from_conversation_id?: string | null;
   branch_from_message_index?: number | null;
+  category_id?: string | null;
+  is_pinned?: boolean;
+  is_archived?: boolean;
+  tags?: string[];
 }
 
 export type Strategy =

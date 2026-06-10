@@ -20,9 +20,11 @@ class User(Base):
     hashed_pw:  Mapped[str]           = mapped_column(String(256))
     full_name:  Mapped[str]           = mapped_column(String(64), default="")
     department: Mapped[str]           = mapped_column(String(64), default="")
-    is_admin:   Mapped[bool]          = mapped_column(Boolean, default=False)
-    is_active:  Mapped[bool]          = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime]      = mapped_column(DateTime, server_default=func.now())
+    is_admin:          Mapped[bool]          = mapped_column(Boolean, default=False)
+    is_active:         Mapped[bool]          = mapped_column(Boolean, default=True)
+    is_platform_admin: Mapped[bool]          = mapped_column(Boolean, default=False)
+    tenant_id:         Mapped[str | None]    = mapped_column(String(36), nullable=True, index=True)
+    created_at:        Mapped[datetime]      = mapped_column(DateTime, server_default=func.now())
 
     settings:   Mapped[list["UserSetting"]] = relationship(back_populates="user")
     audit_logs: Mapped[list["AuditLog"]]    = relationship(back_populates="user")
@@ -55,11 +57,12 @@ class UserSetting(Base):
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
-    id:         Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
-    user_id:    Mapped[str]      = mapped_column(String(36), ForeignKey("users.id"))
-    action:     Mapped[str]      = mapped_column(String(64))
-    resource:   Mapped[str]      = mapped_column(String(128))
-    detail:     Mapped[str]      = mapped_column(Text, default="")
+    id:        Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
+    user_id:   Mapped[str]      = mapped_column(String(36), ForeignKey("users.id"))
+    tenant_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    action:    Mapped[str]      = mapped_column(String(64))
+    resource:  Mapped[str]      = mapped_column(String(128))
+    detail:    Mapped[str]      = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="audit_logs")
@@ -93,6 +96,12 @@ class Conversation(Base):
         nullable=True,
         comment="若为分支对话，记录从源对话的第几条消息分出",
     )
+    # B1: 会话管理增强
+    category_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    is_pinned:   Mapped[bool]       = mapped_column(Boolean, default=False)
+    is_archived: Mapped[bool]       = mapped_column(Boolean, default=False)
+    tags:        Mapped[Any]        = mapped_column(JSON, default=list)
+    tenant_id:   Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
 
 class LLMUsage(Base):
@@ -269,8 +278,9 @@ class Favorite(Base):
     section_id:   Mapped[Any]           = mapped_column(String(100), nullable=True)
     query_text:   Mapped[Any]           = mapped_column(Text,        nullable=True)
     title:        Mapped[str]           = mapped_column(String(200), nullable=False)
-    note:         Mapped[Any]           = mapped_column(Text,        nullable=True)
-    created_at:   Mapped[datetime]      = mapped_column(DateTime,    server_default=func.now())
+    note:      Mapped[Any]      = mapped_column(Text,      nullable=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship()
 

@@ -47,8 +47,9 @@ async def get_db():
 async def init_tables():
     engine = get_engine()
     from .base import Base
-    from . import models
-    from ..routers import feedback  # 确保 QueryFeedback 被注册
+    from . import models, gen_models, ux_models, eval_models, rbac_models, lifecycle_models, version_models  # ensure all models registered
+    from ..services.audit import audit_models as _audit_models  # noqa: F401
+    from ..routers import feedback    # 确保 QueryFeedback 被注册
     from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -110,3 +111,17 @@ async def init_tables():
             """))
         except Exception:
             pass
+        # B2/B3: ux_models 已通过 create_all 创建，无需手动增量迁移
+        # B1: 会话管理增强列
+        for col, ctype in [
+            ("category_id", "VARCHAR(36)"),
+            ("is_pinned",   "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("is_archived", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("tags",        "JSONB NOT NULL DEFAULT '[]'::jsonb"),
+        ]:
+            try:
+                await conn.execute(text(
+                    f"ALTER TABLE conversations ADD COLUMN IF NOT EXISTS {col} {ctype}"
+                ))
+            except Exception:
+                pass

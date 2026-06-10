@@ -3,6 +3,8 @@
 import { fetchApi } from "@/lib/api";
 import { Activity, AlertTriangle, Clock, TrendingUp, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ProviderStatusPanel } from "./ProviderStatusPanel";
+import { StatCard } from "./StatCard";
 
 interface StrategyRow {
   strategy: string;
@@ -44,22 +46,6 @@ type Tab = "performance" | "errors" | "volume";
 const STRATEGY_LABELS: Record<string, string> = {
   parallel: "并行RRF", sequential: "ES混合", graph_augmented: "图谱增强",
   multimodal: "多模态", multi_hop: "多跳", agent: "Agent", counterfactual: "反事实" };
-
-function StatCard({ label, value, sub, icon: Icon, warn }: {
-  label: string; value: string | number; sub?: string;
-  icon: typeof Activity; warn?: boolean;
-}) {
-  return (
-    <div className={`bg-gray-900 border rounded-lg p-4 ${warn ? "border-amber-700" : "border-gray-800"}`}>
-      <div className="flex items-center gap-2 mb-1">
-        <Icon size={14} className={warn ? "text-amber-400" : "text-indigo-400"} />
-        <span className="text-xs text-gray-500">{label}</span>
-      </div>
-      <div className={`text-xl font-semibold ${warn ? "text-amber-300" : "text-gray-100"}`}>{value}</div>
-      {sub && <div className="text-xs text-gray-600 mt-0.5">{sub}</div>}
-    </div>
-  );
-}
 
 export default function MetricsPage() {
   const [tab, setTab]         = useState<Tab>("performance");
@@ -117,6 +103,8 @@ export default function MetricsPage() {
           </button>
         </div>
       </div>
+
+      <ProviderStatusPanel />
 
       <div className="flex gap-1 mb-6 bg-gray-900 border border-gray-800 rounded-lg p-0.5 w-fit">
         {TABS.map(t => (
