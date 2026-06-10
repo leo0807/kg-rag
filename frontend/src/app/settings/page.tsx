@@ -7,6 +7,7 @@ import { AuditTab } from "./AuditTab";
 import { EntityFilterTab } from "./EntityFilterTab";
 import { ModelTab } from "./ModelTab";
 import { PasswordTab } from "./PasswordTab";
+import { PreferencesTab } from "./PreferencesTab";
 import { ProfileTab } from "./ProfileTab";
 import { SearchTab } from "./SearchTab";
 import type { Tab } from "./types";
@@ -41,6 +42,7 @@ export default function SettingsPage() {
     { key: "profile", label: "个人资料", desc: "编辑姓名、部门与邮箱" },
     { key: "password", label: "修改密码", desc: "更新你的登录凭证" },
     { key: "model", label: "模型设置", desc: "配置默认模型与参数" },
+    { key: "preferences", label: "使用偏好", desc: "检索策略、显示与外观" },
     ...(isAdmin
       ? [
           {
@@ -132,6 +134,9 @@ export default function SettingsPage() {
           )}
           {tab === "model" && (
             <ModelTab showMsg={showMsg} showError={showError} />
+          )}
+          {tab === "preferences" && (
+            <PreferencesTab showMsg={showMsg} showError={showError} />
           )}
           {tab === "admin" && (
             <AdminTab showMsg={showMsg} showError={showError} />
