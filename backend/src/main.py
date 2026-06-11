@@ -103,6 +103,20 @@ from .routers.admin_api.quota        import router as admin_quota_router
 from .routers.admin_api.billing      import router as admin_billing_router
 from .routers.admin_api.tenant_settings import router as admin_tenant_settings_router
 
+# I 模块：离线和私有化部署
+from .routers.admin_api.local_models import router as admin_local_models_router
+from .routers.admin_api.security     import router as admin_security_router
+from .routers.admin_api.finetune     import router as admin_finetune_router
+
+# J 模块：数据可视化
+from .routers.analytics              import router as analytics_router
+from .routers.admin_api.reports      import router as admin_reports_router
+from .routers.realtime               import router as realtime_router
+
+# K 模块：工艺仿真集成
+from .routers.simulation             import router as simulation_router
+from .routers.simulation_ext         import router as simulation_ext_router
+
 # H 模块：业务系统集成
 from .routers.admin_api.integrations  import router as admin_integrations_router
 from .routers.admin_api.webhooks      import router as admin_webhooks_router
@@ -336,6 +350,20 @@ app.include_router(compliance_router)
 app.include_router(admin_data_quality_router)
 app.include_router(doc_versions_router)
 app.include_router(admin_compliance_report_router)
+
+# I 模块：离线和私有化部署
+app.include_router(admin_local_models_router)
+app.include_router(admin_security_router)
+app.include_router(admin_finetune_router)
+
+# J 模块：数据可视化
+app.include_router(analytics_router)
+app.include_router(admin_reports_router)
+app.include_router(realtime_router)
+
+# K 模块：工艺仿真集成
+app.include_router(simulation_router)
+app.include_router(simulation_ext_router)
 
 # H 模块：业务系统集成
 app.include_router(admin_integrations_router)
