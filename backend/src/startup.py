@@ -158,6 +158,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("WebhookDispatcher 初始化失败: %s", e)
 
+    # I1 离线 / 私有化部署模式检测
+    try:
+        from .core.deployment_mode import deployment_checker
+        mode = await deployment_checker.detect_mode()
+        logger.info("部署模式: %s", mode.value)
+        if mode.value == "airgapped":
+            await deployment_checker.enforce_airgap()
+        elif mode.value == "intranet":
+            results = await deployment_checker.validate_offline_ready()
+            if not results.get("local_llm_available"):
+                logger.warning("INTRANET 模式：本地 LLM 不可用，请检查 Ollama/vLLM 是否启动")
+    except RuntimeError as e:
+        logger.error("部署模式检查失败: %s", e)
+        raise
+    except Exception as e:
+        logger.warning("部署模式检测异常（非致命）: %s", e)
+
     print(">>> lifespan 启动：数据库连接已建立")
     yield
     logger.info("Application shutting down, draining active streams...")

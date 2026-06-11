@@ -1,0 +1,94 @@
+version: "3.9"
+
+# I7.1: High-Availability docker-compose configuration.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.ha.yml up -d
+
+services:
+
+  # ── PostgreSQL primary + replica ───────────────────────────────────────────
+  postgres:
+    environment:
+      POSTGRES_REPLICATION_MODE: master
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: "${POSTGRES_REPL_PASSWORD:-repl_secret}"
+
+  postgres-replica:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      POSTGRES_PRIMARY_HOST: postgres
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: "${POSTGRES_REPL_PASSWORD:-repl_secret}"
+    command: >
+      bash -c "
+        until pg_isready -h postgres -p 5432; do sleep 2; done
+        PGPASSWORD=$$POSTGRES_REPLICATION_PASSWORD pg_basebackup \
+          -h postgres -U replicator -D /var/lib/postgresql/data \
+          -Fp -Xs -P -R
+        exec postgres
+      "
+    depends_on: [postgres]
+    volumes:
+      - pg_replica_data:/var/lib/postgresql/data
+
+  # ── Redis Sentinel ─────────────────────────────────────────────────────────
+  redis:
+    command: redis-server --appendonly yes --repl-diskless-sync yes
+
+  redis-replica:
+    image: redis:7-alpine
+    command: redis-server --replicaof redis 6379 --appendonly yes
+    depends_on: [redis]
+
+  redis-sentinel:
+    image: redis:7-alpine
+    command: >
+      redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./docker/redis-sentinel.conf:/etc/redis/sentinel.conf:ro
+    depends_on: [redis, redis-replica]
+
+  # ── Backend — multiple instances ───────────────────────────────────────────
+  backend:
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  backend-2:
+    extends:
+      service: backend
+    container_name: kg-rag-backend-2
+
+  # ── Nginx load balancer ────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.ha.conf:/etc/nginx/conf.d/upstream.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on: [backend, backend-2, frontend]
+    restart: unless-stopped
+
+  # ── Elasticsearch HA ───────────────────────────────────────────────────────
+  elasticsearch-2:
+    image: elasticsearch:8.7.0
+    environment:
+      - node.name=es02
+      - cluster.name=kg-rag-cluster
+      - discovery.seed_hosts=elasticsearch
+      - cluster.initial_master_nodes=es01,es02
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+    volumes:
+      - es2_data:/usr/share/elasticsearch/data
+    depends_on: [elasticsearch]
+
+volumes:
+  pg_replica_data:
+  es2_data:

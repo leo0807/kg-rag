@@ -167,6 +167,15 @@ class Settings(BaseSettings):
     WECOM_WEBHOOK:           str = ""
     ALERT_COOLDOWN_MINUTES:  int = 30
 
+    # I 模块：离线 / 私有化部署
+    DEPLOYMENT_MODE:          str  = "cloud"   # cloud/hybrid/intranet/airgapped
+    EXTERNAL_API_ALLOWED:     bool = True
+    LLM_PROVIDER_LOCAL_ONLY:  bool = False
+    TELEMETRY_ENABLED:        bool = True
+    AUTO_UPDATE_CHECK:        bool = True
+    # 字段加密主密钥（AES-256，空则不启用字段加密）
+    FIELD_ENCRYPTION_KEY:     str  = ""
+
     def reload(self, allowed_fields: Iterable[str] | None = None) -> dict[str, dict[str, Any]]:
         return reload_reloadable_settings(self, allowed_fields=allowed_fields)
 
