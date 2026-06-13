@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { fetchApi } from "@/lib/api";
 
 type Tenant = {
   id: string; name: string; slug: string;
@@ -24,11 +25,9 @@ export default function TenantList() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    fetch("/api/platform/tenants", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    })
-      .then((r) => r.json())
-      .then(setTenants)
+    fetchApi<Tenant[]>("/api/platform/tenants")
+      .then((d) => setTenants(Array.isArray(d) ? d : []))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
@@ -39,10 +38,9 @@ export default function TenantList() {
   );
 
   const action = async (id: string, act: string) => {
-    await fetch(`/api/platform/tenants/${id}/${act}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    });
+    try {
+      await fetchApi(`/api/platform/tenants/${id}/${act}`, { method: "POST" });
+    } catch { /* ignore */ }
     setTenants((prev) =>
       prev.map((t) =>
         t.id === id

@@ -2,6 +2,7 @@
 
 import { ImageOff, Loader2, Pencil, Ruler } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchApi } from "@/lib/api";
 import { DrawingViewer } from "./DrawingViewer";
 
 interface Annotation {
@@ -69,7 +70,6 @@ export function DrawingsTab({ docId, targetImageId }: Props) {
         nextFilter?: "all" | "drawing";
       },
     ) => {
-      const token = localStorage.getItem("token") ?? "";
       const replace = options?.replace ?? false;
       const pageSize = options?.pageSize ?? PAGE_SIZE;
       const nextFilter = options?.nextFilter ?? filter;
@@ -90,13 +90,9 @@ export function DrawingsTab({ docId, targetImageId }: Props) {
       }
 
       try {
-        const response = await fetch(
+        const data = await fetchApi<ImagesResponse>(
           `/api/documents/${docId}/images?${params.toString()}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
         );
-        const data = (await response.json()) as ImagesResponse;
         if (requestSeq !== requestSeqRef.current) return;
 
         const nextImages = (data.images ?? []).filter((img) => !!img.image_id);
@@ -207,11 +203,9 @@ export function DrawingsTab({ docId, targetImageId }: Props) {
 
   async function handleReanalyze(imageId: string) {
     setReanalyzing(imageId);
-    const token = localStorage.getItem("token") ?? "";
     try {
-      await fetch(`/api/documents/${docId}/images/${imageId}/analyze-drawing`, {
+      await fetchApi(`/api/documents/${docId}/images/${imageId}/analyze-drawing`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
       });
       window.setTimeout(() => {
         void refreshLoadedImages().finally(() => setReanalyzing(null));

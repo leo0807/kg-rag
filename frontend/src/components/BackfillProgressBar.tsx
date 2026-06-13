@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Loader2, Pause, Play, FolderSync } from "lucide-react";
+import { fetchApi } from "@/lib/api";
 
 interface BackfillStatus {
     status: "idle" | "running" | "paused" | "completed";
@@ -23,16 +24,6 @@ function fmtRemaining(secs: number): string {
     return rem > 0 ? `约 ${hrs} 小时 ${rem} 分钟` : `约 ${hrs} 小时`;
 }
 
-function getToken(): string {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("token") ?? "";
-}
-
-function authHeaders(): Record<string, string> {
-    const t = getToken();
-    return t ? { Authorization: `Bearer ${t}` } : {};
-}
-
 export default function BackfillProgressBar() {
     const [status,  setStatus]  = useState<BackfillStatus | null>(null);
     const [loading, setLoading] = useState(false);   // 暂停/恢复按钮 loading
@@ -40,11 +31,7 @@ export default function BackfillProgressBar() {
 
     const fetchStatus = useCallback(async () => {
         try {
-            const res = await fetch("/api/documents/backfill/status", {
-                headers: authHeaders(),
-            });
-            if (!res.ok) return;
-            const data: BackfillStatus = await res.json();
+            const data = await fetchApi<BackfillStatus>("/api/documents/backfill/status");
             setStatus(data);
         } catch {
             // 静默失败，不影响主页面
@@ -75,10 +62,7 @@ export default function BackfillProgressBar() {
             const endpoint = isRunning
                 ? "/api/documents/backfill/pause"
                 : "/api/documents/backfill/resume";
-            await fetch(endpoint, {
-                method:  "POST",
-                headers: authHeaders(),
-            });
+            await fetchApi(endpoint, { method: "POST" });
             // 立即刷新状态
             await fetchStatus();
         } catch {

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type TenantUsage = {
   tenant_id: string;
@@ -28,11 +29,9 @@ export default function UsageChart() {
   const [sort, setSort] = useState<"queries" | "tokens" | "storage">("queries");
 
   useEffect(() => {
-    fetch("/api/platform/usage", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    })
-      .then((r) => r.json())
-      .then(setData)
+    fetchApi<TenantUsage[]>("/api/platform/usage")
+      .then((d) => setData(Array.isArray(d) ? d : []))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ApiError } from "@/lib/api";
+import { ApiError, fetchApi } from "@/lib/api";
 
 export type ItemStatus = "pending" | "uploading" | "done" | "skipped" | "error" | "interrupted";
 
@@ -61,7 +61,7 @@ export function useIngest(onDone?: () => void) {
 
     useEffect(() => {
         setItems(loadSession());
-        fetch("/api/stats").then(r => r.json()).then(setStats).catch(() => {});
+        fetchApi<Stats>("/api/stats").then(setStats).catch(() => {});
     }, []);
 
     useEffect(() => { if (items.length) saveSession(items); }, [items]);
@@ -144,15 +144,11 @@ export function useIngest(onDone?: () => void) {
                 xhr.send(fd);
             });
 
-            const token = localStorage.getItem("token") ?? "";
-            const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
             while (true) {
                 if (signal.aborted) return false;
                 await new Promise(r => setTimeout(r, 2000));
                 if (signal.aborted) return false;
-                const sr = await fetch(`/api/ingest/status/${task_id}`, { headers, signal });
-                if (!sr.ok) throw new ApiError(sr.status, await sr.text());
-                const s = await sr.json() as { status: string; step: string; doc_id: string | null; sections: number; error: string | null; incremental_stats?: IngestStats };
+                const s = await fetchApi<{ status: string; step: string; doc_id: string | null; sections: number; error: string | null; incremental_stats?: IngestStats }>(`/api/ingest/status/${task_id}`, { signal });
                 setItems(prev => prev.map(it => it.id === item.id
                     ? { ...it, progress: STEP_LABEL[s.step] ?? s.step, progressPct: undefined, uploadedBytes: undefined }
                     : it));
@@ -196,7 +192,7 @@ export function useIngest(onDone?: () => void) {
         setRunning(false);
         abortRef.current = null;
         if (doneCount > 0) {
-            fetch("/api/stats").then(r => r.json()).then(setStats).catch(() => {});
+            fetchApi<Stats>("/api/stats").then(setStats).catch(() => {});
             onDone?.();
         }
     };

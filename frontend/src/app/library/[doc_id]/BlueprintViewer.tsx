@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchApi } from "@/lib/api";
 import { Maximize2, RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
 import { AnnotationHotspot } from "./AnnotationHotspot";
 import type { HotspotAnnotation } from "./AnnotationHotspot";
@@ -54,15 +55,9 @@ export function BlueprintViewer({ imageId, imageUrl, onClose }: Props) {
   const loadAnnotations = useCallback(async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token") ?? "";
-      const res = await fetch(`/api/blueprint/annotations/${imageId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data: BlueprintData = await res.json();
-        setBlueprint(data);
-        setHotspots(_distributeAnnotations(data.annotations));
-      }
+      const data = await fetchApi<BlueprintData>(`/api/blueprint/annotations/${imageId}`);
+      setBlueprint(data);
+      setHotspots(_distributeAnnotations(data.annotations));
     } catch {
       // 加载失败静默处理
     } finally {

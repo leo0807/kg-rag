@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 import TenantForm from "./TenantForm";
 
 type Tenant = {
@@ -15,22 +16,15 @@ export default function TenantDetail({ tenantId }: { tenantId: string }) {
   const [extending, setExtending] = useState(false);
 
   const load = () =>
-    fetch(`/api/platform/tenants/${tenantId}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    })
-      .then((r) => r.json())
-      .then(setTenant);
+    fetchApi<Tenant>(`/api/platform/tenants/${tenantId}`).then(setTenant);
 
   useEffect(() => { load(); }, [tenantId]);
 
   const extendDays = async (days: number) => {
     setExtending(true);
-    await fetch(`/api/platform/tenants/${tenantId}/extend`, {
+    await fetchApi(`/api/platform/tenants/${tenantId}/extend`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ days }),
     });
     await load();

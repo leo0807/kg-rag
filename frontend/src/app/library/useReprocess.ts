@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 export const PIPELINES = [
   { key: "reparse",     label: "重新解析章节", desc: "修复 0 章节文档（重新提取章节结构）" },
@@ -81,9 +82,6 @@ export function useReprocess() {
   const [confirm, setConfirm] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") ?? "" : "";
-  const h = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-
   function updateBatch(next: Batch | ((prev: Batch) => Batch)) {
     setBatch(prev => {
       const val = typeof next === "function" ? next(prev) : next;
@@ -96,13 +94,13 @@ export function useReprocess() {
     setDocsLoading(true);
     try {
       const PER = 500;
-      const first = await fetch(`/api/documents?per_page=${PER}&page=1`, { headers: h }).then(r => r.json());
+      const first = await fetchApi<{ data: Doc[]; pages: number }>(`/api/documents?per_page=${PER}&page=1`);
       let all: Doc[] = first.data ?? [];
       const pages: number = first.pages ?? 1;
       if (pages > 1) {
         const rest = await Promise.all(
           Array.from({ length: pages - 1 }, (_, i) =>
-            fetch(`/api/documents?per_page=${PER}&page=${i + 2}`, { headers: h }).then(r => r.json())
+            fetchApi<{ data: Doc[] }>(`/api/documents?per_page=${PER}&page=${i + 2}`)
           )
         );
         for (const d of rest) all = all.concat(d.data ?? []);
@@ -118,15 +116,14 @@ export function useReprocess() {
     selectedDocs.forEach(id => lsSet(`reparse:doc:${id}`, "1"));
   }, [selectedDocs]);
   useEffect(() => {
-    fetch("/api/documents/reprocess-all/status", { headers: h })
-      .then(r => r.json()).then(updateBatch).catch(() => {});
+    fetchApi<Batch>("/api/documents/reprocess-all/status")
+      .then(updateBatch).catch(() => {});
   }, []);
   useEffect(() => { if (batch.status === "completed") fetchDocs(); }, [batch.status]);
   useEffect(() => {
     if (batch.status === "running") {
       pollRef.current = setInterval(async () => {
-        const r = await fetch("/api/documents/reprocess-all/status", { headers: h });
-        const d: Batch = await r.json();
+        const d = await fetchApi<Batch>("/api/documents/reprocess-all/status");
         updateBatch(d);
         if (d.status !== "running") clearInterval(pollRef.current!);
       }, 3000);
@@ -159,8 +156,7 @@ export function useReprocess() {
     try {
       const body: Record<string, unknown> = { pipelines: [...sel] };
       if (someSelected) body.doc_ids = [...selectedDocs];
-      const r = await fetch("/api/documents/reprocess-all", { method: "POST", headers: h, body: JSON.stringify(body) });
-      const d = await r.json();
+      const d = await fetchApi<{ status: string; total: number }>("/api/documents/reprocess-all", { method: "POST", body: JSON.stringify(body) });
       if (d.status === "started" || d.status === "running") {
         updateBatch(prev => ({ ...prev, total: d.total }));
         lsKeys().filter(k => k.startsWith("reparse:doc:")).forEach(lsRemove);
@@ -173,7 +169,7 @@ export function useReprocess() {
   }
 
   async function cancel() {
-    await fetch("/api/documents/reprocess-all/cancel", { method: "POST", headers: h });
+    await fetchApi("/api/documents/reprocess-all/cancel", { method: "POST" });
     updateBatch(b => ({ ...b, status: "cancelling" }));
   }
 
@@ -182,21 +178,20 @@ export function useReprocess() {
     try {
       const body: Record<string, unknown> = { pipelines: [...sel] };
       if (someSelected) body.doc_ids = [...selectedDocs];
-      const r = await fetch("/api/documents/reprocess-all/resume", { method: "POST", headers: h, body: JSON.stringify(body) });
-      const d = await r.json();
+      const d = await fetchApi<{ status: string }>("/api/documents/reprocess-all/resume", { method: "POST", body: JSON.stringify(body) });
       if (d.status === "resumed") updateBatch(b => ({ ...b, status: "running" }));
     } finally { setBusy(false); }
   }
 
   async function clearBatch() {
-    await fetch("/api/documents/reprocess-all/clear", { method: "POST", headers: h });
+    await fetchApi("/api/documents/reprocess-all/clear", { method: "POST" });
     updateBatch({ status: "idle" });
   }
 
   return {
     sel, setSel, docs, docsLoading, docSearch, setDocSearch,
     selectedDocs, filteredDocs, allSelected, someSelected,
-    batch, busy, confirm, setConfirm, token, h,
+    batch, busy, confirm, setConfirm,
     toggleDoc, toggleAll, clearSelection: () => setSelectedDocs(new Set()),
     start, cancel, resume, clearBatch,
   };

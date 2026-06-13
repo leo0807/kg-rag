@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi, ApiError } from "@/lib/api";
 
-type QuotaItem = { used: number; limit: number; pct: number };
+type QuotaItem = { used: number | null; limit: number | null; pct: number | null };
 type UsageSummary = {
   period: string;
   queries: QuotaItem;
@@ -12,7 +13,8 @@ type UsageSummary = {
   features: Record<string, boolean>;
 };
 
-function Bar({ pct }: { pct: number }) {
+function Bar({ pct }: { pct: number | null }) {
+  if (pct == null) return null;
   const color = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-blue-500";
   return (
     <div className="w-full bg-gray-700 rounded-full h-1.5">
@@ -27,8 +29,10 @@ function QuotaRow({ label, item }: { label: string; item: QuotaItem }) {
       <div className="flex justify-between text-sm">
         <span className="text-gray-400">{label}</span>
         <span className="text-white tabular-nums">
-          {item.used.toLocaleString()} / {item.limit.toLocaleString()}
-          <span className="text-gray-500 ml-2">({item.pct}%)</span>
+          {(item.used ?? 0).toLocaleString()} / {item.limit == null ? "无限制" : item.limit.toLocaleString()}
+          {item.limit != null && (
+            <span className="text-gray-500 ml-2">({item.pct ?? 0}%)</span>
+          )}
         </span>
       </div>
       <Bar pct={item.pct} />
@@ -39,20 +43,22 @@ function QuotaRow({ label, item }: { label: string; item: QuotaItem }) {
 export default function QuotaPanel() {
   const [data, setData] = useState<UsageSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/quota", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    })
-      .then((r) => r.json())
+    fetchApi<UsageSummary>("/api/admin/quota")
       .then(setData)
+      .catch((e) => {
+        setError(e instanceof ApiError && e.status === 403 ? "无权限查看配额" : "配额数据加载失败");
+      })
       .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="text-gray-400 text-sm">加载配额数据…</div>;
-  if (!data) return <div className="text-red-400 text-sm">无法获取配额信息</div>;
+  if (error)   return <div className="text-red-400 text-sm">{error}</div>;
+  if (!data)   return <div className="text-red-400 text-sm">无法获取配额信息</div>;
 
-  const featureEntries = Object.entries(data.features);
+  const featureEntries = Object.entries(data?.features ?? {});
 
   return (
     <div className="space-y-6">

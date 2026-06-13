@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle2, FolderSync, Loader2, Pause, Play, StopCircle, Trash2,
 } from "lucide-react";
+import { fetchApi } from "@/lib/api";
 import { useReprocess } from "./useReprocess";
 import { ReprocessOptions } from "./ReprocessOptions";
 import { ReprocessProgress } from "./ReprocessProgress";
@@ -24,17 +25,16 @@ function fmtRemaining(secs: number): string {
   return rem > 0 ? `约 ${hrs} 小时 ${rem} 分钟` : `约 ${hrs} 小时`;
 }
 
-function BackfillCard({ isAdmin, token }: { isAdmin: boolean; token: string }) {
+function BackfillCard({ isAdmin }: { isAdmin: boolean }) {
   const [bf, setBf] = useState<BackfillStatus | null>(null);
   const [bfBusy, setBfBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState(false);
   const bfPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const h = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
   async function fetchBf() {
     try {
-      const r = await fetch("/api/documents/backfill/status", { headers: h });
-      if (r.ok) setBf(await r.json());
+      const data = await fetchApi<BackfillStatus>("/api/documents/backfill/status");
+      setBf(data);
     } catch {}
   }
 
@@ -50,8 +50,8 @@ function BackfillCard({ isAdmin, token }: { isAdmin: boolean; token: string }) {
   async function bfStart() {
     setBfBusy(true);
     try {
-      const r = await fetch("/api/documents/backfill/start", { method: "POST", headers: h });
-      if (r.ok) setBf(await r.json() as BackfillStatus);
+      const data = await fetchApi<BackfillStatus>("/api/documents/backfill/start", { method: "POST" });
+      setBf(data);
     } finally { setBfBusy(false); fetchBf(); }
   }
 
@@ -60,14 +60,14 @@ function BackfillCard({ isAdmin, token }: { isAdmin: boolean; token: string }) {
     setBfBusy(true);
     try {
       const ep = bf.status === "running" ? "/api/documents/backfill/pause" : "/api/documents/backfill/resume";
-      await fetch(ep, { method: "POST", headers: h });
+      await fetchApi(ep, { method: "POST" });
     } finally { setBfBusy(false); fetchBf(); }
   }
 
   async function bfStop() {
     setStopConfirm(false); setBfBusy(true);
     try {
-      await fetch("/api/documents/backfill/stop", { method: "POST", headers: h });
+      await fetchApi("/api/documents/backfill/stop", { method: "POST" });
       setBf(s => s ? { ...s, status: "idle" } : s);
     } finally { setBfBusy(false); fetchBf(); }
   }
@@ -168,7 +168,7 @@ export function LibraryReprocessTab({ isAdmin = true }: { isAdmin?: boolean }) {
   const {
     sel, setSel, docs, docsLoading, docSearch, setDocSearch,
     selectedDocs, filteredDocs, allSelected, someSelected,
-    batch, busy, confirm, setConfirm, token,
+    batch, busy, confirm, setConfirm,
     toggleDoc, toggleAll, clearSelection, start, cancel, resume, clearBatch,
   } = useReprocess();
 
@@ -181,7 +181,7 @@ export function LibraryReprocessTab({ isAdmin = true }: { isAdmin?: boolean }) {
       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
         选择待处理文档（不选则处理全部），勾选管道后点击"批量处理"启动任务。运行期间可在此查看进度和错误详情。
       </div>
-      <BackfillCard isAdmin={isAdmin} token={token} />
+      <BackfillCard isAdmin={isAdmin} />
       <ReprocessOptions
         sel={sel} setSel={setSel} docs={docs} docsLoading={docsLoading}
         docSearch={docSearch} setDocSearch={setDocSearch}

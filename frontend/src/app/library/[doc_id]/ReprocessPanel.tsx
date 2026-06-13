@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { fetchApi } from "@/lib/api";
 import {
     RefreshCw, CheckCircle, XCircle, Loader2, ChevronDown, ChevronUp,
     Square, RotateCcw, Clock, ShieldCheck, AlertTriangle, Info, CheckCircle2,
@@ -45,17 +46,14 @@ export function ReprocessPanel({ docId, onComplete }: Props) {
     const [valReport,  setValReport]  = useState<ValidationReport | null>(null);
     const [showVal,    setShowVal]    = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") ?? "" : "";
-    const h = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-
     function loadSnapshots() {
-        fetch(`/api/documents/${docId}/snapshots`, { headers: h })
-            .then(r => r.json()).then(d => setSnapshots(d.snapshots ?? [])).catch(() => {});
+        fetchApi<{ snapshots: Snapshot[] }>(`/api/documents/${docId}/snapshots`)
+            .then(d => setSnapshots(d.snapshots ?? [])).catch(() => {});
     }
 
     useEffect(() => {
-        fetch(`/api/documents/${docId}/reprocess/status`, { headers: h })
-            .then(r => r.json()).then(setTask).catch(() => {});
+        fetchApi<TaskStatus>(`/api/documents/${docId}/reprocess/status`)
+            .then(setTask).catch(() => {});
         loadSnapshots();
     }, [docId]);
 
@@ -63,8 +61,7 @@ export function ReprocessPanel({ docId, onComplete }: Props) {
         const active = task.status === "running" || task.status === "pending";
         if (active) {
             pollRef.current = setInterval(async () => {
-                const r = await fetch(`/api/documents/${docId}/reprocess/status`, { headers: h });
-                const d: TaskStatus = await r.json();
+                const d = await fetchApi<TaskStatus>(`/api/documents/${docId}/reprocess/status`);
                 setTask(d);
                 if (d.status !== "running" && d.status !== "pending") {
                     clearInterval(pollRef.current!);
@@ -80,24 +77,23 @@ export function ReprocessPanel({ docId, onComplete }: Props) {
     async function start() {
         setConfirm(false); setBusy(true);
         try {
-            const r = await fetch(`/api/documents/${docId}/reprocess`, {
-                method: "POST", headers: h, body: JSON.stringify({ pipelines: [...selected] }),
+            const d = await fetchApi<TaskStatus>(`/api/documents/${docId}/reprocess`, {
+                method: "POST", body: JSON.stringify({ pipelines: [...selected] }),
             });
-            const d = await r.json();
             setTask({ status: d.status === "started" ? "pending" : d.status, pipelines: [...selected] });
             setShowRes(false);
         } finally { setBusy(false); }
     }
 
     async function cancel() {
-        await fetch(`/api/documents/${docId}/reprocess/cancel`, { method: "POST", headers: h });
+        await fetchApi(`/api/documents/${docId}/reprocess/cancel`, { method: "POST" });
     }
 
     async function runValidation() {
         setValidating(true); setValReport(null); setShowVal(true);
         try {
-            const r = await fetch(`/api/documents/${docId}/validate`, { headers: h });
-            if (r.ok) setValReport(await r.json());
+            const data = await fetchApi<ValidationReport>(`/api/documents/${docId}/validate`);
+            setValReport(data);
         } finally { setValidating(false); }
     }
 
@@ -105,8 +101,8 @@ export function ReprocessPanel({ docId, onComplete }: Props) {
         if (!rollTarget) return;
         setRolling(true);
         try {
-            const r = await fetch(`/api/documents/${docId}/rollback/${rollTarget}`, { method: "POST", headers: h });
-            if (r.ok) { setRollTarget(""); loadSnapshots(); }
+            await fetchApi(`/api/documents/${docId}/rollback/${rollTarget}`, { method: "POST" });
+            setRollTarget(""); loadSnapshots();
         } finally { setRolling(false); }
     }
 
