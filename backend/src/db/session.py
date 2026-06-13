@@ -46,53 +46,14 @@ async def get_db():
 
 async def init_tables():
     engine = get_engine()
-    from .base import Base
-    from . import models, gen_models, ux_models, eval_models, rbac_models, lifecycle_models, version_models  # ensure all models registered
-    from ..services.audit import audit_models as _audit_models  # noqa: F401
-    from ..routers import feedback    # 确保 QueryFeedback 被注册
     from sqlalchemy import text
+    from .schema_sync import sync_schema, ensure_default_tenant
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # 增量迁移：若表已存在则补全缺失列
-        for col, ctype in [
-            ("detail",             "TEXT NOT NULL DEFAULT ''"),
-            ("retrieval_score",    "INTEGER"),
-            ("completeness_score", "INTEGER"),
-            ("clarity_score",      "INTEGER"),
-            ("graph_score",        "INTEGER"),
-            ("comment_text",       "TEXT"),
-            ("sources_count",      "INTEGER"),
-            ("accuracy",           "VARCHAR(20)"),
-            ("error_types",        "TEXT"),
-            ("correct_answer",     "TEXT"),
-            ("chunk_ids_json",     "TEXT"),
-            ("feedback_status",    "VARCHAR(20) NOT NULL DEFAULT 'pending'"),
-        ]:
-            try:
-                await conn.execute(text(
-                    f"ALTER TABLE query_feedback ADD COLUMN IF NOT EXISTS {col} {ctype}"
-                ))
-            except Exception:
-                pass
-        # F079: 对话分支
-        for col, ctype in [
-            ("branch_from_conversation_id", "VARCHAR(36)"),
-            ("branch_from_message_index",   "INTEGER"),
-        ]:
-            try:
-                await conn.execute(text(
-                    f"ALTER TABLE conversations ADD COLUMN IF NOT EXISTS {col} {ctype}"
-                ))
-            except Exception:
-                pass
-        try:
-            await conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_conversations_branch_from_conversation_id "
-                "ON conversations (branch_from_conversation_id)"
-            ))
-        except Exception:
-            pass
-        # F079: FK constraint (ON DELETE SET NULL — branch survives source deletion)
+        changes = await sync_schema(conn)
+        if changes:
+            logger.info("init_tables: added %d column(s): %s", len(changes), changes)
+
+        # conversations branch FK (idempotent)
         try:
             await conn.execute(text("""
                 DO $$
@@ -111,17 +72,5 @@ async def init_tables():
             """))
         except Exception:
             pass
-        # B2/B3: ux_models 已通过 create_all 创建，无需手动增量迁移
-        # B1: 会话管理增强列
-        for col, ctype in [
-            ("category_id", "VARCHAR(36)"),
-            ("is_pinned",   "BOOLEAN NOT NULL DEFAULT FALSE"),
-            ("is_archived", "BOOLEAN NOT NULL DEFAULT FALSE"),
-            ("tags",        "JSONB NOT NULL DEFAULT '[]'::jsonb"),
-        ]:
-            try:
-                await conn.execute(text(
-                    f"ALTER TABLE conversations ADD COLUMN IF NOT EXISTS {col} {ctype}"
-                ))
-            except Exception:
-                pass
+
+        await ensure_default_tenant(conn)

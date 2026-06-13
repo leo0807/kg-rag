@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from ...auth.deps import get_current_user
 from ...db.models import User
-from ...services.security.key_manager import key_manager
+from ...services.security.key_manager import get_key_manager
 
 router = APIRouter(prefix="/api/admin/security", tags=["admin-security"])
 
@@ -32,7 +32,7 @@ class RotateKeyRequest(BaseModel):
 
 @router.get("/keys")
 async def list_keys(user: User = Depends(_require_super_admin)) -> List[str]:
-    return await key_manager.list_keys()
+    return await get_key_manager().list_keys()
 
 
 @router.post("/keys/generate")
@@ -40,7 +40,7 @@ async def generate_key(
     body: GenerateKeyRequest,
     user: User = Depends(_require_super_admin),
 ) -> Dict[str, Any]:
-    await key_manager.generate_random_key(body.name, body.length)
+    await get_key_manager().generate_random_key(body.name, body.length)
     return {"name": body.name, "generated": True}
 
 
@@ -53,7 +53,7 @@ async def rotate_key(
     import base64
     import os
     new_value = body.new_value or base64.b64encode(os.urandom(32)).decode()
-    await key_manager.rotate_key(key_name, new_value, actor=str(user.id))
+    await get_key_manager().rotate_key(key_name, new_value, actor=str(user.id))
     return {"name": key_name, "rotated": True}
 
 
@@ -62,7 +62,7 @@ async def audit_log(
     key_name: str | None = None,
     user: User = Depends(_require_super_admin),
 ) -> List[Dict[str, Any]]:
-    return key_manager.audit_log(key_name)
+    return get_key_manager().audit_log(key_name)
 
 
 # ── I6.4: 等保合规检查 ────────────────────────────────────────────────────────

@@ -16,6 +16,15 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _default_key_path() -> Path:
+    """Resolve key store path: env var → project-local backend/keys/."""
+    env_path = os.environ.get("KEY_STORE_PATH")
+    if env_path:
+        return Path(env_path)
+    # Safe default: sits inside the repo, no root privileges needed
+    return Path(__file__).resolve().parents[3] / "keys" / "keystore.json"
+
+
 @dataclass
 class KeyEntry:
     name: str
@@ -38,24 +47,42 @@ class _KeyStore(ABC):
 
 
 class FileKeyStore(_KeyStore):
-    """Stores keys in an encrypted JSON file (suitable for single-node deployments)."""
+    """Stores keys in a JSON file.  Degrades gracefully when the directory
+    is not writable (read-only mode — keys survive in memory only)."""
 
-    def __init__(self, path: str = "/opt/kg-rag/keys/keystore.json") -> None:
-        self._path = Path(path)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self._path = path or _default_key_path()
         self._store: Dict[str, Any] = {}
+        self._writable = False
+
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._writable = True
+        except (PermissionError, OSError) as e:
+            logger.warning(
+                "密钥目录不可写 (%s)，KeyManager 降级为只读/内存模式。"
+                "可设置环境变量 KEY_STORE_PATH 指定可写路径。",
+                e,
+            )
+
         self._load()
 
     def _load(self) -> None:
         if self._path.exists():
             try:
                 self._store = json.loads(self._path.read_text())
-            except Exception:
+            except Exception as e:
+                logger.warning("密钥文件读取失败: %s", e)
                 self._store = {}
 
     def _save(self) -> None:
-        self._path.write_text(json.dumps(self._store, indent=2))
-        self._path.chmod(0o600)
+        if not self._writable:
+            return
+        try:
+            self._path.write_text(json.dumps(self._store, indent=2))
+            self._path.chmod(0o600)
+        except (PermissionError, OSError) as e:
+            logger.warning("密钥文件写入失败: %s", e)
 
     async def get(self, name: str) -> Optional[str]:
         entry = self._store.get(name)
@@ -195,4 +222,14 @@ class KeyManager:
         return value
 
 
-key_manager = KeyManager()
+# ── Lazy singleton ────────────────────────────────────────────────────────────
+
+_key_manager: Optional[KeyManager] = None
+
+
+def get_key_manager() -> KeyManager:
+    """Return the shared KeyManager instance, creating it on first call."""
+    global _key_manager
+    if _key_manager is None:
+        _key_manager = KeyManager()
+    return _key_manager
