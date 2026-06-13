@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type Dashboard = {
   tenants: { total: number; active: number; suspended: number; trial: number };
@@ -24,11 +25,9 @@ export default function PlatformDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/platform/dashboard", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    })
-      .then((r) => r.json())
+    fetchApi<Dashboard>("/api/platform/dashboard")
       .then(setData)
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { fetchApi } from "@/lib/api";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { FeedbackPanel } from "./FeedbackPanel";
 import DetailedFeedbackPanel from "./DetailedFeedbackPanel";
@@ -31,25 +32,23 @@ export function AssistantFeedbackSection({
   if (!question) return null;
 
   async function submitRating(r: number) {
-    const token = localStorage.getItem("token") ?? "";
-    const res = await fetch("/api/feedback", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        question,
-        answer:   content,
-        sources:  sources ?? [],
-        rating:   r,
-        strategy: strategy ?? "parallel",
-      }),
-    });
-    if (res.ok) {
-      const d = await res.json();
+    try {
+      const d = await fetchApi<{ id?: number }>("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          answer:   content,
+          sources:  sources ?? [],
+          rating:   r,
+          strategy: strategy ?? "parallel",
+        }),
+      });
       setRating(r);
       setFeedbackId(d.id ?? null);
       setMode("rated");
       setShowDetail(true);
-    }
+    } catch { /* ignore */ }
   }
 
   // 📝 标注模式：展开 FeedbackPanel

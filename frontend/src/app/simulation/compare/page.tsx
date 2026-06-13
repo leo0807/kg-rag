@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { fetchApi, ApiError } from "@/lib/api";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Legend } from "recharts";
 
 type ResultRow = { result_name: string; max_value?: number; min_value?: number; unit: string; pass_status: string };
@@ -9,7 +10,6 @@ type CaseInfo = {
   results: ResultRow[];
 };
 
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
 const COLORS = ["#3B82F6", "#F59E0B", "#10B981", "#8B5CF6"];
 
 export default function ComparePage() {
@@ -26,15 +26,13 @@ export default function ComparePage() {
     if (validIds.length < 2) { setError("至少输入 2 个案例 ID"); return; }
     setLoading(true); setError("");
     try {
-      const headers = { "Content-Type": "application/json", Authorization: AUTH() };
-      const r = await fetch("/api/simulation/compare", {
-        method: "POST", headers,
+      setCases(await fetchApi<CaseInfo[]>("/api/simulation/compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ case_ids: validIds }),
-      });
-      if (!r.ok) throw new Error(await r.text());
-      setCases(await r.json());
-    } catch (e: any) {
-      setError(e.message ?? "对比失败");
+      }));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "对比失败");
     } finally {
       setLoading(false);
     }

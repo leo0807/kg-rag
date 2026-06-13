@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from 'react';
+import { fetchApi } from '@/lib/api';
 import {
     addEdge, useNodesState, useEdgesState, useReactFlow, MarkerType,
 } from '@xyflow/react';
@@ -56,9 +57,9 @@ export function useBuilder() {
     const { fitView } = useReactFlow();
 
     useEffect(() => {
-        fetch('/api/graph/schema').then(r => r.json()).then(data => {
+        fetchApi<{ labels: string[]; relationship_types: string[] }>('/api/graph/schema').then(data => {
             setSchema({ labels: data.labels.filter((l: string) => !l.startsWith('_')), relationship_types: data.relationship_types });
-        });
+        }).catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -103,8 +104,7 @@ export function useBuilder() {
     const runQuery = async () => {
         setLoading(true); setError(null);
         try {
-            const res = await fetch('/api/graph/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cypher }) });
-            const data = await res.json();
+            const data = await fetchApi<{ error?: string; nodes?: unknown[]; edges?: unknown[] }>('/api/graph/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cypher }) });
             if (data.error) { setError(data.error); setResults(null); } else { setResults(data); }
         } catch (err: any) { setError(err.message || 'Network error'); }
         finally { setLoading(false); }

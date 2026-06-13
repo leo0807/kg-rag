@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type GapNode = { id: string; name: string; type: string; reason: string; severity: "low" | "medium" | "high" };
 type GapData = {
@@ -8,8 +9,6 @@ type GapData = {
   high_query_low_content: { query: string; count: number; doc_coverage: number }[];
 };
 
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
-
 const SEV_COLOR = { low: "text-blue-400", medium: "text-yellow-400", high: "text-red-400" };
 
 export function KnowledgeGaps() {
@@ -17,9 +16,9 @@ export function KnowledgeGaps() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/analytics/knowledge-gaps", { headers: { Authorization: AUTH() } })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setData(d); })
+    fetchApi<GapData>("/api/analytics/knowledge-gaps")
+      .then(setData)
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 

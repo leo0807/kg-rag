@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { fetchApi } from "@/lib/api";
+import { fetchApi, getApiBaseUrl, getAuthHeaders } from "@/lib/api";
 import { renderWordDiff } from "./diff";
 import { Search, FileDown } from "lucide-react";
 import { DocSelector, type Document } from "./DocSelector";
@@ -64,10 +64,9 @@ export default function ComparePage() {
         if (!leftId || !rightId) return;
         setExporting(true);
         try {
-            const token = localStorage.getItem("token") ?? "";
-            const res = await fetch("/api/compare/export-docx", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            const headers = await getAuthHeaders({ "Content-Type": "application/json" });
+            const res = await fetch(`${getApiBaseUrl()}/api/compare/export-docx`, {
+                method: "POST", headers,
                 body: JSON.stringify({ doc_id_a: leftId, doc_id_b: rightId }),
             });
             const blob = await res.blob();

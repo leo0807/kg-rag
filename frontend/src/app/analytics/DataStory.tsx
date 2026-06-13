@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type StorySection = {
   question: string;
@@ -15,8 +16,6 @@ type Story = {
   sections: StorySection[];
 };
 
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
-
 const TREND_ICON = { up: "↑", down: "↓", stable: "→" };
 const TREND_COLOR = { up: "text-green-400", down: "text-red-400", stable: "text-gray-400" };
 
@@ -25,11 +24,9 @@ export function DataStory({ period = "7d" }: { period?: string }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/analytics/story?period=${period}`, {
-      headers: { Authorization: AUTH() },
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setStory(d); })
+    fetchApi(`/api/analytics/story?period=${period}`)
+      .then(d => { if (d) setStory(d as Story); })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [period]);
 

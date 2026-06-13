@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 import { UsageInsightsTab }      from "./UsageInsightsTab";
 import { QualityInsightsTab }    from "./QualityInsightsTab";
 import { KnowledgeInsightsTab }  from "./KnowledgeInsightsTab";
@@ -10,8 +11,6 @@ type Tab = typeof TABS[number];
 
 const PERIODS = ["7d", "30d", "90d", "1y"] as const;
 type Period = typeof PERIODS[number];
-
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
 
 export default function AnalyticsPage() {
   const [tab, setTab]       = useState<Tab>("使用情况");
@@ -32,10 +31,7 @@ export default function AnalyticsPage() {
     if (data[t]) return;
     setLoading(true);
     try {
-      const r = await fetch(`/api/analytics/${ENDPOINTS[t]}?period=${period}`, {
-        headers: { Authorization: AUTH() },
-      });
-      const d = await r.json();
+      const d = await fetchApi(`/api/analytics/${ENDPOINTS[t]}?period=${period}`);
       setData(prev => ({ ...prev, [t]: d }));
     } finally {
       setLoading(false);
@@ -46,10 +42,7 @@ export default function AnalyticsPage() {
     setData({ "使用情况": null, "答案质量": null, "知识使用": null, "运营指标": null });
     setLoading(true);
     try {
-      const r = await fetch(`/api/analytics/${ENDPOINTS[tab]}?period=${period}`, {
-        headers: { Authorization: AUTH() },
-      });
-      const d = await r.json();
+      const d = await fetchApi(`/api/analytics/${ENDPOINTS[tab]}?period=${period}`);
       setData(prev => ({ ...prev, [tab]: d }));
     } finally {
       setLoading(false);

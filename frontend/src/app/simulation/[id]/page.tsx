@@ -17,7 +17,7 @@ type SimCase = {
   created_at: string; updated_at: string;
 };
 
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
+import { fetchApi } from "@/lib/api";
 const PASS_COLOR: Record<string, string> = {
   pass: "text-green-400", fail: "text-red-400", unknown: "text-gray-400"
 };
@@ -31,11 +31,10 @@ export default function SimulationDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    const headers = { Authorization: AUTH() };
-    fetch(`/api/simulation/cases/${id}`, { headers }).then(r => r.json()).then(setCas);
-    fetch(`/api/simulation/cases/${id}/results`, { headers }).then(r => r.json()).then(setResults);
-    fetch(`/api/simulation/cases/${id}/images`, { headers })
-      .then(r => r.json()).then(d => setImages(d.images ?? []));
+    fetchApi<SimCase>(`/api/simulation/cases/${id}`).then(setCas).catch(() => {});
+    fetchApi<SimResult[]>(`/api/simulation/cases/${id}/results`).then(setResults).catch(() => {});
+    fetchApi<{ images: string[] }>(`/api/simulation/cases/${id}/images`)
+      .then(d => setImages(d.images ?? [])).catch(() => {});
   }, [id]);
 
   if (!cas) return <div className="p-6 text-gray-400 animate-pulse">加载中…</div>;

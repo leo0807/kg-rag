@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type ApiKey = {
   id: string; name: string; key_prefix: string;
@@ -26,10 +27,8 @@ export default function DevelopersPage() {
   const [form, setForm]   = useState({ name: "", scopes: ["query:read"] as string[], rate_limit: 60 });
   const [saving, setSaving] = useState(false);
 
-  const token = () => `Bearer ${localStorage.getItem("token")}`;
   const load  = () =>
-    fetch("/api/admin/api-keys", { headers: { Authorization: token() } })
-      .then((r) => r.json()).then(setKeys);
+    fetchApi<ApiKey[]>("/api/admin/api-keys").then(setKeys);
 
   useEffect(() => { load(); }, []);
 
@@ -42,17 +41,20 @@ export default function DevelopersPage() {
   const create = async () => {
     if (!form.name) return;
     setSaving(true);
-    const res = await fetch("/api/admin/api-keys", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: token() },
-      body: JSON.stringify(form),
-    });
-    setSaving(false);
-    if (res.ok) { const k = await res.json(); setNewKey(k); load(); }
+    try {
+      const k = await fetchApi<ApiKey>("/api/admin/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      setNewKey(k); load();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const del = async (id: string) => {
-    await fetch(`/api/admin/api-keys/${id}`, { method: "DELETE", headers: { Authorization: token() } });
+    await fetchApi(`/api/admin/api-keys/${id}`, { method: "DELETE" });
     setKeys((k) => k.filter((x) => x.id !== id));
   };
 

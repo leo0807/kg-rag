@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getToken, type UserInfo } from "./types";
+import { fetchApi, ApiError } from "@/lib/api";
+import type { UserInfo } from "./types";
 
 interface Props {
   showMsg: (m: string) => void;
@@ -12,25 +13,19 @@ export function ProfileTab({ showMsg, showError }: Props) {
   const [profile, setProfile] = useState<UserInfo | null>(null);
 
   useEffect(() => {
-    fetch("/api/auth/profile", {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => data && setProfile(data));
+    fetchApi<UserInfo>("/api/auth/profile")
+      .then(setProfile)
+      .catch(() => {});
   }, []);
 
   async function save() {
     if (!profile) return;
-    const res = await fetch("/api/auth/profile", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getToken()}`,
-      },
-      body: JSON.stringify(profile),
-    });
-    if (res.ok) {
-      const data = await res.json();
+    try {
+      const data = await fetchApi<UserInfo>("/api/auth/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(profile),
+      });
       const stored = JSON.parse(localStorage.getItem("user") ?? "{}");
       const nextUser = { ...stored, ...data };
       localStorage.setItem("user", JSON.stringify(nextUser));
@@ -39,9 +34,8 @@ export function ProfileTab({ showMsg, showError }: Props) {
       );
       setProfile((prev) => (prev ? { ...prev, ...nextUser } : prev));
       showMsg("个人资料已保存");
-    } else {
-      const err = await res.json();
-      showError(err.detail || "保存失败");
+    } catch (e) {
+      showError(e instanceof ApiError ? e.message : "保存失败");
     }
   }
 

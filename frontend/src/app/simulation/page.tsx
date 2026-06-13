@@ -18,7 +18,7 @@ const CONF_COLOR: Record<string, string> = {
   "初步":   "bg-yellow-900 text-yellow-300",
 };
 
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
+import { fetchApi } from "@/lib/api";
 
 export default function SimulationPage() {
   const [cases, setCases]     = useState<SimCase[]>([]);
@@ -32,10 +32,7 @@ export default function SimulationPage() {
     if (domain) params.set("domain", domain);
     if (q)      params.set("q", q);
     try {
-      const r = await fetch(`/api/simulation/cases?${params}`, {
-        headers: { Authorization: AUTH() },
-      });
-      if (r.ok) setCases(await r.json());
+      setCases(await fetchApi<SimCase[]>(`/api/simulation/cases?${params}`));
     } finally {
       setLoading(false);
     }

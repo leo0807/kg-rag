@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getToken } from "./types";
+import { fetchApi, ApiError } from "@/lib/api";
 
 interface Props {
   showMsg: (m: string) => void;
@@ -20,23 +20,19 @@ export function PasswordTab({ showMsg, showError }: Props) {
       showError("两次密码不一致");
       return;
     }
-    const res = await fetch("/api/auth/password", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getToken()}`,
-      },
-      body: JSON.stringify({
-        old_password: pwForm.old_password,
-        new_password: pwForm.new_password,
-      }),
-    });
-    if (res.ok) {
+    try {
+      await fetchApi("/api/auth/password", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          old_password: pwForm.old_password,
+          new_password: pwForm.new_password,
+        }),
+      });
       showMsg("密码修改成功");
       setPwForm({ old_password: "", new_password: "", confirm: "" });
-    } else {
-      const err = await res.json();
-      showError(err.detail || "修改失败");
+    } catch (e) {
+      showError(e instanceof ApiError ? e.message : "修改失败");
     }
   }
 

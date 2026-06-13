@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { fetchApi } from "@/lib/api";
 
 export interface ImplicitEdge {
     doc_a: string;
@@ -54,8 +55,7 @@ export function useReferences() {
             const params = new URLSearchParams();
             if (docId) params.set("doc_id", docId);
             params.set("depth", String(d));
-            const res  = await fetch(`/api/graph/references?${params}`);
-            const data = await res.json();
+            const data = await fetchApi<{ nodes: RefNode[]; edges: RefEdge[]; stats: RefStats }>(`/api/graph/references?${params}`);
             setNodes(data.nodes ?? []);
             setEdges(data.edges ?? []);
             setStats(data.stats ?? null);
@@ -71,10 +71,9 @@ export function useReferences() {
     // 懒加载隐性关联
     useEffect(() => {
         if (!showImplicit || implicitEdges.length > 0) return;
-        const token = localStorage.getItem("token") ?? "";
-        fetch("/api/admin/associations", { headers: { Authorization: `Bearer ${token}` } })
-            .then(r => r.json())
-            .then(d => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        fetchApi<any>("/api/admin/associations")
+            .then((d: { associations?: Array<ImplicitEdge & { is_implicit: boolean }> }) => {
                 const implicit: ImplicitEdge[] = (d.associations ?? [])
                     .filter((a: { is_implicit: boolean }) => a.is_implicit)
                     .map((a: ImplicitEdge) => ({

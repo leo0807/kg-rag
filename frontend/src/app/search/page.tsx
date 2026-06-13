@@ -49,8 +49,7 @@ export default function SearchPage() {
     setShowSuggest(false);
     setLoading(true);
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&top_k=20`);
-      const data = await res.json();
+      const data = await fetchApi<{ results: SearchResult[]; total: number }>(`/api/search?q=${encodeURIComponent(q)}&top_k=20`);
       setResults(data.results);
       setTotal(data.total);
     } finally { setLoading(false); }
@@ -61,17 +60,13 @@ export default function SearchPage() {
     setEntityRels(null);
     setShowSuggest(false);
     try {
-      const token = localStorage.getItem("token") ?? "";
-      const res = await fetch(`/api/admin/cypher/execute`, {
+      const d = await fetchApi<{ rows?: Record<string, number>[] }>(`/api/admin/cypher/execute`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: `MATCH (e {name: $n})\nOPTIONAL MATCH (e)<-[]-(s:Section)<-[]-(d:Document)\nRETURN count(DISTINCT d) AS doc_count, count(DISTINCT s) AS section_count`, params: { n: name } }),
       });
-      if (res.ok) {
-        const d = await res.json();
-        const row = d.rows?.[0] ?? {};
-        setEntityRels({ doc_count: row.doc_count ?? 0, section_count: row.section_count ?? 0, tools: [], materials: [], related_entities: [] });
-      }
+      const row = d.rows?.[0] ?? {};
+      setEntityRels({ doc_count: row.doc_count ?? 0, section_count: row.section_count ?? 0, tools: [], materials: [], related_entities: [] });
     } catch { /* ignore */ }
   }
 

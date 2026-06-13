@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { fetchApi } from "@/lib/api";
 
 export interface FavoriteItem {
     id:         string;
@@ -28,13 +29,7 @@ export function useFavorites() {
 
     const fetchAll = useCallback(async () => {
         try {
-            const token = localStorage.getItem("token") ?? "";
-            if (!token) return;
-            const res  = await fetch("/api/favorites", {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (!res.ok) return;
-            const data: FavoriteItem[] = await res.json();
+            const data = await fetchApi<FavoriteItem[]>("/api/favorites");
             setFavorites(data);
         } catch { /* ignore */ }
         finally { setLoaded(true); }
@@ -42,7 +37,6 @@ export function useFavorites() {
 
     useEffect(() => { fetchAll(); }, [fetchAll]);
 
-    /** 判断某个 section / document / query 是否已收藏，返回收藏记录 id 或 null */
     function getFavoriteId(params: {
         section_id?:  string;
         doc_id?:      string;
@@ -59,14 +53,11 @@ export function useFavorites() {
 
     async function addFavorite(params: CreateParams): Promise<string | null> {
         try {
-            const token = localStorage.getItem("token") ?? "";
-            const res   = await fetch("/api/favorites", {
+            const data = await fetchApi<FavoriteItem>("/api/favorites", {
                 method:  "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                headers: { "Content-Type": "application/json" },
                 body:    JSON.stringify(params),
             });
-            if (!res.ok) return null;
-            const data: FavoriteItem = await res.json();
             setFavorites(prev => {
                 if (prev.some(f => f.id === data.id)) return prev;
                 return [data, ...prev];
@@ -77,12 +68,7 @@ export function useFavorites() {
 
     async function removeFavorite(favId: string): Promise<boolean> {
         try {
-            const token = localStorage.getItem("token") ?? "";
-            const res   = await fetch(`/api/favorites/${favId}`, {
-                method:  "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (!res.ok && res.status !== 204) return false;
+            await fetchApi(`/api/favorites/${favId}`, { method: "DELETE" });
             setFavorites(prev => prev.filter(f => f.id !== favId));
             return true;
         } catch { return false; }
@@ -90,14 +76,11 @@ export function useFavorites() {
 
     async function patchNote(favId: string, note: string | null): Promise<boolean> {
         try {
-            const token = localStorage.getItem("token") ?? "";
-            const res   = await fetch(`/api/favorites/${favId}`, {
+            const data = await fetchApi<FavoriteItem>(`/api/favorites/${favId}`, {
                 method:  "PATCH",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                headers: { "Content-Type": "application/json" },
                 body:    JSON.stringify({ note }),
             });
-            if (!res.ok) return false;
-            const data: FavoriteItem = await res.json();
             setFavorites(prev => prev.map(f => f.id === favId ? data : f));
             return true;
         } catch { return false; }

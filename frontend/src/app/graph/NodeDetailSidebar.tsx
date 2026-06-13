@@ -2,6 +2,7 @@
 
 import { Check, Pencil, X, X as XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 import { AnnotationPanel } from "./AnnotationPanel";
 import { type GraphNode, NODE_COLOR } from "./constants";
 import { ImageNodeDetail } from "./ImageNodeDetail";
@@ -57,13 +58,9 @@ export function NodeDetailSidebar({
     if (!editingKey) return;
     setSaving(true);
     try {
-      const token = localStorage.getItem("token") ?? "";
-      await fetch(`/api/graph/nodes/${encodeURIComponent(node.id)}`, {
+      await fetchApi(`/api/graph/nodes/${encodeURIComponent(node.id)}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ properties: { [editingKey]: editValue } }),
       });
       setEditingKey(null);

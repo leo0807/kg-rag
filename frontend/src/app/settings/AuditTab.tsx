@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 import type { AuditRow } from "./types";
-import { getToken } from "./types";
 
 export function AuditTab() {
   const [auditLogs, setAuditLogs] = useState<AuditRow[]>([]);
@@ -11,11 +11,7 @@ export function AuditTab() {
   const [auditPage, setAuditPage] = useState(1);
 
   const loadPage = useCallback(async (page: number) => {
-    const res = await fetch(`/api/users/audit-logs?page=${page}&per_page=15`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    });
-    if (!res.ok) return;
-    const data = await res.json();
+    const data = await fetchApi<{ data: AuditRow[]; total: number }>(`/api/users/audit-logs?page=${page}&per_page=15`);
     setAuditLogs(data.data ?? []);
     setAuditTotal(data.total ?? 0);
     setAuditPage(page);

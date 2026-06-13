@@ -1,13 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type Workflow = {
   id: string; name: string; description: string; doe_type: string;
   sample_count: number; status: string; total_runs: number;
   completed_runs: number; submit_target: string; created_at: string;
 };
-
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
 
 const STATUS_COLOR: Record<string, string> = {
   draft:              "bg-gray-800 text-gray-400",
@@ -37,8 +36,7 @@ export default function WorkflowsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await fetch("/api/simulation/workflows", { headers: { Authorization: AUTH() } });
-      if (r.ok) setWorkflows(await r.json());
+      setWorkflows(await fetchApi<Workflow[]>("/api/simulation/workflows"));
     } finally { setLoading(false); }
   };
 
@@ -47,19 +45,17 @@ export default function WorkflowsPage() {
   const create = async () => {
     setSaving(true);
     try {
-      const r = await fetch("/api/simulation/workflows", {
+      await fetchApi("/api/simulation/workflows", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: AUTH() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      if (r.ok) { setShowNew(false); setForm(INIT); load(); }
+      setShowNew(false); setForm(INIT); load();
     } finally { setSaving(false); }
   };
 
   const action = async (id: string, act: "submit" | "monitor" | "collect") => {
-    await fetch(`/api/simulation/workflows/${id}/${act}`, {
-      method: "POST", headers: { Authorization: AUTH() },
-    });
+    await fetchApi(`/api/simulation/workflows/${id}/${act}`, { method: "POST" }).catch(() => {});
     load();
   };
 

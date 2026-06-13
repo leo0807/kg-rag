@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { fetchApi } from "@/lib/api";
 
 type SimCase = {
   id: string; case_name: string; case_code?: string; domain: string;
@@ -8,7 +9,6 @@ type SimCase = {
   related_specs: string[]; inputs_summary: Record<string, unknown>;
 };
 
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
 const DOMAINS = ["", "structural", "thermal", "fluid", "coupled"];
 const DOMAIN_CN: Record<string, string> = { "": "全部", structural: "结构", thermal: "热", fluid: "流体", coupled: "耦合" };
 
@@ -40,12 +40,11 @@ export default function SimSearchPage() {
     if (tempMin && tempMax) body.temperature_range = [parseFloat(tempMin), parseFloat(tempMax)];
     if (presMin && presMax) body.pressure_range    = [parseFloat(presMin), parseFloat(presMax)];
     try {
-      const r = await fetch("/api/simulation/search", {
+      setResults(await fetchApi<SimCase[]>("/api/simulation/search", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: AUTH() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      });
-      if (r.ok) setResults(await r.json());
+      }));
     } finally {
       setLoading(false);
     }

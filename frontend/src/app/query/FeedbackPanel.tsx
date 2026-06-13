@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { fetchApi } from "@/lib/api";
 
 const ACCURACY_OPTIONS = [
   { value: "correct",  label: "正确" },
@@ -49,10 +50,9 @@ export function FeedbackPanel({ question, answer, sources, strategy, onClose, on
   async function handleSubmit() {
     setSubmitting(true);
     try {
-      const token = localStorage.getItem("token") ?? "";
-      const res = await fetch("/api/feedback", {
+      const d = await fetchApi<{ id?: number }>("/api/feedback", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question,
           answer,
@@ -64,12 +64,11 @@ export function FeedbackPanel({ question, answer, sources, strategy, onClose, on
           correct_answer: correctAnswer || undefined,
         }),
       });
-      if (res.ok) {
-        const d = await res.json();
-        setDone(true);
-        toast.success("反馈已提交，感谢您的标注");
-        onSubmitted?.(d.id);
-      }
+      setDone(true);
+      toast.success("反馈已提交，感谢您的标注");
+      if (d.id !== undefined) onSubmitted?.(d.id);
+    } catch {
+      /* ignore */
     } finally {
       setSubmitting(false);
     }

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { getToken, type UserRow } from "./types";
+import { fetchApi, ApiError } from "@/lib/api";
+import { type UserRow } from "./types";
 
 interface Props {
   showMsg: (m: string) => void;
@@ -26,10 +27,9 @@ export function AdminTab({ showMsg, showError }: Props) {
   const [resetting, setResetting] = useState(false);
 
   const loadUsers = useCallback(async () => {
-    const res = await fetch("/api/users", {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    });
-    if (res.ok) setUsers(await res.json());
+    try {
+      setUsers(await fetchApi<UserRow[]>("/api/users"));
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
@@ -37,25 +37,19 @@ export function AdminTab({ showMsg, showError }: Props) {
   }, [loadUsers]);
 
   async function toggleUser(userId: string) {
-    const res = await fetch(`/api/users/${userId}/toggle`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${getToken()}` },
-    });
-    if (res.ok) {
+    try {
+      await fetchApi(`/api/users/${userId}/toggle`, { method: "PUT" });
       loadUsers();
       showMsg("操作成功");
-    } else showError("操作失败");
+    } catch { showError("操作失败"); }
   }
 
   async function toggleAdmin(userId: string) {
-    const res = await fetch(`/api/users/${userId}/admin`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${getToken()}` },
-    });
-    if (res.ok) {
+    try {
+      await fetchApi(`/api/users/${userId}/admin`, { method: "PUT" });
       loadUsers();
       showMsg("操作成功");
-    } else showError("操作失败");
+    } catch { showError("操作失败"); }
   }
 
   async function createUser() {
@@ -65,30 +59,17 @@ export function AdminTab({ showMsg, showError }: Props) {
     }
     setCreating(true);
     try {
-      const res = await fetch("/api/users", {
+      const data = await fetchApi<{ username: string }>("/api/users", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(createForm),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        showError(data.detail || "创建失败");
-        return;
-      }
       showMsg(`用户 ${data.username} 创建成功`);
       setShowCreate(false);
-      setCreateForm({
-        username: "",
-        password: "",
-        full_name: "",
-        department: "",
-        email: "",
-        is_admin: false,
-      });
+      setCreateForm({ username: "", password: "", full_name: "", department: "", email: "", is_admin: false });
       await loadUsers();
+    } catch (e) {
+      showError(e instanceof ApiError ? e.message : "创建失败");
     } finally {
       setCreating(false);
     }
@@ -102,25 +83,16 @@ export function AdminTab({ showMsg, showError }: Props) {
     }
     setResetting(true);
     try {
-      const res = await fetch(
-        `/api/users/${resetTarget.user_id}/reset-password`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${getToken()}`,
-          },
-          body: JSON.stringify({ new_password: resetPw }),
-        },
-      );
-      if (res.ok) {
-        showMsg(`已重置 ${resetTarget.username} 的密码`);
-        setResetTarget(null);
-        setResetPw("");
-      } else {
-        const err = await res.json();
-        showError(err.detail || "重置失败");
-      }
+      await fetchApi(`/api/users/${resetTarget.user_id}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: resetPw }),
+      });
+      showMsg(`已重置 ${resetTarget.username} 的密码`);
+      setResetTarget(null);
+      setResetPw("");
+    } catch (e) {
+      showError(e instanceof ApiError ? e.message : "重置失败");
     } finally {
       setResetting(false);
     }

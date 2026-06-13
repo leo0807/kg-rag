@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 const DIMENSIONS = [
   { key: "retrieval_score",    label: "检索准确度" },
@@ -43,10 +44,9 @@ export default function DetailedFeedbackPanel({ feedbackId, onDone, onSkip }: Pr
   async function handleSubmit() {
     setSubmitting(true);
     try {
-      const token = localStorage.getItem("token") ?? "";
-      await fetch("/api/feedback/detailed", {
+      await fetchApi("/api/feedback/detailed", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query_id: feedbackId, ...scores, comment: comment || undefined }),
       });
       const filled = Object.values(scores).filter(v => v > 0);

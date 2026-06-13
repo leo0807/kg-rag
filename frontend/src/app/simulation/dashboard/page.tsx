@@ -2,8 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
+import { fetchApi } from "@/lib/api";
 
 type Stats = {
   total: number; pending_review: number; running_workflows: number;
@@ -28,9 +27,7 @@ export default function SimDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
 
   useEffect(() => {
-    fetch("/api/simulation/stats", { headers: { Authorization: AUTH() } })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => d && setStats(d));
+    fetchApi<Stats>("/api/simulation/stats").then(setStats).catch(() => {});
   }, []);
 
   const domainData = stats
