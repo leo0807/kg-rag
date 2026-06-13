@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi, ApiError } from "@/lib/api";
 
 type Bill = {
   id: string; billing_period: string; status: string;
@@ -19,24 +20,35 @@ export default function BillingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tab, setTab] = useState<"bills" | "plans">("bills");
   const [loading, setLoading] = useState(true);
-
-  const token = () => `Bearer ${localStorage.getItem("token")}`;
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/admin/billing/bills", { headers: { Authorization: token() } }).then((r) => r.json()),
-      fetch("/api/admin/billing/plans",  { headers: { Authorization: token() } }).then((r) => r.json()),
-    ]).then(([b, p]) => { setBills(b); setPlans(p); }).finally(() => setLoading(false));
+      fetchApi<Bill[]>("/api/admin/billing/bills"),
+      fetchApi<Plan[]>("/api/admin/billing/plans"),
+    ]).then(([b, p]) => {
+      setBills(Array.isArray(b) ? b : []);
+      setPlans(Array.isArray(p) ? p : []);
+    }).catch((e) => {
+      setError(e instanceof ApiError && e.status === 403 ? "无权限访问账单功能" : "加载失败，请刷新重试");
+    }).finally(() => setLoading(false));
   }, []);
 
   const payBill = async (id: string) => {
-    await fetch(`/api/admin/billing/bills/${id}/pay`, {
-      method: "POST", headers: { Authorization: token() },
-    });
-    setBills((prev) => prev.map((b) => (b.id === id ? { ...b, status: "paid" } : b)));
+    try {
+      await fetchApi(`/api/admin/billing/bills/${id}/pay`, { method: "POST" });
+      setBills((prev) => prev.map((b) => (b.id === id ? { ...b, status: "paid" } : b)));
+    } catch { /* ignore */ }
   };
 
   if (loading) return <div className="p-8 text-gray-400">加载中…</div>;
+  if (error) return (
+    <div className="p-8 flex flex-col items-center gap-3 text-center">
+      <div className="text-4xl">🔒</div>
+      <div className="text-red-400 font-medium">{error}</div>
+      <p className="text-gray-500 text-sm">请联系平台管理员获取相应权限</p>
+    </div>
+  );
 
   return (
     <div className="p-6 max-w-5xl">
@@ -102,6 +114,7 @@ export default function BillingPage() {
               </div>
             </div>
           ))}
+          {plans.length === 0 && <div className="col-span-3 text-center text-gray-500 py-12">暂无套餐数据</div>}
         </div>
       )}
     </div>

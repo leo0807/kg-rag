@@ -1,13 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { fetchApi, ApiError } from "@/lib/api";
 
 type Report = {
   id: string; name: string; description: string;
   is_public: boolean; created_at: string; owner_id: string;
 };
-
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
 
 export default function ReportsListPage() {
   const router = useRouter();
@@ -15,42 +14,41 @@ export default function ReportsListPage() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState<string | null>(null);
   const [msg, setMsg]         = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
-    const r = await fetch("/api/admin/reports", { headers: { Authorization: AUTH() } });
-    setReports(await r.json());
-    setLoading(false);
+    try {
+      const d = await fetchApi<Report[]>("/api/admin/reports");
+      setReports(Array.isArray(d) ? d : []);
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 403 ? "无权限访问报表功能" : "加载失败，请刷新重试");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
 
   const del = async (id: string) => {
     if (!confirm("确认删除？")) return;
-    await fetch(`/api/admin/reports/${id}`, { method: "DELETE", headers: { Authorization: AUTH() } });
+    try { await fetchApi(`/api/admin/reports/${id}`, { method: "DELETE" }); } catch { /* ignore */ }
     await load();
   };
 
   const run = async (id: string) => {
     setRunning(id);
     try {
-      const r = await fetch(`/api/admin/reports/${id}/run`, {
-        method: "POST", headers: { Authorization: AUTH() },
-      });
-      if (r.ok) {
-        const d = await r.json();
-        setMsg(`报表执行完成，快照 ID: ${d.snapshot_id}`);
-        setTimeout(() => setMsg(null), 5000);
-      }
-    } finally {
+      const d = await fetchApi<{ snapshot_id: string }>(`/api/admin/reports/${id}/run`, { method: "POST" });
+      setMsg(`报表执行完成，快照 ID: ${d.snapshot_id}`);
+      setTimeout(() => setMsg(null), 5000);
+    } catch { /* ignore */ } finally {
       setRunning(null);
     }
   };
 
   const exportReport = async (id: string, fmt: string) => {
-    await fetch(`/api/admin/reports/${id}/export?fmt=${fmt}`, {
-      method: "POST", headers: { Authorization: AUTH() },
-    });
+    try { await fetchApi(`/api/admin/reports/${id}/export?fmt=${fmt}`, { method: "POST" }); } catch { /* ignore */ }
     setMsg(`正在生成 ${fmt.toUpperCase()} 导出…`);
     setTimeout(() => setMsg(null), 4000);
   };
@@ -74,6 +72,12 @@ export default function ReportsListPage() {
 
       {loading ? (
         <div className="text-center text-gray-400 py-12">加载中…</div>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-3 text-center py-16">
+          <div className="text-4xl">🔒</div>
+          <div className="text-red-400 font-medium">{error}</div>
+          <p className="text-gray-500 text-sm">请联系平台管理员获取相应权限</p>
+        </div>
       ) : reports.length === 0 ? (
         <div className="text-center text-gray-500 py-16 border border-dashed border-gray-700 rounded-lg">
           <p className="text-sm mb-3">暂无报表</p>

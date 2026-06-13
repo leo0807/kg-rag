@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi, ApiError } from "@/lib/api";
 
 type Webhook = {
   id: string; name: string; url: string;
@@ -28,14 +29,18 @@ function WebhookForm({ onCreated }: { onCreated: () => void }) {
   const submit = async () => {
     if (!name || !url || !selected.length) { setMsg("请填写名称、URL 并选择至少一个事件"); return; }
     setSaving(true);
-    const res = await fetch("/api/admin/webhooks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
-      body: JSON.stringify({ name, url, events: selected }),
-    });
-    setSaving(false);
-    if (res.ok) { setMsg("创建成功"); onCreated(); setName(""); setUrl(""); setSelected([]); }
-    else { const d = await res.json(); setMsg(d.detail ?? "创建失败"); }
+    try {
+      await fetchApi("/api/admin/webhooks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, url, events: selected }),
+      });
+      setMsg("创建成功"); onCreated(); setName(""); setUrl(""); setSelected([]);
+    } catch (e) {
+      setMsg(e instanceof ApiError ? (e.message || "创建失败") : "创建失败");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -74,36 +79,46 @@ function WebhookForm({ onCreated }: { onCreated: () => void }) {
 export default function WebhooksPage() {
   const [hooks, setHooks] = useState<Webhook[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = () =>
-    fetch("/api/admin/webhooks", { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } })
-      .then((r) => r.json()).then(setHooks).finally(() => setLoading(false));
+    fetchApi<Webhook[]>("/api/admin/webhooks")
+      .then((d) => setHooks(Array.isArray(d) ? d : []))
+      .catch((e) => setError(e instanceof ApiError && e.status === 403 ? "无权限访问 Webhook 功能" : "加载失败，请刷新重试"))
+      .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
 
   const del = async (id: string) => {
-    await fetch(`/api/admin/webhooks/${id}`, {
-      method: "DELETE", headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    });
+    try { await fetchApi(`/api/admin/webhooks/${id}`, { method: "DELETE" }); } catch { /* ignore */ }
     setHooks((h) => h.filter((x) => x.id !== id));
   };
 
   const test = async (id: string) => {
-    const r = await fetch(`/api/admin/webhooks/${id}/test`, {
-      method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    });
-    const d = await r.json();
-    alert(d.message);
+    try {
+      const d = await fetchApi<{ message?: string }>(`/api/admin/webhooks/${id}/test`, { method: "POST" });
+      alert(d.message);
+    } catch { /* ignore */ }
   };
 
   const toggle = async (wh: Webhook) => {
-    await fetch(`/api/admin/webhooks/${wh.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
-      body: JSON.stringify({ is_active: !wh.is_active }),
-    });
+    try {
+      await fetchApi(`/api/admin/webhooks/${wh.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: !wh.is_active }),
+      });
+    } catch { /* ignore */ }
     setHooks((h) => h.map((x) => x.id === wh.id ? { ...x, is_active: !x.is_active } : x));
   };
+
+  if (error) return (
+    <div className="p-8 flex flex-col items-center gap-3 text-center">
+      <div className="text-4xl">🔒</div>
+      <div className="text-red-400 font-medium">{error}</div>
+      <p className="text-gray-500 text-sm">请联系平台管理员获取相应权限</p>
+    </div>
+  );
 
   return (
     <div className="p-6 max-w-5xl space-y-6">

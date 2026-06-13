@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi, ApiError } from "@/lib/api";
 
 type Integration = {
   id: string; name: string; type: string;
@@ -27,14 +28,18 @@ function IntegrationForm({ onCreated }: { onCreated: () => void }) {
     let auth_config: Record<string, unknown> = {};
     try { auth_config = JSON.parse(form.auth_config); } catch { setMsg("auth_config 不是合法 JSON"); return; }
     setSaving(true);
-    const res = await fetch("/api/admin/integrations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
-      body: JSON.stringify({ ...form, auth_config }),
-    });
-    setSaving(false);
-    if (res.ok) { setMsg("创建成功"); onCreated(); }
-    else { const d = await res.json(); setMsg(d.detail ?? "创建失败"); }
+    try {
+      await fetchApi("/api/admin/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, auth_config }),
+      });
+      setMsg("创建成功"); onCreated();
+    } catch (e) {
+      setMsg(e instanceof ApiError ? (e.message || "创建失败") : "创建失败");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -71,27 +76,38 @@ export default function IntegrationsPage() {
   const [items, setItems] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = () =>
-    fetch("/api/admin/integrations", { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } })
-      .then((r) => r.json()).then(setItems).finally(() => setLoading(false));
+    fetchApi<Integration[]>("/api/admin/integrations")
+      .then((d) => setItems(Array.isArray(d) ? d : []))
+      .catch((e) => setError(e instanceof ApiError && e.status === 403 ? "无权限访问集成功能" : "加载失败，请刷新重试"))
+      .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
 
   const test = async (id: string) => {
     setTesting(id);
-    const r = await fetch(`/api/admin/integrations/${id}/test`, {
-      method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    });
-    const d = await r.json();
-    setTesting(null);
-    setItems((prev) => prev.map((i) => i.id === id ? { ...i, status: d.status ?? i.status, last_error: d.error ?? null } : i));
+    try {
+      const d = await fetchApi<{ status?: string; error?: string }>(`/api/admin/integrations/${id}/test`, { method: "POST" });
+      setItems((prev) => prev.map((i) => i.id === id ? { ...i, status: d.status ?? i.status, last_error: d.error ?? null } : i));
+    } catch { /* ignore */ } finally {
+      setTesting(null);
+    }
   };
 
   const del = async (id: string) => {
-    await fetch(`/api/admin/integrations/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+    try { await fetchApi(`/api/admin/integrations/${id}`, { method: "DELETE" }); } catch { /* ignore */ }
     setItems((i) => i.filter((x) => x.id !== id));
   };
+
+  if (error) return (
+    <div className="p-8 flex flex-col items-center gap-3 text-center">
+      <div className="text-4xl">🔒</div>
+      <div className="text-red-400 font-medium">{error}</div>
+      <p className="text-gray-500 text-sm">请联系平台管理员获取相应权限</p>
+    </div>
+  );
 
   return (
     <div className="p-6 max-w-5xl space-y-6">

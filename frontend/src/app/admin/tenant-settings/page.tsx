@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type Settings = {
   brand: { logo_url?: string; primary_color?: string; app_title?: string };
@@ -15,11 +16,8 @@ export default function TenantSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const token = () => `Bearer ${localStorage.getItem("token")}`;
-
   useEffect(() => {
-    fetch("/api/admin/tenant-settings", { headers: { Authorization: token() } })
-      .then((r) => r.json()).then(setSettings);
+    fetchApi<Settings>("/api/admin/tenant-settings").then(setSettings).catch(() => {});
   }, []);
 
   const save = async () => {
@@ -27,12 +25,14 @@ export default function TenantSettingsPage() {
     setSaving(true);
     setMsg("");
     try {
-      const res = await fetch("/api/admin/tenant-settings", {
+      await fetchApi("/api/admin/tenant-settings", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: token() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ brand: settings.brand, notifications: settings.notifications, advanced: settings.advanced }),
       });
-      setMsg(res.ok ? "✓ 保存成功" : "保存失败");
+      setMsg("✓ 保存成功");
+    } catch {
+      setMsg("保存失败");
     } finally {
       setSaving(false);
     }
