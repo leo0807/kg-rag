@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
 import { BrainCircuit, Play, RefreshCw, AlertCircle, CheckCircle2, Clock, ChevronDown, ChevronUp, HelpCircle, X } from "lucide-react";
+import { fetchApi } from "@/lib/api";
 import { Stat, ParamInput } from "./components";
 import { StatusResponse, DEFAULT_PARAMS, formatTs } from "./types";
 
@@ -13,13 +14,9 @@ export default function GNNAdminPage() {
     const [pollTimer,   setPollTimer]   = useState<ReturnType<typeof setInterval> | null>(null);
     const [showHelp,    setShowHelp]    = useState(false);
 
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") ?? "" : "";
-    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-
     const fetchStatus = useCallback(async () => {
         try {
-            const r = await fetch(`/api/gnn/status`, { headers });
-            if (r.ok) setStatus(await r.json());
+            setStatus(await fetchApi<StatusResponse>(`/api/gnn/status`));
         } catch { /* ignore */ }
     }, []);
 
@@ -40,17 +37,15 @@ export default function GNNAdminPage() {
     async function handleTrain() {
         setTraining(true);
         try {
-            const r = await fetch(`/api/gnn/train`, {
+            await fetchApi(`/api/gnn/train`, {
                 method: "POST",
-                headers,
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(params),
             });
-            if (!r.ok) {
-                const e = await r.json().catch(() => ({ detail: r.statusText }));
-                alert(`启动失败: ${e.detail ?? r.statusText}`);
-            } else {
-                await fetchStatus();
-            }
+            await fetchStatus();
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            alert(`启动失败: ${msg}`);
         } finally {
             setTraining(false);
         }
@@ -59,11 +54,8 @@ export default function GNNAdminPage() {
     async function handleRefresh() {
         setLoading(true);
         try {
-            const r = await fetch(`/api/gnn/refresh`, { method: "POST", headers });
-            if (r.ok) {
-                const s = await r.json();
-                setStatus(prev => prev ? { ...prev, service: s } : null);
-            }
+            const s = await fetchApi(`/api/gnn/refresh`, { method: "POST" });
+            setStatus(prev => prev ? { ...prev, service: s } : null);
         } finally {
             setLoading(false);
         }

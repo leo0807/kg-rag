@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
-import { fetchApi } from "@/lib/api";
+import { fetchApi, getApiBaseUrl, getAuthHeaders } from "@/lib/api";
 
 type RunDetail = {
   id: string; run_name: string; status: string; accuracy: number | null;
@@ -69,9 +69,8 @@ export default function RunDetailPage() {
   const generateReport = async () => {
     setReporting(true);
     try {
-      const token = localStorage.getItem("token") ?? "";
-      const res = await fetch(`/api/admin/eval/runs/${id}/generate-report?fmt=txt`, {
-        method: "POST", headers: { Authorization: `Bearer ${token}` },
+      const res = await fetch(`${getApiBaseUrl()}/api/admin/eval/runs/${id}/generate-report?fmt=txt`, {
+        method: "POST", headers: await getAuthHeaders(),
       });
       if (res.ok) {
         const blob = await res.blob();

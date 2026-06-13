@@ -1,24 +1,25 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { fetchApi } from "@/lib/api";
 import { ReportBuilder } from "../ReportBuilder";
 import type { WidgetConfig } from "../PropertyPanel";
-
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
 
 export default function NewReportPage() {
   const router = useRouter();
 
   const save = async (name: string, widgets: WidgetConfig[]) => {
-    const r = await fetch("/api/admin/reports", {
-      method: "POST",
-      headers: { Authorization: AUTH(), "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        config: widgets,
-        layout: { columns: 2 },
-      }),
-    });
-    if (r.ok) router.push("/admin/reports");
+    try {
+      await fetchApi("/api/admin/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          config: widgets,
+          layout: { columns: 2 },
+        }),
+      });
+      router.push("/admin/reports");
+    } catch { /* keep original behavior — do not navigate on error */ }
   };
 
   return (

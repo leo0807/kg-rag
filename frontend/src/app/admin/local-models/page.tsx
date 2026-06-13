@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type Model = {
   id: string; name: string; version: string; backend: string;
@@ -14,8 +15,6 @@ type Routes = Record<string, { name: string; backend: string; api_url: string }>
 const INPUT = "w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500";
 const BADGE = (on: boolean) => `text-xs px-1.5 py-0.5 rounded ${on ? "bg-green-900 text-green-300" : "bg-gray-700 text-gray-400"}`;
 
-const AUTH = () => `Bearer ${localStorage.getItem("token")}`;
-
 export default function LocalModelsPage() {
   const [models, setModels]     = useState<Model[]>([]);
   const [routes, setRoutes]     = useState<Routes>({});
@@ -28,9 +27,9 @@ export default function LocalModelsPage() {
   const load = async () => {
     setLoading(true);
     const [m, r, s] = await Promise.all([
-      fetch("/api/admin/local-models", { headers: { Authorization: AUTH() } }).then(x => x.json()),
-      fetch("/api/admin/local-models/routes", { headers: { Authorization: AUTH() } }).then(x => x.json()),
-      fetch("/api/admin/local-models/status", { headers: { Authorization: AUTH() } }).then(x => x.json()),
+      fetchApi<Model[]>("/api/admin/local-models"),
+      fetchApi<Routes>("/api/admin/local-models/routes"),
+      fetchApi<Record<string, unknown>>("/api/admin/local-models/status"),
     ]);
     setModels(Array.isArray(m) ? m : []);
     setRoutes(r || {});
@@ -42,18 +41,16 @@ export default function LocalModelsPage() {
 
   const act = async (id: string, action: "load" | "unload" | "benchmark") => {
     setActing(`${id}:${action}`);
-    await fetch(`/api/admin/local-models/${id}/${action}`, {
-      method: "POST", headers: { Authorization: AUTH() },
-    });
+    await fetchApi(`/api/admin/local-models/${id}/${action}`, { method: "POST" });
     setActing(null);
     await load();
   };
 
   const create = async () => {
     setActing("create");
-    await fetch("/api/admin/local-models", {
+    await fetchApi("/api/admin/local-models", {
       method: "POST",
-      headers: { Authorization: AUTH(), "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...form,
         use_cases: form.use_cases.split(",").map(s => s.trim()),
@@ -65,7 +62,7 @@ export default function LocalModelsPage() {
   };
 
   const del = async (id: string) => {
-    await fetch(`/api/admin/local-models/${id}`, { method: "DELETE", headers: { Authorization: AUTH() } });
+    await fetchApi(`/api/admin/local-models/${id}`, { method: "DELETE" });
     await load();
   };
 

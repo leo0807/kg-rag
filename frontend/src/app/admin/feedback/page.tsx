@@ -58,10 +58,9 @@ export default function FeedbackAdminPage() {
   useEffect(() => { load(); }, [load]);
 
   async function handleResolve(feedbackId: number) {
-    const token = localStorage.getItem("token") ?? "";
-    await fetch("/api/admin/feedback/resolve", {
+    await fetchApi("/api/admin/feedback/resolve", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ feedback_id: feedbackId }),
     });
     setCases(prev => prev.map(c => c.id === feedbackId ? { ...c, status: "resolved" } : c));

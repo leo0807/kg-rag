@@ -1,12 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type AuditEntry = { ts: number; action: string; key: string; actor: string };
 type KeyInfo = { name: string };
-
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
-const api = (path: string, opts?: RequestInit) =>
-  fetch(`/api/admin/security${path}`, { headers: { Authorization: AUTH() }, ...opts });
 
 export default function CredentialsPage() {
   const [keys, setKeys]   = useState<KeyInfo[]>([]);
@@ -25,8 +22,8 @@ export default function CredentialsPage() {
     setLoading(true);
     try {
       const [k, a] = await Promise.all([
-        api("/keys").then(r => r.json()),
-        api("/keys/audit").then(r => r.json()),
+        fetchApi<string[]>("/api/admin/security/keys"),
+        fetchApi<AuditEntry[]>("/api/admin/security/keys/audit"),
       ]);
       setKeys(Array.isArray(k) ? k.map((n: string) => ({ name: n })) : []);
       setAudit(Array.isArray(a) ? a : []);
@@ -41,24 +38,24 @@ export default function CredentialsPage() {
     if (!genName.trim()) return;
     setActing("gen");
     try {
-      const r = await api("/keys/generate", {
+      await fetchApi("/api/admin/security/keys/generate", {
         method: "POST",
-        headers: { Authorization: AUTH(), "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: genName.trim() }),
       });
-      if (r.ok) { flash("ok", `密钥 ${genName} 已生成`); setGenName(""); await load(); }
-      else flash("err", "生成失败");
-    } finally { setActing(null); }
+      flash("ok", `密钥 ${genName} 已生成`); setGenName(""); await load();
+    } catch { flash("err", "生成失败"); }
+    finally { setActing(null); }
   };
 
   const rotate = async (name: string) => {
     if (!confirm(`确认轮换密钥 ${name}？当前值将被替换。`)) return;
     setActing(`rotate-${name}`);
     try {
-      const r = await api(`/keys/${encodeURIComponent(name)}/rotate`, { method: "POST" });
-      if (r.ok) { flash("ok", `${name} 已轮换`); await load(); }
-      else flash("err", "轮换失败");
-    } finally { setActing(null); }
+      await fetchApi(`/api/admin/security/keys/${encodeURIComponent(name)}/rotate`, { method: "POST" });
+      flash("ok", `${name} 已轮换`); await load();
+    } catch { flash("err", "轮换失败"); }
+    finally { setActing(null); }
   };
 
   const fmtTime = (ts: number) => new Date(ts * 1000).toLocaleString("zh-CN");

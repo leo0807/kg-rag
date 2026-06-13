@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { fetchApi } from "@/lib/api";
 import { 
   Play, 
   Pause, 
@@ -38,11 +39,7 @@ export default function BatchIngestPanel() {
 
   const fetchStatus = async () => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/admin/batch/status", {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const data = await res.json();
+      const data = await fetchApi<BatchStatus>("/api/admin/batch/status");
       setStatus(data);
     } catch (err) {
       console.error("Failed to fetch batch status:", err);
@@ -62,19 +59,10 @@ export default function BatchIngestPanel() {
   const handleAction = async (action: string, body?: any) => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/batch/${action}`, {
+      await fetchApi(`/api/admin/batch/${action}`, {
         method: "POST",
-        headers: { 
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: body ? JSON.stringify(body) : undefined
+        body: body ? JSON.stringify(body) : undefined,
       });
-      if (!res.ok) {
-        const error = await res.json();
-        alert(error.detail || "操作失败");
-      }
       fetchStatus();
     } catch (err) {
       alert("网络请求失败");

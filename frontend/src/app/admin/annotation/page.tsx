@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { fetchApi } from "@/lib/api";
+import { fetchApi, getApiBaseUrl, getAuthHeaders } from "@/lib/api";
 import { FileDown, Cpu } from "lucide-react";
 import { SectionReviewer, type PendingSection } from "./SectionReviewer";
 import { ImageReviewer, type PendingImage } from "./ImageReviewer";
@@ -39,8 +39,7 @@ export default function AnnotationPage() {
     }
 
     async function exportCsv() {
-        const token = localStorage.getItem("token") ?? "";
-        const res = await fetch("/api/annotation/export-csv", { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`${getApiBaseUrl()}/api/annotation/export-csv`, { headers: await getAuthHeaders() });
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a"); a.href = url; a.download = "pending_review.csv"; a.click();

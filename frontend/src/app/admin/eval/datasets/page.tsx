@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { fetchApi } from "@/lib/api";
+import { fetchApi, getApiBaseUrl, getAuthHeaders } from "@/lib/api";
 
 type Dataset = {
   id: string; name: string; version: string; description: string;
@@ -42,10 +42,9 @@ export default function EvalDatasetsPage() {
       form.append("file", file);
       form.append("name", name);
       form.append("version", version);
-      const token = localStorage.getItem("token") ?? "";
-      const res = await fetch("/api/admin/eval/datasets", {
+      const res = await fetch(`${getApiBaseUrl()}/api/admin/eval/datasets`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: await getAuthHeaders(),
         body: form,
       });
       if (!res.ok) { const d = await res.json(); setError(d.detail ?? "上传失败"); return; }
@@ -136,8 +135,7 @@ export default function EvalDatasetsPage() {
               </div>
               <div className="flex gap-2 shrink-0">
                 <button onClick={async () => {
-                  const token = localStorage.getItem("token") ?? "";
-                  const res = await fetch(`/api/admin/eval/datasets/${ds.id}/export`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+                  const res = await fetch(`${getApiBaseUrl()}/api/admin/eval/datasets/${ds.id}/export`, { method: "POST", headers: await getAuthHeaders() });
                   if (res.ok) { const b = await res.blob(); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `dataset_${ds.id}.csv`; a.click(); URL.revokeObjectURL(u); }
                 }} className="px-2.5 py-1 text-xs text-gray-400 border border-gray-700 rounded hover:bg-gray-800">
                   导出

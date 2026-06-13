@@ -66,10 +66,7 @@ export default function EntityAuditPage() {
 
     async function deleteEntity(name: string, type: string) {
         if (!confirm(`确认删除实体「${name}」？此操作不可撤销。`)) return;
-        const token = typeof window !== "undefined" ? localStorage.getItem("token") || "" : "";
-        await fetch(`/api/admin/entities/${encodeURIComponent(name)}?type=${type}`, {
-            method: "DELETE", headers: { Authorization: `Bearer ${token}` },
-        });
+        await fetchApi(`/api/admin/entities/${encodeURIComponent(name)}?type=${type}`, { method: "DELETE" });
         await load();
     }
 
@@ -78,11 +75,10 @@ export default function EntityAuditPage() {
         if (selected.size === 0) { alert("请选择要合并的实体"); return; }
         if (!confirm(`将选中的 ${selected.size} 个实体合并为「${mergeTarget}」？`)) return;
         setMerging(true);
-        const token = typeof window !== "undefined" ? localStorage.getItem("token") || "" : "";
         try {
-            await fetch("/api/admin/entities/merge", {
+            await fetchApi("/api/admin/entities/merge", {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ source_names: Array.from(selected), target_name: mergeTarget, type: typeFilter || "Tool" }),
             });
             setSelected(new Set()); setMergeTarget(""); await load();

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { fetchApi } from "@/lib/api";
 import { LineChart } from "@/components/charts/LineChart";
 import { BarChart }  from "@/components/charts/BarChart";
 import { PieChart }  from "@/components/charts/PieChart";
@@ -14,8 +15,6 @@ type QueryResult = {
   viz_config: { x: string; y: string[] };
   error?: string;
 };
-
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
 
 const EXAMPLES = [
   "上个月哪些用户活跃度最高？",
@@ -77,12 +76,11 @@ export default function AskDataPage() {
     setLoading(true);
     setResult(null);
     try {
-      const r = await fetch("/api/analytics/nl-query", {
+      const d = await fetchApi<QueryResult>("/api/analytics/nl-query", {
         method: "POST",
-        headers: { Authorization: AUTH(), "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: q }),
       });
-      const d = await r.json();
       setResult(d);
       setEditSQL(d.sql ?? "");
     } finally {
@@ -94,12 +92,11 @@ export default function AskDataPage() {
     if (!editSQL.trim()) return;
     setLoading(true);
     try {
-      const r = await fetch("/api/analytics/nl-query", {
+      setResult(await fetchApi<QueryResult>("/api/analytics/nl-query", {
         method: "POST",
-        headers: { Authorization: AUTH(), "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: "", raw_sql: editSQL }),
-      });
-      setResult(await r.json());
+      }));
     } finally {
       setLoading(false);
     }

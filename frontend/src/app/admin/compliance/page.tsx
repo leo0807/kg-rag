@@ -1,11 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type CheckItem = { name: string; passed: boolean; detail: string; severity: string };
 type Category  = { category: string; score: number; passed: number; total: number; items: CheckItem[] };
 type Report    = { overall_score: number; failed_critical: number; generated_at: number; categories: Category[] };
-
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
 
 const SEV_COLOR: Record<string, string> = {
   critical: "text-red-400",
@@ -29,10 +28,7 @@ export default function CompliancePage() {
   const run = async () => {
     setLoading(true);
     try {
-      const r = await fetch("/api/admin/security/compliance", {
-        headers: { Authorization: AUTH() },
-      });
-      setReport(await r.json());
+      setReport(await fetchApi("/api/admin/security/compliance"));
     } finally {
       setLoading(false);
     }

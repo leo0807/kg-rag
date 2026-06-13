@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchApi } from "@/lib/api";
 
 type Job = {
   id: string; name: string; base_model: string; method: string;
@@ -8,10 +9,6 @@ type Job = {
   started_at: string | null; completed_at: string | null;
 };
 type int = number;
-
-const AUTH = () => `Bearer ${typeof window !== "undefined" ? localStorage.getItem("token") : ""}`;
-const api = (path: string, opts?: RequestInit) =>
-  fetch(`/api/admin/finetune${path}`, { headers: { Authorization: AUTH(), "Content-Type": "application/json" }, ...opts });
 
 const STATUS_COLOR: Record<string, string> = {
   pending:   "bg-gray-700 text-gray-300",
@@ -36,7 +33,7 @@ export default function FinetunePage() {
 
   const load = async () => {
     setLoading(true);
-    const r = await api("").then(x => x.json());
+    const r = await fetchApi<Job[]>("/api/admin/finetune");
     setJobs(Array.isArray(r) ? r : []);
     setLoading(false);
   };
@@ -46,17 +43,21 @@ export default function FinetunePage() {
   const create = async () => {
     if (!form.name || !form.base_model) return;
     setActing("create");
-    const r = await api("", {
-      method: "POST",
-      body: JSON.stringify({
-        ...form,
-        epochs: parseInt(form.epochs),
-        batch_size: parseInt(form.batch_size),
-        learning_rate: parseFloat(form.learning_rate),
-      }),
-    });
-    if (r.ok) { setShowForm(false); setMsg("任务已创建"); }
-    else { const e = await r.json(); setMsg(`创建失败: ${e.detail}`); }
+    try {
+      await fetchApi("/api/admin/finetune", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          epochs: parseInt(form.epochs),
+          batch_size: parseInt(form.batch_size),
+          learning_rate: parseFloat(form.learning_rate),
+        }),
+      });
+      setShowForm(false); setMsg("任务已创建");
+    } catch (err) {
+      setMsg(`创建失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
     setActing(null);
     await load();
     setTimeout(() => setMsg(null), 4000);
@@ -64,16 +65,19 @@ export default function FinetunePage() {
 
   const cancel = async (id: string) => {
     setActing(`cancel-${id}`);
-    await api(`/${id}/cancel`, { method: "POST" });
+    await fetchApi(`/api/admin/finetune/${id}/cancel`, { method: "POST" });
     setActing(null); await load();
   };
 
   const deploy = async (id: string) => {
     if (!confirm("确认部署此模型？将合并 LoRA 权重并注册为本地模型。")) return;
     setActing(`deploy-${id}`);
-    const r = await api(`/${id}/deploy`, { method: "POST" });
-    if (r.ok) setMsg("模型已部署");
-    else { const e = await r.json(); setMsg(`部署失败: ${e.detail}`); }
+    try {
+      await fetchApi(`/api/admin/finetune/${id}/deploy`, { method: "POST" });
+      setMsg("模型已部署");
+    } catch (err) {
+      setMsg(`部署失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
     setActing(null);
     setTimeout(() => setMsg(null), 5000);
   };
