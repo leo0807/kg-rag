@@ -47,7 +47,7 @@ async def get_current_user(
 async def get_admin_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if not current_user.is_admin:
+    if not (current_user.is_admin or current_user.is_platform_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="需要管理员权限",

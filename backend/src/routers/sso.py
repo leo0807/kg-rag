@@ -102,7 +102,7 @@ async def sso_callback(
         await db.commit()
         await db.refresh(user)
 
-    access_token = create_access_token(user.id, user.is_admin)
+    access_token = create_access_token(user.id, user.is_admin, tenant_id=user.tenant_id)
     return JSONResponse({
         "access_token": access_token,
         "token_type": "bearer",

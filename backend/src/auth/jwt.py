@@ -5,13 +5,15 @@ from ..core.config import settings
 ALGORITHM = "HS256"
 
 
-def create_access_token(user_id: str, is_admin: bool) -> str:
+def create_access_token(user_id: str, is_admin: bool, tenant_id: str | None = None) -> str:
     expire = datetime.utcnow() + timedelta(hours=settings.JWT_EXPIRE_HOURS)
-    payload = {
+    payload: dict = {
         "sub":      user_id,
         "is_admin": is_admin,
         "exp":      expire,
     }
+    if tenant_id:
+        payload["tenant_id"] = tenant_id
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=ALGORITHM)
 
 

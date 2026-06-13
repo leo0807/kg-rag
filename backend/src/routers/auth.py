@@ -110,7 +110,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     db.add(log)
     await db.commit()
 
-    token = create_access_token(user.id, user.is_admin)
+    token = create_access_token(user.id, user.is_admin, tenant_id=user.tenant_id)
     logger.info("用户注册成功 username=%s is_admin=%s", user.username, user.is_admin)
 
     return TokenResponse(
@@ -157,7 +157,7 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     db.add(log)
     await db.commit()
 
-    token = create_access_token(user.id, user.is_admin)
+    token = create_access_token(user.id, user.is_admin, tenant_id=user.tenant_id)
     return TokenResponse(
         access_token = token,
         user_id      = user.id,
@@ -249,7 +249,7 @@ async def refresh_token(
     user: User         = Depends(get_current_user),
 ):
     """刷新 token，返回新 token"""
-    new_token = create_access_token(user.id, user.is_admin)
+    new_token = create_access_token(user.id, user.is_admin, tenant_id=user.tenant_id)
 
     log = AuditLog(
         user_id  = user.id,
