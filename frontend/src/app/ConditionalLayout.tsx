@@ -7,6 +7,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import ShortcutsModal from "@/components/ShortcutsModal";
 import { useGlobalKeyboard } from "@/hooks/useKeyboard";
 import { LogOut, Menu, X } from "lucide-react";
+import HelpDrawer from "@/components/HelpDrawer";
 
 const NO_SIDEBAR_PATHS = ["/login"];
 
@@ -126,6 +127,9 @@ export default function ConditionalLayout({
                     </ErrorBoundary>
                 </main>
             </div>
+
+            {/* 帮助抽屉（fixed 定位，挂载在布局根层，覆盖所有页面内容） */}
+            <HelpDrawer />
         </div>
     );
 }
