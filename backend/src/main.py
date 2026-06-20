@@ -239,6 +239,16 @@ async def activity_presence_middleware(request: Request, call_next):
 
 app.add_middleware(ShutdownGateMiddleware)
 
+# Prometheus metrics — optional: service starts fine if library not installed
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        excluded_handlers=["/metrics", "/api/health"],
+    ).instrument(app).expose(app, include_in_schema=False)
+except ImportError:
+    logger.warning("prometheus-fastapi-instrumentator 未安装，/metrics 不可用")
 
 _START_TIME = __import__("time").time()
 
