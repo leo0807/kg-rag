@@ -23,6 +23,38 @@ from .core.storage import ensure_buckets
 
 logger = logging.getLogger(__name__)
 
+
+def _setup_otel() -> None:
+    """初始化 OpenTelemetry TracerProvider。
+
+    通过 OTEL_EXPORTER_OTLP_ENDPOINT 环境变量启用，未设置则 no-op（零开销）。
+    示例（Jaeger / Grafana Tempo）：
+      OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+    """
+    import os as _os
+    endpoint = _os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").rstrip("/")
+    if not endpoint:
+        return
+    from opentelemetry import trace
+    from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+    resource = Resource.create({
+        SERVICE_NAME: "kg-rag-backend",
+        SERVICE_VERSION: settings.APP_VERSION,
+    })
+    provider = TracerProvider(resource=resource)
+    provider.add_span_processor(
+        BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{endpoint}/v1/traces"))
+    )
+    trace.set_tracer_provider(provider)
+    logger.info("OpenTelemetry TracerProvider 已初始化，导出至 %s", endpoint)
+
+
+_setup_otel()
+
 # apscheduler 为可选依赖——未安装时跳过定时任务，服务仍可正常启动
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler

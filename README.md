@@ -398,7 +398,7 @@ python -m pytest tests/ -v
 ### 可观测性与监控
 
 - [x] **请求关联 ID（Correlation ID）**：中间件为每个请求生成 UUID 并写入日志上下文，贯穿 Neo4j / PostgreSQL / LLM 全链路，便于生产问题追踪
-- [ ] **OpenTelemetry 分布式追踪**：集成 `opentelemetry-sdk`，自动 instrument FastAPI / SQLAlchemy / httpx，导出至 Jaeger 或 Grafana Tempo
+- [x] **OpenTelemetry 分布式追踪**：`startup.py` 初始化 `TracerProvider`，通过 `OTEL_EXPORTER_OTLP_ENDPOINT` 环境变量接入 Jaeger / Grafana Tempo，未设置时 no-op（零开销）
 - [ ] **Prometheus 指标暴露**：集成 `starlette-prometheus`，暴露 `/metrics` 端点，包含 QPS、延迟分位数、缓存命中率、LLM token 消耗等指标
 - [ ] **Grafana 仪表盘**：基于 Prometheus 指标搭建运营大盘（查询成功率、检索延迟 P50/P99、向量库 QPS、LLM 费用趋势）
 - [x] **告警规则**：配置告警规则，在服务宕机、错误率 > 5%、P99 延迟 > 5s 时触发告警（钉钉 / 企业微信 webhook），`alert_rules.py` + `alert_sender.py` 每 5 分钟定期评估
