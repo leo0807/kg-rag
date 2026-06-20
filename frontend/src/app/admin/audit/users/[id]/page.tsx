@@ -52,7 +52,7 @@ export default function UserActivityPage() {
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <StatCard label="总操作数" value={data.total_actions} />
-            {Object.entries(data.action_breakdown).map(([k, v]) => (
+            {Object.entries(data.action_breakdown ?? {}).map(([k, v]) => (
               <StatCard key={k} label={k} value={v} color={ACTION_COLOR[k]} />
             ))}
           </div>

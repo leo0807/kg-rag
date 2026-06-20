@@ -218,14 +218,14 @@ export default function MetricsPage() {
                 </tr>
               </thead>
               <tbody>
-                {volume.daily.map(r => (
+                {(volume.daily ?? []).map(r => (
                   <tr key={r.day} className="border-b border-gray-800/50 hover:bg-gray-800/30">
                     <td className="px-4 py-2 text-gray-400">{r.day?.slice(0, 10)}</td>
                     <td className="px-4 py-2 text-right text-gray-300">{r.queries}</td>
-                    <td className="px-4 py-2 text-right text-gray-400">${r.cost_usd.toFixed(4)}</td>
+                    <td className="px-4 py-2 text-right text-gray-400">${(r.cost_usd ?? 0).toFixed(4)}</td>
                   </tr>
                 ))}
-                {!volume.daily.length && (
+                {!(volume.daily ?? []).length && (
                   <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-600">暂无数据</td></tr>
                 )}
               </tbody>

@@ -96,9 +96,9 @@ export function UserUsageTable() {
               <tr key={u.user_id} className="border-t border-gray-800 hover:bg-gray-800/40">
                 <td className="py-2 pr-4 font-medium text-white">{u.username}</td>
                 <td className="py-2 pr-4 text-xs text-gray-500">{u.department || "—"}</td>
-                <td className="py-2 pr-4">{(period === "today" ? u.today_requests : u.week_requests).toLocaleString()}</td>
+                <td className="py-2 pr-4">{((period === "today" ? u.today_requests : u.week_requests) ?? 0).toLocaleString()}</td>
                 <td className="py-2 pr-4">{fmtK(period === "today" ? u.today_tokens : u.week_tokens)}</td>
-                <td className="py-2 pr-4">${(period === "today" ? u.today_cost_usd : u.week_cost_usd).toFixed(3)}</td>
+                <td className="py-2 pr-4">${((period === "today" ? u.today_cost_usd : u.week_cost_usd) ?? 0).toFixed(3)}</td>
                 <td className="py-2 text-right text-xs text-gray-500">{u.last_active ?? "—"}</td>
               </tr>
             ))}

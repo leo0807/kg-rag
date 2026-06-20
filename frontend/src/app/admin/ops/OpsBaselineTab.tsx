@@ -104,7 +104,7 @@ export function OpsBaselineTab({ pollRef, onAfterRun }: Props) {
                   <>
                     <span>命中率 {pct(task.summary.hit_rate)}</span>
                     <span>平均召回 {pct(task.summary.avg_recall)}</span>
-                    <span>MRR {task.summary.mrr.toFixed(3)}</span>
+                    <span>MRR {(task.summary.mrr ?? 0).toFixed(3)}</span>
                   </>
                 )}
               </div>

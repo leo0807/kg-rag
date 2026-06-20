@@ -205,9 +205,9 @@ export function AbTestTab({
                   </td>
                   <td className="px-4 py-3 font-medium text-gray-200">{row.strategy}</td>
                   <td className="px-4 py-3 text-gray-300">{pct(row.hit_rate)}</td>
-                  <td className="px-4 py-3 text-gray-300">{row.avg_recall.toFixed(4)}</td>
-                  <td className="px-4 py-3 text-gray-300">{row.mrr.toFixed(4)}</td>
-                  <td className="px-4 py-3 text-gray-300 font-medium">{row.avg_ndcg.toFixed(4)}</td>
+                  <td className="px-4 py-3 text-gray-300">{(row.avg_recall ?? 0).toFixed(4)}</td>
+                  <td className="px-4 py-3 text-gray-300">{(row.mrr ?? 0).toFixed(4)}</td>
+                  <td className="px-4 py-3 text-gray-300 font-medium">{(row.avg_ndcg ?? 0).toFixed(4)}</td>
                   <td className="px-4 py-3 text-gray-400">{row.matched} / {row.total}</td>
                 </tr>
               ))}

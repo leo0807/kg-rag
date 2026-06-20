@@ -73,7 +73,7 @@ export default function DataQualityPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {data.issues.map((issue) => (
+              {(data.issues ?? []).map((issue) => (
                 <div key={issue.type} className={`flex items-center justify-between p-4 rounded-lg border ${SEV_STYLE[issue.severity]}`}>
                   <div>
                     <p className="text-sm font-medium">{issue.message}</p>

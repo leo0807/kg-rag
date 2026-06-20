@@ -180,7 +180,7 @@ export default function RunDetailPage() {
             <>
               <p className="text-sm text-gray-400">共 {errors.total_errors} 道错题</p>
               <div className="space-y-2">
-                {Object.entries(errors.by_reason).sort((a, b) => b[1] - a[1]).map(([reason, cnt]) => (
+                {Object.entries(errors.by_reason ?? {}).sort((a, b) => b[1] - a[1]).map(([reason, cnt]) => (
                   <div key={reason} className="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded px-4 py-2.5">
                     <span className="flex-1 text-sm text-gray-300">{reason}</span>
                     <span className="text-sm font-semibold text-white">{cnt}</span>

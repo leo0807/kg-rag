@@ -368,9 +368,9 @@ export default function UsagePage() {
                 {data!.model_distribution.map((m) => (
                   <tr key={m.model} className="border-t border-gray-800">
                     <td className="py-2.5 pr-6 font-mono text-xs text-gray-400">{m.model}</td>
-                    <td className="py-2.5 pr-6">{m.requests.toLocaleString()}</td>
+                    <td className="py-2.5 pr-6">{(m.requests ?? 0).toLocaleString()}</td>
                     <td className="py-2.5 pr-6">{fmtTokens(m.tokens)}</td>
-                    <td className="py-2.5">${m.cost_usd.toFixed(4)}</td>
+                    <td className="py-2.5">${(m.cost_usd ?? 0).toFixed(4)}</td>
                   </tr>
                 ))}
               </tbody>

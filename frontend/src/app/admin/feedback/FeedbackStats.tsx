@@ -39,7 +39,7 @@ export function FeedbackStats({ data, loading }: Props) {
     ? Math.round(((data.accuracy_dist["correct"] ?? 0) / data.total) * 100)
     : 0;
 
-  const topErrors = Object.entries(data.error_type_dist)
+  const topErrors = Object.entries(data.error_type_dist ?? {})
     .sort(([, a], [, b]) => b - a)
     .slice(0, 5);
 

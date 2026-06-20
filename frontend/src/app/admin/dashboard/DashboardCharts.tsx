@@ -48,7 +48,7 @@ export function DashboardCharts({ data }: { data: DashboardData }) {
             <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 space-y-3">
                 <div className="text-sm font-medium text-gray-300">服务状态</div>
                 <div className="space-y-2">
-                    {Object.entries(data.services).map(([key, svc]) => (
+                    {Object.entries(data.services ?? {}).map(([key, svc]) => (
                         <div key={key} className="flex items-center gap-2">
                             <span className={`w-2 h-2 rounded-full shrink-0 ${svc.is_ok ? "bg-emerald-400" : "bg-rose-500"}`} />
                             <span className="text-sm text-gray-300 flex-1">{SERVICE_LABELS[key] ?? key}</span>

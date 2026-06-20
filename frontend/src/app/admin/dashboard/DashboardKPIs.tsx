@@ -55,8 +55,8 @@ export function DashboardKPIs({ data }: { data: DashboardData }) {
                 <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 flex items-center justify-center">
                     <HealthRing score={data.health_score} />
                 </div>
-                <KPICard label="图谱节点" value={data.graph.node_count.toLocaleString()} sub={`${data.graph.rel_count.toLocaleString()} 条关系`} />
-                <KPICard label="7日查询次数" value={data.llm.queries_7d.toLocaleString()} sub={`均延迟 ${data.llm.avg_latency_ms}ms`} warn={data.llm.avg_latency_ms > 5000} />
+                <KPICard label="图谱节点" value={(data.graph.node_count ?? 0).toLocaleString()} sub={`${(data.graph.rel_count ?? 0).toLocaleString()} 条关系`} />
+                <KPICard label="7日查询次数" value={(data.llm.queries_7d ?? 0).toLocaleString()} sub={`均延迟 ${data.llm.avg_latency_ms}ms`} warn={data.llm.avg_latency_ms > 5000} />
                 <KPICard label="冲突待处理" value={String(data.conflict_pending)} sub="点击前往仲裁" warn={data.conflict_pending > 0} />
             </div>
 

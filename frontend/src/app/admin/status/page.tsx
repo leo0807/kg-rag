@@ -253,7 +253,7 @@ export default function SystemStatusPage() {
                   <div className="mt-1 text-xs opacity-80">综合评分 {overview.pressure.score} / 100</div>
                 </div>
                 <div className="space-y-3">
-                  {overview.pressure.factors.map((factor) => (
+                  {(overview.pressure.factors ?? []).map((factor) => (
                     <div key={factor} className="rounded-xl bg-gray-950/70 px-3 py-2 text-sm text-gray-300">
                       {factor}
                     </div>
