@@ -379,7 +379,7 @@ python -m pytest tests/ -v
 - [ ] **Elasticsearch 安全模式**：当前 `xpack.security.enabled=false`，生产需启用 xpack 鉴权与 TLS
 - [x] **文件上传防护**：`services/security/upload_validator.py` 实现文件大小上限 + MIME 类型白名单 + magic bytes 校验（`validate_upload()` L31-76）
 - [x] **请求体大小限制**：FastAPI 全局配置 `max_request_body_size`，防止超大 JSON 攻击
-- [ ] **依赖漏洞扫描**：集成 `pip-audit`（Python）+ `npm audit`（前端）定期扫描已知 CVE
+- [x] **依赖漏洞扫描**：`security-scan.yml` 已集成 `pip-audit`（Python 依赖）+ `npm audit`（前端依赖）定期扫描已知 CVE
 
 ---
 
@@ -389,7 +389,7 @@ python -m pytest tests/ -v
 - [x] **前端测试流水线**：GitHub Actions `ci.yml` 运行 `tsc --noEmit` + `npm run lint` + `npm run build`，失败时阻断合并
 - [x] **Docker 镜像自动构建**：`deploy.yml` 在 `v*.*.*` tag 推送时自动构建并推送至 GHCR，支持 `workflow_dispatch` 手动触发
 - [x] **安全扫描 — Trivy + Bandit**：`security-scan.yml` 已集成 Trivy 镜像漏洞扫描（CRITICAL/HIGH 级别阻断）+ Bandit Python 静态分析，main/develop 分支 PR 及每周一凌晨定时执行
-- [ ] **安全扫描 — git-secrets**：CI 中需增加 `git-secrets` 步骤，防止密钥（API Key、私钥等）误入库
+- [x] **安全扫描 — 密钥泄露检测**：`security-scan.yml` 已集成 `gitleaks`（全历史 commit 扫描，功能覆盖 git-secrets），防止密钥（API Key、私钥等）误入库
 - [ ] **语义化版本与 Changelog**：集成 `semantic-release`，根据 commit message 自动生成版本号和 CHANGELOG.md
 - [x] **预提交钩子**：`.pre-commit-config.yaml`，统一 ruff + black（Python）及 biome（TypeScript）格式
 

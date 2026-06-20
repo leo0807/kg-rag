@@ -69,6 +69,28 @@ jobs:
           name: npm-audit
           path: frontend/npm-audit.json
 
+  pip-audit:
+    name: Python Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - name: pip-audit
+        run: |
+          pip-audit \
+            --requirement backend/requirements.txt \
+            --format json \
+            --output pip-audit.json \
+            --skip-editable \
+            || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit
+          path: pip-audit.json
+
   gitleaks:
     name: Secret Leak Detection
     runs-on: ubuntu-latest
