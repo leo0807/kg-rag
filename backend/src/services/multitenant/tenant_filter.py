@@ -18,7 +18,7 @@ class TenantQueryMixin:
     """继承此 mixin 的模型可使用 query_for_tenant 快速过滤。"""
 
     @classmethod
-    def query_for_tenant(cls, session: AsyncSession, tenant_id: str):
+    def query_for_tenant(cls, session: AsyncSession, tenant_id: str) -> Any:
         return session.execute(
             select(cls).where(cls.tenant_id == tenant_id)  # type: ignore[attr-defined]
         )
