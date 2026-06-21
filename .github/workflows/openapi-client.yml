@@ -1,0 +1,58 @@
+name: OpenAPI Client
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "backend/src/routers/**"
+      - "backend/src/main.py"
+  workflow_dispatch:
+
+jobs:
+  export-and-validate:
+    name: Export & Validate OpenAPI Spec
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Export OpenAPI spec
+        run: |
+          python3 scripts/export_openapi.py ../docs/openapi.json
+        env:
+          APP_ENV: development
+          DEBUG: "true"
+          NEO4J_URI: bolt://localhost:7687
+          JWT_SECRET: ci-only-not-production-secret-change-me
+
+      - name: Validate spec (openapi-spec-validator)
+        run: |
+          pip install openapi-spec-validator
+          python3 -c "
+          from openapi_spec_validator import validate
+          import json
+          with open('../docs/openapi.json') as f:
+              validate(json.load(f))
+          print('OpenAPI spec is valid')
+          "
+
+      - name: Upload spec artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-spec
+          path: docs/openapi.json
+          retention-days: 30

@@ -66,6 +66,67 @@
 
 ---
 
+## 2026-06-21 无人值守批量任务执行记录
+
+### 批量任务 1 — 后端测试（commits e5bc627）
+
+| 文件 | 测试数 | 状态 |
+|------|--------|------|
+| `backend/tests/test_jwt.py` | 16 | ✅ 全通过（本地 conda） |
+| `backend/tests/test_password.py` | 12 | ⚠️ conda 环境跳过（缺 passlib），Docker 全量通过 |
+| `backend/tests/test_quota_checker.py` | 22 | ⚠️ conda 环境跳过（缺 pytest-asyncio），Docker 全量通过 |
+| `backend/tests/test_tenant_filter.py` | 17 | ✅ 全通过（本地 conda） |
+
+修复：`test_password.py` 加 `pytest.importorskip("passlib")` 避免 ImportError
+
+### 批量任务 2 — 前端测试（commits a4557a1, dfe04e2）
+
+| 文件 | 测试数 | 状态 |
+|------|--------|------|
+| `frontend/src/test/quotaPanel.test.tsx` | 7 | ✅ 全通过 |
+| `frontend/src/test/billingPage.test.tsx` | 9 | ✅ 全通过 |
+| `frontend/src/test/helpDrawer.test.tsx` | 8 | ✅ 全通过 |
+
+总计：24 passed；biome lint 清零（`as any` → `as unknown as Ctor`）
+
+### 批量任务 3 — 覆盖率配置（commit 854905c）
+
+- `frontend/vitest.config.ts`：增加 `coverage.provider=v8`
+- `frontend/package.json`：增加 `test:coverage` 脚本
+- `@vitest/coverage-v8` pnpm 安装并锁入 pnpm-lock.yaml
+- 当前语句覆盖率 1.84%（仅测试了 3 个组件）
+
+### 批量任务 4 — 类型标注（commit 6d567c3）
+
+- `TenantQueryMixin.query_for_tenant` 补充 `-> Any` 返回类型
+
+### 批量任务 5 — lint 清理（同 commit dfe04e2）
+
+- biome format + organizeImports 应用于 3 个新测试文件
+- `noExplicitAny` 通过 `as unknown as ApiErrorCtor` 替换解决
+
+### 批量任务 6 — 文档（commit 112f031）
+
+| 文件 | 说明 |
+|------|------|
+| `scripts/README.md` | 全部脚本按类别索引（部署/备份/安全/ML） |
+| `docs/runbook.md` | 巡检/故障处理/备份恢复/告警矩阵 |
+| `docs/deployment.md` | 开发/生产/HA/离线部署步骤 |
+
+### 批量任务 7 — API 文档 + OpenAPI CI + 灾难恢复 + semantic-release
+
+| 文件 | 说明 |
+|------|------|
+| `docs/api.md` | API 端点参考、认证、错误码、多租户说明 |
+| `backend/scripts/export_openapi.py` | 无服务器导出 OpenAPI JSON |
+| `.github/workflows/openapi-client.yml` | CI 自动导出+校验 OpenAPI spec |
+| `docs/disaster-recovery.md` | RTO/RPO 目标、恢复流程、演练计划 |
+| `.releaserc.json` | semantic-release 配置 |
+| `scripts/bump_version.py` | 版本号同步脚本（被 semantic-release 调用） |
+| `.github/workflows/release.yml` | 自动发布 CI |
+
+---
+
 ## 硬性停止线
 
 已在 C2 完成后停止。以下任务等待人工回来确认后再执行：
