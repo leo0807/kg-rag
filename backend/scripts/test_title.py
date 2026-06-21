@@ -12,7 +12,7 @@ from pathlib import Path
 # 加入 backend/ 到 sys.path，使相对导入可以工作
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.services.parser import extract_meta, extract_title_from_first_page
+from src.services.parsing.parser_meta import extract_meta, extract_title_from_first_page
 
 def main():
     pdf_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parents[1] / "uploads"

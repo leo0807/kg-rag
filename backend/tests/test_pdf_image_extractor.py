@@ -61,7 +61,7 @@ class TestOfficePdfFallback:
 def test_extract_images_from_document_prefers_docx_path(monkeypatch):
     sentinel = object()
     monkeypatch.setattr(
-        "src.services.images.pdf_image_extractor._extract_images_from_docx",
+        "src.services.images.pdf_image_extractor.extract_images_from_docx",
         lambda source_path, doc_id, sections=None: [sentinel],
     )
 

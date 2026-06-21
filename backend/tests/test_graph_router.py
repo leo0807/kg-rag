@@ -1,10 +1,10 @@
 import asyncio
 
-from src.routers.graph_api.graph import (
+from src.services.graph.graph_helpers import (
     _append_missing_owner_docs,
     _filter_zero_degree_document_nodes,
-    get_graph,
 )
+from src.routers.graph_api.graph import get_graph
 
 
 def test_append_missing_owner_docs_adds_missing_document_nodes():
@@ -75,6 +75,7 @@ class _FakeSession:
                 "path": "",
                 "minio_path": "minio://img_1",
                 "is_drawing": True,
+                "page_num": 1,
             }]
         if "CALL {" in cypher and "HAS_ANNOTATION" in cypher:
             return [{

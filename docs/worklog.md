@@ -127,6 +127,73 @@
 
 ---
 
+## 2026-06-21 无人值守执行记录（测试补强 + 文档 + 工具）
+
+### 测试 import 路径修复（5 个文件）
+
+| 文件 | 修复内容 |
+|------|----------|
+| `tests/test_graph_router.py` | `_FakeSession` 图片行缺少 `page_num` 字段（B1）|
+| `tests/test_parser.py` | monkeypatch 路径 `parser.pdfplumber` → `parser_sections.pdfplumber`（B5）|
+| `tests/test_pdf_image_extractor.py` | `_extract_images_from_docx` → `extract_images_from_docx`（B6）|
+| `tests/test_table_extractor.py` | `table_extractor._CAMELOT_AVAILABLE` → `strategies.CAM_ELOT_AVAILABLE`（B7/B8）|
+
+B2（`core.py:145` 早返回只返回 2-元组）、B3/B4（`DO_RETRIEVAL` 属性不存在，3-调用模式与实现不符）→ **需人工**
+
+### 新增测试文件（+174 个测试，全部通过）
+
+| 文件 | 测试数 | 覆盖模块 |
+|------|--------|----------|
+| `tests/test_circuit_breaker.py` | 13 | `services/ai/circuit_breaker.py` |
+| `tests/test_answer_guard.py` | 14 | `services/answer_guard.py` |
+| `tests/test_context_utils.py` | 27 | `services/context_utils.py` |
+| `tests/test_table_normalization.py` | 23 | `services/tables/normalization.py` |
+| `tests/test_query_intents.py` | 11 | `services/query_intents.py` |
+| `tests/test_encryption.py` | 13 | `services/security/encryption.py` |
+| `tests/test_upload_validator.py` | 10 | `services/security/upload_validator.py` |
+| `tests/test_answer_humanizer.py` | 14 | `services/answer_humanizer.py` |
+| `tests/test_field_masking.py` | 20 | `services/auth/field_masking.py` |
+| `tests/test_mcq_utils.py` | 33 | `services/qa/mcq/utils.py` + `parser.py` |
+| `tests/test_query_expander.py` | 11 | `services/retrieval/query_expander.py` |
+| `tests/test_llm_errors_classify.py` | 23 | `services/ai/errors.py` |
+| `tests/test_conversation_exporter.py` | 19 | `services/conversation/exporter.py` |
+| `tests/test_neo4j_cache.py` | 21 | `services/retrieval/neo4j_cache.py`（新增） |
+
+### 新增源文件
+
+| 文件 | 描述 |
+|------|------|
+| `src/services/retrieval/neo4j_cache.py` | 可选 Neo4j LRU+TTL 查询缓存（默认禁用，`ENABLE_NEO4J_QUERY_CACHE=true` 启用） |
+
+### 新增脚本
+
+| 文件 | 描述 |
+|------|------|
+| `scripts/export_knowledge_graph.py` | Neo4j 知识图谱导出（JSON/CSV/Cypher 三种格式，支持按 doc_id 过滤）|
+| `scripts/rebuild_vector_index.py` | 离线全量/增量重建 Milvus 向量索引 |
+
+### 新增 README
+
+| 文件 | 模块 |
+|------|------|
+| `src/services/parsing/README.md` | 文档解析模块设计说明 |
+| `src/services/tables/README.md` | 表格提取模块设计说明 |
+| `src/services/ai/README.md` | AI 服务层（LLM + 熔断 + 重试）|
+| `src/services/evaluation/README.md` | 评测体系设计说明 |
+| `src/services/retrieval/README.md` | 检索层设计说明 |
+| `src/services/security/README.md` | 安全模块设计说明 |
+
+### 发现的 Bug（需人工）
+
+| Bug | 位置 | 描述 |
+|-----|------|------|
+| 早返回 2-元组 | `src/routers/query/core.py:145` | `return sections, {}` 只返回 2 值，而 `harness_service.py:277` 解包 3 值 → `ValueError` |
+| DO_RETRIEVAL 不存在 | `src/services/evaluation/objective_doc_eval_service.py` | 测试 B3/B4 期望的 3-调用 HyDE 模式在当前实现中不存在 |
+| max_rounds=0 全返回 | `src/services/context_utils.py:13` | `history[-0:]` = `history[0:]`，传 0 返回全量历史 |
+| hex 密钥路径不可达 | `src/services/security/encryption.py:_load_key` | Base64 先解码成功但 len≠32 时 return None，hex 分支永远不执行 |
+
+---
+
 ## 硬性停止线
 
 已在 C2 完成后停止。以下任务等待人工回来确认后再执行：

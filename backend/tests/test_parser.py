@@ -1,18 +1,22 @@
 import pytest
-from src.services.parsing.parser import (
-    extract_meta,
-    extract_sections,
+from src.services.parsing.parser_meta import (
     clean_content,
-    _filter_headings_with_toc_anchors,
+    extract_meta,
+)
+from src.services.parsing.parser_sections import extract_sections
+from src.services.parsing.parser_heading import (
     _is_likely_toc_page,
     _looks_like_toc,
     _match_section_heading,
     _normalize_heading_candidate,
-    _prune_out_of_order_reference_noise,
     _merge_wrapped_heading,
     _should_extend_heading_title,
-    _trim_front_matter_headings,
     is_likely_section_title,
+)
+from src.services.parsing.parser_toc import (
+    _filter_headings_with_toc_anchors,
+    _prune_out_of_order_reference_noise,
+    _trim_front_matter_headings,
 )
 from pathlib import Path
 
@@ -303,7 +307,7 @@ class TestTableAwareSectionParsing:
         table = _FakeTable((0, 190, 260, 220), [["熔点", "见表6-1"]])
         fake_pdf = _FakePdf([_FakePage(words, [table])])
 
-        monkeypatch.setattr("src.services.parsing.parser.pdfplumber.open", lambda _: fake_pdf)
+        monkeypatch.setattr("src.services.parsing.parser_sections.pdfplumber.open", lambda _: fake_pdf)
 
         sections = extract_sections(Path("dummy.pdf"), "CPS0205")
 

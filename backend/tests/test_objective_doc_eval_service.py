@@ -1,10 +1,14 @@
-from src.services.evaluation.objective_doc_eval_service import (
+from src.services.evaluation.objective_doc_eval_metrics import (
     _apply_choice_support_override,
-    _build_objective_retrieval_query,
-    _answer_objective_question,
     _infer_answer_from_option_content,
+)
+from src.services.evaluation.objective_doc_eval_parser import (
+    _build_objective_retrieval_query,
     _parse_question_block,
     _parse_objective_llm_response,
+)
+from src.services.evaluation.objective_doc_eval_runner import (
+    answer_objective_question as _answer_objective_question,
 )
 from unittest.mock import MagicMock, patch
 
