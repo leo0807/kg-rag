@@ -57,11 +57,9 @@ class TestTrimHistory:
         result = trim_conversation_history(history, max_rounds=3)  # type: ignore[arg-type]
         assert len(result) == 1
 
-    def test_max_rounds_zero_returns_full_history(self):
-        # NOTE: src bug — history[-0:] = history[0:] so max_rounds=0 returns everything.
-        # Test documents current behaviour; fix tracked in worklog as 需人工.
+    def test_max_rounds_zero_returns_empty(self):
         result = trim_conversation_history(HISTORY, max_rounds=0)
-        assert len(result) == len(HISTORY)
+        assert result == []
 
 
 class TestTrimForQuestion:
