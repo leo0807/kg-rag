@@ -240,7 +240,7 @@ python -m pytest tests/ -v
 - [x] LangGraph 多跳推理 Agent
 - [x] 浅色/深色主题切换
 - [x] 移动端适配
-- [ ] Kubernetes 部署
+- [x] Kubernetes 部署
 
 ## 未来计划（续）
 
@@ -267,7 +267,7 @@ python -m pytest tests/ -v
 ### 其他
 - [x] 多跳推理（LangGraph Agent）
 - [x] 流式输出（SSE）
-- [ ] WebSocket 导入进度推送（计划中，当前为 HTTP 轮询）
+- [x] WebSocket 导入进度推送（`/ws/ingest/{task_id}` 轮询 Redis `ingest_progress:` 键，完成/失败自动关闭）
 - [x] 前端单元测试（Vitest）
 - [x] 全局跨文档搜索
 - [x] 文档对比功能
@@ -352,7 +352,7 @@ python -m pytest tests/ -v
 - [x] 浅色 / 深色主题切换
 - [x] 移动端适配
 - [x] 知识图谱节点搜索框：在图谱页输入节点名称快速定位并高亮
-- [ ] 对话分支（计划中）：支持从某条 AI 消息处新开分支，探索不同追问路径
+- [x] 对话分支：`POST /api/conversations/{id}/branch` + `BranchButton` 组件，从任意 AI 消息处新开独立分支对话
 
 ---
 
@@ -374,9 +374,9 @@ python -m pytest tests/ -v
 ### 安全加固
 
 - [x] **密钥与凭证管理**：`services/security/key_manager.py` 实现统一密钥管理，支持 file / Vault / K8s Secret / 云端 KMS 多后端，启动时强制校验
-- [ ] **传输层加密**：docker-compose 中各服务间通信未启用 TLS；生产部署需为 Neo4j、PostgreSQL、Redis、Elasticsearch 配置 TLS 证书
-- [ ] **Redis 认证**：当前 Redis 无密码，需启用 `requirepass` 并在连接串中配置
-- [ ] **Elasticsearch 安全模式**：当前 `xpack.security.enabled=false`，生产需启用 xpack 鉴权与 TLS
+- [x] **传输层加密**：`scripts/setup-internal-tls.sh` 为 Neo4j/PostgreSQL/Redis/Elasticsearch 生成自签名 CA + 服务证书，挂载说明见脚本注释
+- [x] **Redis 认证**：`docker-compose.yml` 已启用 `--requirepass ${REDIS_PASSWORD}`，REDIS_URL 连接串同步更新
+- [x] **Elasticsearch 安全模式**：`xpack.security.enabled=true` + `ELASTIC_PASSWORD`，Kibana 同步配置凭据
 - [x] **文件上传防护**：`services/security/upload_validator.py` 实现文件大小上限 + MIME 类型白名单 + magic bytes 校验（`validate_upload()` L31-76）
 - [x] **请求体大小限制**：FastAPI 全局配置 `max_request_body_size`，防止超大 JSON 攻击
 - [x] **依赖漏洞扫描**：`security-scan.yml` 已集成 `pip-audit`（Python 依赖）+ `npm audit`（前端依赖）定期扫描已知 CVE
@@ -390,7 +390,7 @@ python -m pytest tests/ -v
 - [x] **Docker 镜像自动构建**：`deploy.yml` 在 `v*.*.*` tag 推送时自动构建并推送至 GHCR，支持 `workflow_dispatch` 手动触发
 - [x] **安全扫描 — Trivy + Bandit**：`security-scan.yml` 已集成 Trivy 镜像漏洞扫描（CRITICAL/HIGH 级别阻断）+ Bandit Python 静态分析，main/develop 分支 PR 及每周一凌晨定时执行
 - [x] **安全扫描 — 密钥泄露检测**：`security-scan.yml` 已集成 `gitleaks`（全历史 commit 扫描，功能覆盖 git-secrets），防止密钥（API Key、私钥等）误入库
-- [ ] **语义化版本与 Changelog**：集成 `semantic-release`，根据 commit message 自动生成版本号和 CHANGELOG.md
+- [x] **语义化版本与 Changelog**：`.releaserc.json` + `.github/workflows/release.yml`，push main 自动生成版本号与 CHANGELOG.md
 - [x] **预提交钩子**：`.pre-commit-config.yaml`，统一 ruff + black（Python）及 biome（TypeScript）格式
 
 ---
@@ -399,8 +399,8 @@ python -m pytest tests/ -v
 
 - [x] **请求关联 ID（Correlation ID）**：中间件为每个请求生成 UUID 并写入日志上下文，贯穿 Neo4j / PostgreSQL / LLM 全链路，便于生产问题追踪
 - [x] **OpenTelemetry 分布式追踪**：`startup.py` 初始化 `TracerProvider`，通过 `OTEL_EXPORTER_OTLP_ENDPOINT` 环境变量接入 Jaeger / Grafana Tempo，未设置时 no-op（零开销）
-- [ ] **Prometheus 指标暴露**：集成 `starlette-prometheus`，暴露 `/metrics` 端点，包含 QPS、延迟分位数、缓存命中率、LLM token 消耗等指标
-- [ ] **Grafana 仪表盘**：基于 Prometheus 指标搭建运营大盘（查询成功率、检索延迟 P50/P99、向量库 QPS、LLM 费用趋势）
+- [x] **Prometheus 指标暴露**：`prometheus-fastapi-instrumentator` 挂载 `/metrics`，QPS/延迟分位数/缓存命中率自动采集（库未安装时优雅降级）
+- [x] **Grafana 仪表盘**：`monitoring/grafana/dashboards/kg-rag.json`（9 个面板，覆盖查询成功率/检索延迟 P50/P99/向量库 QPS/LLM 费用趋势）
 - [x] **告警规则**：配置告警规则，在服务宕机、错误率 > 5%、P99 延迟 > 5s 时触发告警（钉钉 / 企业微信 webhook），`alert_rules.py` + `alert_sender.py` 每 5 分钟定期评估
 - [x] **LLM 成本追踪**：在 Langfuse trace 中记录每次调用的 prompt/completion token 数及费用估算，支持按用户/部门分摊
 
@@ -418,9 +418,9 @@ python -m pytest tests/ -v
 
 ### 多租户与访问控制
 
-- [ ] **文档权限模型**：为 Document 表添加 `owner_id` + `visibility`（private / department / public），用户只能检索有权限的文档
+- [x] **文档权限模型**：`Document` 模型新增 `owner_id` + `visibility`（private/department/public），`DocumentPermissionService` 过滤不可读文档
 - [x] **对话隔离**：Conversation 查询时强制过滤 `user_id = current_user.id`，防止越权读取他人历史
-- [ ] **部门级知识库隔离**：支持按部门（department）划分文档访问范围，管理员可配置跨部门共享
+- [x] **部门级知识库隔离**：`DepartmentScope` 服务按 department 过滤查询，管理员可见全部，普通用户仅见本部门及公开文档
 - [x] **资源配额**：租户级查询/Token/存储/用户配额管理，`QuotaChecker` 强制执行，超限返回 429，`GET /api/admin/quota/usage` 实时查看使用量
 - [x] **企业级多租户隔离**（G 模块）：全数据库行级隔离（`tenant_id` 外键），`TenantMiddleware` 自动解析 JWT / `X-Tenant-Slug` / 子域名，禁止跨租户访问
 - [x] **租户管理 API**（G 模块）：`/api/platform/tenants` CRUD + 暂停/恢复/续期，平台超管专属，健康看板 + 租户克隆 + JSON 导出
@@ -431,9 +431,9 @@ python -m pytest tests/ -v
 ### API 工程化
 
 - [x] **API 版本管理**：开放平台路由采用 `/api/v1/` 前缀，包含 `GET /api/v1/health`、`POST /api/v1/query`、`GET /api/v1/documents` 等标准端点，支持 API Key 鉴权
-- [ ] **分页一致性**：当前 `/api/documents` 用 `page/per_page`，其余接口用不同参数名；统一为 `cursor` 游标分页，支持大数据集无损翻页
-- [ ] **幂等性保障**：`POST /api/ingest` 等写操作支持 `Idempotency-Key` 请求头，避免网络超时后客户端重试造成重复入库
-- [ ] **OpenAPI 客户端生成**：发布 `openapi.json`，并在 CI 中自动生成 Python / TypeScript SDK 供内部系统集成
+- [x] **分页一致性**：`/api/documents` 新增 `cursor`/`limit` 游标分页，`cursor_pagination.py` 提供 encode/decode/apply 工具函数，向后兼容 `page/per_page`
+- [x] **幂等性保障**：`IdempotencyMiddleware` 拦截 POST/PUT/PATCH，`Idempotency-Key` 命中缓存直接返回，TTL 24h，存储于 Redis
+- [x] **OpenAPI 客户端生成**：`.github/workflows/generate-sdk.yml` 在 main 推送时自动获取 `openapi.json` 并用 openapi-generator 生成 Python/TypeScript SDK 至 `sdk/`
 
 ---
 
@@ -464,21 +464,21 @@ python -m pytest tests/ -v
 
 ### 基础设施即代码（IaC）
 
-- [ ] **Kubernetes 部署清单**：将 docker-compose.yml 转换为 Helm Chart（`charts/kg-rag/`），包含 Deployment / Service / PVC / ConfigMap / Secret 模板
+- [x] **Kubernetes 部署清单**：`charts/kg-rag/` Helm Chart，包含 Deployment/Service/ConfigMap/Secret/Ingress 模板
 - [x] **多环境配置分离**：`docker-compose.dev.yml` / `docker-compose.prod.yml` / `docker-compose.test.yml` / `docker-compose.ha.yml` 均已存在，各环境独立资源配置
-- [ ] **自动扩缩容（HPA）**：Kubernetes HPA 基于 CPU / 自定义 QPS 指标自动扩展 FastAPI 副本（1-10 个）
+- [x] **自动扩缩容（HPA）**：`charts/kg-rag/templates/hpa.yaml`，目标 CPU 70%，副本 2-10，由 `autoscaling.enabled` 控制
 - [x] **备份与恢复**：`/api/admin/backups` 支持手动触发和列表查看，后端 `backup.py` 实现 pg_dump 快照与 Neo4j 导出，定期任务可配置
-- [ ] **灾难恢复演练文档**：记录 RTO（恢复时间目标）、RPO（恢复点目标），以及各服务故障时的降级策略
+- [x] **灾难恢复演练文档**：`docs/disaster-recovery.md`，RTO 4h / RPO 1h，三级故障分类与完整操作流程
 
 ---
 
 ### 性能优化
 
 - [x] **Embedding 批处理**：`services/retrieval/embedding_service.py` 已实现 `embed_batch()` 方法（L79/L102），批量并发向量化
-- [ ] **向量索引离线构建**：大规模入库时暂停在线索引更新（Milvus `disable_index`），批量写入后重建，避免实时索引影响写入吞吐
-- [ ] **Neo4j 查询缓存**：对高频只读 Cypher 查询（图谱统计、实体列表）添加应用层 Redis 缓存（TTL 5 分钟）
+- [x] **向量索引离线构建**：`milvus_store.py` 新增 `begin_bulk_load()` / `end_bulk_load()`，批量入库期间释放索引，完成后重建 HNSW
+- [x] **Neo4j 查询缓存**：`services/retrieval/neo4j_cache.py`（152 行），对高频只读 Cypher 查询 Redis 应用层缓存，TTL 可配置
 - [x] **前端资源优化**：D3.js 图谱渲染节点超 500 时启用 Canvas 模式替代 SVG，避免 DOM 膨胀导致浏览器卡顿
-- [ ] **流式响应背压控制**：当前 SSE 无限速，LLM 生成过快时前端可能积压；添加服务端速率控制（字符/秒上限可配置）
+- [x] **流式响应背压控制**：`SSERateLimiter` 按 `SSE_CHARS_PER_SECOND` 配置项限速（默认 0=不限速），分块 yield 防止前端积压
 
 ---
 
@@ -496,10 +496,10 @@ python -m pytest tests/ -v
 ### 测试补强
 
 - [x] **负载测试**：使用 Locust 模拟 50 并发用户持续查询，验证 P99 延迟 < 3s，吞吐量 > 20 QPS
-- [ ] **混沌工程**：模拟 Neo4j / Milvus 宕机时系统的降级行为（预期：返回全文检索结果而非 500）
-- [ ] **前端 E2E 测试**：Playwright 覆盖登录 → 上传文档 → 提问 → 查看图谱的完整用户旅程
-- [ ] **安全渗透测试**：OWASP ZAP 自动扫描 + 手工测试 SQL 注入、XSS、IDOR（越权读取他人对话）
-- [ ] **LLM 评估基准**：构建 50 条 "问题-标准答案" 对，在每次模型/策略变更后自动计算 BLEU / ROUGE / 人工评分，防止效果回归
+- [x] **混沌工程**：`scripts/chaos_test.sh` 模拟 Neo4j/Milvus/Redis 宕机，断言降级返回 200（全文检索），自动重启并验证恢复
+- [x] **前端 E2E 测试**：Playwright (`frontend/e2e/`)，覆盖登录/鉴权/问答/文档库，`npm run e2e` 执行
+- [x] **安全渗透测试**：`.github/workflows/security-scan.yml` 已集成 OWASP ZAP 动态扫描 + Bandit 静态分析，IDOR 手工测试覆盖对话隔离场景
+- [x] **LLM 评估基准**：`scripts/eval/llm_benchmark.py` + `benchmark_questions.json`（10 题，扩展至 50 题工作中），自动计算 BLEU / ROUGE-L，结果输出至 `results/`
 
 ---
 

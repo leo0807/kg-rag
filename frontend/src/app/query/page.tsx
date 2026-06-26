@@ -47,6 +47,7 @@ export default function QueryPage() {
     toggleCompareMode,
     handleSubmit,
     handleBranch,
+    handleBranchCreated,
     handleRetryQuestion,
     handleSourceClick,
     handleQuoteSource,
@@ -177,6 +178,7 @@ export default function QueryPage() {
           onSourceClick={handleSourceClick}
           onQuoteSource={handleQuoteSource}
           onBranch={handleBranch}
+          onBranchCreated={handleBranchCreated}
           onEditQuestion={handleEditQuestion}
           onSourceFiltersChange={handleSourceFiltersChange}
           onFavoriteSection={handleFavoriteSection}

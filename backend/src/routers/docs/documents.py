@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from neo4j import Driver
 from ...auth.deps import get_current_user, get_protected_driver
@@ -41,81 +42,21 @@ async def stats(driver: Driver = Depends(get_driver)):
 
 @router.get("/documents")
 async def list_documents(
-    page:     int    = 1,
-    per_page: int    = 20,
-    q:        str    = "",
-    _:        User   = Depends(get_current_user),
-    driver:   Driver = Depends(get_protected_driver),
+    page:     int           = 1,
+    per_page: int           = 20,
+    q:        str           = "",
+    cursor:   Optional[str] = Query(default=None),
+    limit:    int           = Query(default=20, ge=1, le=100),
+    _:        User          = Depends(get_current_user),
+    driver:   Driver        = Depends(get_protected_driver),
 ):
-    cache_key = f"docs:{page}:{per_page}:{q}"
-    _rc = None
-    try:
-        _rc = get_redis()
-        cached = _rc.get(cache_key)
-        if cached:
-            return _json.loads(cached)
-    except Exception:
-        pass
-    skip = (page - 1) * per_page
-
-    with driver.session() as session:
-        # 搜索条件：匹配 doc_id 或 title
-        where_clause = """
-            WHERE d.title IS NOT NULL
-            AND (
-                $q = ''
-                OR toLower(d.name)  CONTAINS toLower($q)
-                OR toLower(d.title) CONTAINS toLower($q)
-            )
-        """
-
-        count_result = session.run(f"""
-            MATCH (d:Document)
-            {where_clause}
-            RETURN count(d) AS total
-        """, q=q)
-        total = count_result.single()["total"]
-
-        result = session.run(f"""
-            MATCH (d:Document)
-            {where_clause}
-            RETURN d.name        AS doc_id,
-                   d.title       AS title,
-                   d.version     AS version,
-                   d.issue_date  AS issue_date,
-                   size([(d)-[:HAS_SECTION]->(s) | s]) AS section_count,
-                   size([(d)-[:HAS_IMAGE]->(i:Image) | i]) AS image_count,
-                   size([(d)-[:HAS_IMAGE]->(i:Image)
-                         WHERE i.analysis_level IN ['full', 'basic'] | i]) AS analyzed_image_count
-            ORDER BY d.name
-            SKIP $skip
-            LIMIT $per_page
-        """, q=q, skip=skip, per_page=per_page)
-
-        def _analysis_status(img_count: int, analyzed: int) -> str:
-            if img_count == 0:
-                return "none"
-            if analyzed >= img_count:
-                return "analyzed"
-            if analyzed > 0:
-                return "partial"
-            return "pending"
-
-        documents = []
-        for r in result:
-            row = dict(r)
-            row["analysis_status"] = _analysis_status(
-                row.get("image_count", 0),
-                row.get("analyzed_image_count", 0),
-            )
-            documents.append(row)
-
-    out = {"data": documents, "total": total, "page": page, "per_page": per_page, "pages": (total + per_page - 1) // per_page}
-    try:
-        if _rc: _rc.setex(cache_key, 30, _json.dumps(out, default=str))
-    except Exception:
-        pass
-    return out
+    """List documents. Pass *cursor*+*limit* for keyset pagination or *page*+*per_page* for offset mode."""
+    from ...services.documents.cursor_pagination import _query_documents_neo4j
+    return await _query_documents_neo4j(
+        driver=driver, q=q,
+        page=page, per_page=per_page,
+        cursor=cursor, limit=limit,
+    )
 
 @router.get("/documents/{doc_id}")
 async def get_document(doc_id: str, driver: Driver = Depends(get_driver)):

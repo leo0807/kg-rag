@@ -29,8 +29,9 @@ from .routers.auth               import router as auth_router
 from .routers.settings           import router as settings_router
 from .routers.users              import router as users_router
 from .routers.feedback           import router as feedback_router
-from .routers.conversations      import router as conversations_router
-from .routers.conversations_ext  import router as conversations_ext_router
+from .routers.conversations        import router as conversations_router
+from .routers.conversations_ext    import router as conversations_ext_router
+from .routers.conversations_branch import router as conversations_branch_router
 from .routers.sharing            import router as sharing_router, public_router as shared_public_router
 from .routers.notes              import router as notes_router
 from .routers.recommend          import router as recommend_router
@@ -125,6 +126,7 @@ from .routers.v1.open_api             import router as v1_open_api_router
 from .routers.shopfloor               import router as shopfloor_router
 from .routers.sso                     import router as sso_router
 from .middleware.api_key_auth         import ApiKeyMiddleware
+from .middleware.idempotency          import IdempotencyMiddleware
 
 from .services.infra.health import health_monitor
 from .services.ops.presence_service import track_request_activity
@@ -175,6 +177,7 @@ app.add_middleware(
 )
 
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BODY_BYTES)
+app.add_middleware(IdempotencyMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(TenantMiddleware)
 app.add_middleware(RateLimitMiddleware)
@@ -297,7 +300,8 @@ app.include_router(auth_router)
 app.include_router(settings_router)
 app.include_router(users_router)
 app.include_router(feedback_router)
-app.include_router(conversations_ext_router)  # must be before conversations_router: /categories before /{conv_id}
+app.include_router(conversations_ext_router)    # must be before conversations_router: /categories before /{conv_id}
+app.include_router(conversations_branch_router) # must be before conversations_router: /{conv_id}/branch before /{conv_id}
 app.include_router(conversations_router)
 app.include_router(sharing_router)
 app.include_router(shared_public_router)

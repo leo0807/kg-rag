@@ -318,6 +318,11 @@ export function useChat() {
     }
   }
 
+  async function handleBranchCreated(branchId: string) {
+    await refetch();
+    setActiveId(branchId);
+  }
+
   async function handleSourceClick(chunkId: string) {
     const stored = JSON.parse(localStorage.getItem("user") ?? "{}");
     const lastUser = activeConv?.messages.findLast((m) => m.role === "user");
@@ -405,6 +410,7 @@ export function useChat() {
     toggleCompareMode,
     handleSubmit,
     handleBranch,
+    handleBranchCreated,
     handleSourceClick,
     handleQuoteSource,
     exportConversation,

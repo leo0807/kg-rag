@@ -206,3 +206,64 @@ B2（`core.py:145` 早返回只返回 2-元组）、B3/B4（`DO_RETRIEVAL` 属�
 | E2 部门隔离 | Breaking change |
 | E3 cursor 分页 | Breaking change |
 | D 全链路联调 | 只能人工做 |
+
+---
+
+## 2026-06-24 后端批量任务执行记录
+
+### Task 1 — 新增单元测试（145 个测试，全部通过）
+
+| 文件 | 测试数 | 覆盖模块 |
+|------|--------|---------|
+| `tests/test_health_monitor.py` | 17 | `services/infra/health.py` — ServiceState/ServiceStatus/ServiceHealthMonitor |
+| `tests/test_cache_utils.py` | 14 | `services/infra/cache.py` — make_cache_key/get_cached_result/set_cached_result |
+| `tests/test_pii_masker.py` | 17 | `services/pii_masker.py` — 手机/座机/邮箱/身份证/姓名脱敏 |
+| `tests/test_doe_sampler.py` | 18 | `services/simulation/doe_sampler.py` — full_factorial/LHS/Sobol/adaptive |
+| `tests/test_spec_validator.py` | 21 | `services/generation/validator.py` — 结构/引用/数值/术语四维校验 |
+| `tests/test_parametric_search.py` | 13 | `services/simulation/parametric_search.py` — 排序/范围过滤 |
+| `tests/test_defect_detector.py` | 13 | `services/quality/defect_detector.py` — YOLO 降级/常量/路径配置 |
+| `tests/test_data_quality.py` | 8 | `services/governance/data_quality.py` — check_document_quality/get_quality_summary |
+| `tests/test_compliance_report.py` | 9 | `services/governance/compliance_report.py` — detect_anomalies/generate_report |
+| `tests/test_insights_engine.py` | 15 | `services/analytics/insights_engine.py` — 四大洞察维度 + 辅助函数 |
+
+**跳过模块（外部依赖复杂，需人工）：**
+- `association_miner.py` — 依赖 mlxtend、Neo4j driver，不适合单元测试
+- `conflict_detector.py` / `conflict_scan.py` — 依赖 ConflictRecord ORM（需 DB schema）
+
+### Task 2 — 新增 README（15 个目录）
+
+| README 路径 | 行数 |
+|-------------|------|
+| `src/services/agent/README.md` | ~30 |
+| `src/services/analytics/README.md` | ~30 |
+| `src/services/conversation/README.md` | ~20 |
+| `src/services/generation/README.md` | ~32 |
+| `src/services/governance/README.md` | ~30 |
+| `src/services/graph/README.md` | ~40 |
+| `src/services/images/README.md` | ~40 |
+| `src/services/ingestion/README.md` | ~38 |
+| `src/services/integration/README.md` | ~28 |
+| `src/services/multitenant/README.md` | ~28 |
+| `src/services/ops/README.md` | ~28 |
+| `src/services/qa/README.md` | ~32 |
+| `src/services/quality/README.md` | ~36 |
+| `src/services/simulation/README.md` | ~36 |
+| `src/services/storage/README.md` | ~30 |
+
+### Task 3 — 新增运维脚本（4 个）
+
+| 脚本 | 行数 | 功能 |
+|------|------|------|
+| `scripts/health_check.py` | ~90 | 检查 Neo4j/Milvus/ES/Redis 连通性，支持 --json |
+| `scripts/backup_neo4j.py` | ~65 | 导出 Neo4j 节点/关系为 JSON，支持 --dry-run |
+| `scripts/cleanup_old_sessions.py` | ~80 | 清理 N 天前的对话会话，默认 dry-run |
+| `scripts/verify_embeddings.py` | ~95 | 检查 Milvus section_id 与 Neo4j 一致性，支持 --fix-orphans |
+
+### Task 4 — 类型注解补充
+
+- `src/services/infra/health.py` — 新增 `__init__ -> None`、`_loop -> None`、`start_background_task -> None`、`stop_background_task -> None`
+- `src/services/infra/cache.py` — 所有函数已有完整类型注解，无需修改
+
+### 发现问题（需人工）
+
+- **pymilvus 与 NumPy 2.x 不兼容**：本地 `ping_milvus()` 测试时会触发 NumPy C 扩展错误，但运行时通过旧缓存模块可能 OK。建议固定 `numpy<2.0`（已在 `storage/README.md` 注明）

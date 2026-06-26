@@ -6,6 +6,7 @@ import { AssistantFeedbackSection } from "./AssistantFeedbackSection";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import { AssistantMessageActions } from "./AssistantMessageActions";
 import { AssistantMessageExtras } from "./AssistantMessageExtras";
+import { BranchButton } from "./components/BranchButton";
 import { ClarificationBubble } from "./ClarificationBubble";
 import { FollowUpSuggestions } from "./FollowUpSuggestions";
 import { MessageError } from "./MessageError";
@@ -43,6 +44,9 @@ interface Props {
   onClarificationSelect?: (option: string) => void;
   agentSteps?: AgentStepInfo[];
   answerImages?: AnswerImage[];
+  conversationId?: string;
+  messageId?: string;
+  onBranchCreated?: (branchId: string) => void;
 }
 
 export function AssistantMessageBubble({
@@ -69,6 +73,9 @@ export function AssistantMessageBubble({
   onClarificationSelect,
   agentSteps,
   answerImages,
+  conversationId,
+  messageId,
+  onBranchCreated,
 }: Props) {
   const sourcePanelState = useSourcePanelState(sources);
 
@@ -187,6 +194,15 @@ export function AssistantMessageBubble({
                     strategy={strategy}
                     onLowScoreRetry={onLowScoreRetry}
                   />
+                )}
+                {!streaming && conversationId && messageId && onBranchCreated && (
+                  <div className="mt-2 flex justify-end">
+                    <BranchButton
+                      conversationId={conversationId}
+                      messageId={messageId}
+                      onBranch={onBranchCreated}
+                    />
+                  </div>
                 )}
               </>
             )}

@@ -247,6 +247,34 @@ def search_sections(
         })
     return _enrich_metadata(hits)
 
+async def begin_bulk_load() -> None:
+    """Release index before bulk insert for higher throughput."""
+    try:
+        col = get_or_create_collection()
+        col.release()
+        logger.info("Milvus collection released for bulk load")
+    except Exception as exc:
+        logger.warning("begin_bulk_load release failed: %s", exc)
+
+
+async def end_bulk_load() -> None:
+    """Rebuild HNSW index and reload collection after bulk insert."""
+    try:
+        col = get_or_create_collection()
+        col.create_index(
+            "embedding",
+            {
+                "index_type": "HNSW",
+                "metric_type": "IP",
+                "params": {"M": 16, "efConstruction": 200},
+            },
+        )
+        col.load()
+        logger.info("Milvus collection index rebuilt and loaded after bulk load")
+    except Exception as exc:
+        logger.warning("end_bulk_load index rebuild failed: %s", exc)
+
+
 def get_all_embeddings() -> list[dict]:
     """拉取集合中所有向量（用于离线批量相似度计算）。
     警告：大规模生产环境（>10 万条）请改用分页或 Milvus bulk export。

@@ -47,6 +47,9 @@ interface Props {
   onClarificationSelect?: (option: string) => void;
   agentSteps?: AgentStepInfo[];
   answerImages?: AnswerImage[];
+  conversationId?: string;
+  messageId?: string;
+  onBranchCreated?: (branchId: string) => void;
 }
 
 export default function MessageBubble({
@@ -82,6 +85,9 @@ export default function MessageBubble({
   onClarificationSelect,
   agentSteps,
   answerImages,
+  conversationId,
+  messageId,
+  onBranchCreated,
 }: Props) {
   if (role === "user") {
     return (
@@ -125,6 +131,9 @@ export default function MessageBubble({
       onClarificationSelect={onClarificationSelect}
       agentSteps={agentSteps}
       answerImages={answerImages}
+      conversationId={conversationId}
+      messageId={messageId}
+      onBranchCreated={onBranchCreated}
     />
   );
 }

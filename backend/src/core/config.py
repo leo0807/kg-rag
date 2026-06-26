@@ -110,6 +110,9 @@ class Settings(BaseSettings):
     LLM_CIRCUIT_BREAKER_THRESHOLD: int = 5
     LLM_CIRCUIT_BREAKER_RESET_SECONDS: float = 30.0
 
+    # SSE streaming rate (chars/second); 0 = unlimited
+    SSE_CHARS_PER_SECOND: int = 0
+
     # Provider 故障转移
     LLM_FAILOVER_ENABLED:    bool = False
     LLM_FALLBACK_1_URL:      str  = ""

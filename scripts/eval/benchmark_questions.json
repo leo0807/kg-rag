@@ -1,0 +1,72 @@
+[
+  {
+    "id": "Q001",
+    "question": "CPS1000 规定的密封剂涂覆温度范围是多少？",
+    "expected_answer": "CPS1000 规定密封剂涂覆环境温度应在 15°C 至 35°C 之间，相对湿度不超过 75%。",
+    "expected_keywords": ["温度", "密封剂", "15", "35"],
+    "difficulty": "easy"
+  },
+  {
+    "id": "Q002",
+    "question": "飞机蒙皮铆接工艺中对铆钉孔直径公差的要求是什么？",
+    "expected_answer": "铆钉孔直径公差应符合 H8/f7 配合标准，孔径偏差不超过 ±0.05mm，孔口毛刺高度不得大于 0.1mm。",
+    "expected_keywords": ["公差", "铆钉", "直径", "H8"],
+    "difficulty": "medium"
+  },
+  {
+    "id": "Q003",
+    "question": "复合材料修补区域的固化压力和温度参数是多少？",
+    "expected_answer": "复合材料热补丁修补时固化温度为 120°C±5°C，固化压力为 0.3MPa 至 0.5MPa，保温时间不少于 90 分钟。",
+    "expected_keywords": ["固化", "压力", "温度", "复合材料"],
+    "difficulty": "medium"
+  },
+  {
+    "id": "Q004",
+    "question": "液压系统管路的耐压测试标准是什么？",
+    "expected_answer": "液压管路安装后须进行 1.5 倍额定工作压力的水压测试，保压时间不少于 5 分钟，测试期间不得出现渗漏或永久变形。",
+    "expected_keywords": ["液压", "耐压", "测试", "MPa"],
+    "difficulty": "easy"
+  },
+  {
+    "id": "Q005",
+    "question": "飞机燃油箱密封检查的氦气检漏标准是什么？",
+    "expected_answer": "燃油箱氦气检漏时，检漏仪灵敏度应不低于 1×10⁻⁶ Pa·m³/s，单点泄漏率不超过 1×10⁻⁵ Pa·m³/s，整箱综合泄漏率不超过 1×10⁻⁴ Pa·m³/s。",
+    "expected_keywords": ["燃油箱", "氦气", "检漏", "泄漏率"],
+    "difficulty": "hard"
+  },
+  {
+    "id": "Q006",
+    "question": "发动机短舱整流罩螺栓扭矩要求是多少？",
+    "expected_answer": "发动机短舱整流罩安装螺栓按照 CPS-ME-004 标准执行，M6 螺栓扭矩为 8~10 N·m，M8 螺栓扭矩为 18~22 N·m，施工后须涂覆防松标记漆。",
+    "expected_keywords": ["螺栓", "扭矩", "短舱", "N·m"],
+    "difficulty": "medium"
+  },
+  {
+    "id": "Q007",
+    "question": "飞机结构件喷漆前表面处理的磷化工艺参数是什么？",
+    "expected_answer": "铝合金结构件磷化处理液温度应控制在 50°C±3°C，处理时间 8~12 分钟，磷化膜重量应在 1.5~4.5 g/m² 范围内。",
+    "expected_keywords": ["磷化", "表面处理", "铝合金", "温度"],
+    "difficulty": "hard"
+  },
+  {
+    "id": "Q008",
+    "question": "客舱内饰板安装的间隙和阶差要求是什么？",
+    "expected_answer": "客舱内饰板相邻板件间隙不超过 1.5mm，阶差不超过 0.8mm，紧固件安装后头部凸出量不超过 0.3mm。",
+    "expected_keywords": ["内饰板", "间隙", "阶差", "安装"],
+    "difficulty": "easy"
+  },
+  {
+    "id": "Q009",
+    "question": "飞控系统导线束捆扎间距和弯曲半径的规范要求是什么？",
+    "expected_answer": "飞控导线束捆扎点间距不超过 200mm，导线束最小弯曲半径不小于导线束外径的 3 倍，导线与金属结构间隔距离不小于 6mm。",
+    "expected_keywords": ["导线束", "捆扎", "弯曲半径", "飞控"],
+    "difficulty": "medium"
+  },
+  {
+    "id": "Q010",
+    "question": "飞机机体大修时铝合金蒙皮腐蚀损伤的可修范围判断标准是什么？",
+    "expected_answer": "铝合金蒙皮腐蚀深度不超过蒙皮厚度的 10% 且单处面积不超过 2500mm² 时可打磨修复；超出限制须更换蒙皮或进行补片修理，具体按 SRM 第 57 章执行。",
+    "expected_keywords": ["腐蚀", "蒙皮", "铝合金", "修复", "SRM"],
+    "difficulty": "hard"
+  }
+]

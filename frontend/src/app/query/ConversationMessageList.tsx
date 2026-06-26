@@ -13,6 +13,7 @@ import type {
 
 interface Props {
   activeConv: {
+    id?: string;
     messages: {
       id: string;
       role: "user" | "assistant";
@@ -46,6 +47,7 @@ interface Props {
   onSourceClick: (chunkId: string) => void;
   onQuoteSource: (source: SourceSection) => void;
   onBranch: (idx: number) => void;
+  onBranchCreated?: (branchId: string) => void;
   onEditQuestion: (idx: number, content: string) => void;
   onSourceFiltersChange: (f: SourcePanelFilters) => void;
   onFavoriteSection: (s: SourceSection) => void;
@@ -76,6 +78,7 @@ export function ConversationMessageList({
   onSourceClick,
   onQuoteSource,
   onBranch,
+  onBranchCreated,
   onEditQuestion,
   onSourceFiltersChange,
   onFavoriteSection,
@@ -204,6 +207,15 @@ export function ConversationMessageList({
             agentSteps={msg.role === "assistant" ? msg.agentSteps : undefined}
             answerImages={
               msg.role === "assistant" ? msg.answerImages : undefined
+            }
+            conversationId={
+              msg.role === "assistant" && activeConv.id ? activeConv.id : undefined
+            }
+            messageId={
+              msg.role === "assistant" && msg.id ? msg.id : undefined
+            }
+            onBranchCreated={
+              msg.role === "assistant" ? onBranchCreated : undefined
             }
             onClarificationSelect={
               msg.role === "assistant"

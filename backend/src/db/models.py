@@ -96,6 +96,18 @@ class Conversation(Base):
         nullable=True,
         comment="若为分支对话，记录从源对话的第几条消息分出",
     )
+    # 按消息 UUID 追踪分支点（与 branch_from_* 互补）
+    parent_conversation_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+        comment="分支源对话 id（message-id 模式）",
+    )
+    branch_point_message_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        comment="触发分支的消息 uuid",
+    )
     # B1: 会话管理增强
     category_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     is_pinned:   Mapped[bool]       = mapped_column(Boolean, default=False)
@@ -297,3 +309,27 @@ class SystemErrorEvent(Base):
     message:    Mapped[str]        = mapped_column(Text,        default="")
     user_id:    Mapped[str | None] = mapped_column(String(36),  nullable=True)
     created_at: Mapped[datetime]   = mapped_column(DateTime,    server_default=func.now())
+
+
+class Document(Base):
+    """文档权限元数据 — 存储文档可见性与归属，文档内容仍存于 Neo4j。
+
+    visibility 取值：
+      "public"     — 所有登录用户可读
+      "department" — 仅同部门用户可读
+      "private"    — 仅 owner 或 admin 可读
+    """
+    __tablename__  = "documents"
+    __table_args__ = (
+        Index("ix_documents_owner_id",    "owner_id"),
+        Index("ix_documents_visibility",  "visibility"),
+        Index("ix_documents_created_at",  "created_at"),
+    )
+
+    # doc_id 对应 Neo4j 中 Document.name
+    doc_id:     Mapped[str]           = mapped_column(String(200), primary_key=True)
+    owner_id:   Mapped[str | None]    = mapped_column(String(36),  nullable=True, index=True)
+    visibility: Mapped[str]           = mapped_column(String(20),  default="public")
+    department: Mapped[str]           = mapped_column(String(64),  default="")
+    created_at: Mapped[datetime]      = mapped_column(DateTime,    server_default=func.now())
+    updated_at: Mapped[datetime]      = mapped_column(DateTime,    server_default=func.now(), onupdate=func.now())

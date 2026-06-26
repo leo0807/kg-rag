@@ -52,7 +52,7 @@ class ServiceHealthMonitor:
             # 执行向量检索
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.neo4j         = ServiceStatus("neo4j")
         self.milvus        = ServiceStatus("milvus")
         self.elasticsearch = ServiceStatus("elasticsearch")
@@ -132,7 +132,7 @@ class ServiceHealthMonitor:
 
     # ── 后台定期检查 ─────────────────────────────────────────────────────────
 
-    async def _loop(self):
+    async def _loop(self) -> None:
         while True:
             await asyncio.sleep(PING_INTERVAL_SECONDS)
             try:
@@ -168,7 +168,7 @@ class ServiceHealthMonitor:
                 level="error",
             )
 
-    def start_background_task(self):
+    def start_background_task(self) -> None:
         """在 asyncio event loop 已启动后调用（lifespan 内）"""
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._loop())
@@ -177,7 +177,7 @@ class ServiceHealthMonitor:
                 PING_INTERVAL_SECONDS,
             )
 
-    def stop_background_task(self):
+    def stop_background_task(self) -> None:
         if self._task and not self._task.done():
             self._task.cancel()
 

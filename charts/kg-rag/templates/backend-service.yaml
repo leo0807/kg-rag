@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kg-rag.fullname" . }}-backend
+  labels:
+    {{- include "kg-rag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  type: {{ .Values.service.backend.type }}
+  ports:
+    - port: {{ .Values.service.backend.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "kg-rag.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backend

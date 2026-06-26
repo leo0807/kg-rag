@@ -1,0 +1,85 @@
+name: Generate OpenAPI SDK
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "backend/src/**/*.py"
+  workflow_dispatch:
+
+jobs:
+  generate-sdk:
+    name: Generate Python & TypeScript SDKs
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Start FastAPI app in test mode
+        working-directory: backend
+        run: |
+          python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 &
+        env:
+          APP_ENV: development
+          DEBUG: "true"
+          NEO4J_URI: bolt://localhost:7687
+          JWT_SECRET: ci-only-not-production-secret-change-me
+          DATABASE_URL: ""
+          REDIS_URL: ""
+
+      - name: Wait for health endpoint
+        run: |
+          curl --retry 10 --retry-delay 3 --retry-connrefused \
+               --fail http://localhost:8000/api/health
+
+      - name: Fetch OpenAPI spec
+        run: |
+          curl --fail http://localhost:8000/openapi.json -o openapi.json
+
+      - name: Generate Python SDK
+        run: |
+          mkdir -p sdk/python
+          docker run --rm \
+            -v "$PWD:/local" \
+            openapitools/openapi-generator-cli:latest generate \
+              -i /local/openapi.json \
+              -g python \
+              -o /local/sdk/python \
+              --additional-properties=packageName=kg_rag_client,projectName=kg-rag-python-client
+
+      - name: Generate TypeScript SDK
+        run: |
+          mkdir -p sdk/typescript
+          docker run --rm \
+            -v "$PWD:/local" \
+            openapitools/openapi-generator-cli:latest generate \
+              -i /local/openapi.json \
+              -g typescript-fetch \
+              -o /local/sdk/typescript \
+              --additional-properties=npmName=kg-rag-client,npmVersion=1.0.0
+
+      - name: Commit and push SDK files if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sdk/ openapi.json
+          if git diff --cached --quiet; then
+            echo "No SDK changes to commit."
+          else
+            git commit -m "chore(sdk): regenerate OpenAPI clients [skip ci]"
+            git push
+          fi

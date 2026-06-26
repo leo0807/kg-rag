@@ -63,6 +63,7 @@ interface Props {
   onSourceClick: (chunkId: string) => void;
   onQuoteSource: (source: SourceSection) => void;
   onBranch: (idx: number) => void;
+  onBranchCreated?: (branchId: string) => void;
   onEditQuestion: (idx: number, content: string) => void;
   onSourceFiltersChange: (f: SourcePanelFilters) => void;
   onFavoriteSection: (s: SourceSection) => void;
@@ -101,6 +102,7 @@ export function ConversationMessages({
   onSourceClick,
   onQuoteSource,
   onBranch,
+  onBranchCreated,
   onEditQuestion,
   onSourceFiltersChange,
   onFavoriteSection,
@@ -185,6 +187,7 @@ export function ConversationMessages({
               onSourceClick={onSourceClick}
               onQuoteSource={onQuoteSource}
               onBranch={onBranch}
+              onBranchCreated={onBranchCreated}
               onEditQuestion={onEditQuestion}
               onSourceFiltersChange={onSourceFiltersChange}
               onFavoriteSection={onFavoriteSection}

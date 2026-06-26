@@ -91,3 +91,55 @@ async def dashboard_ws(ws: WebSocket) -> None:
 @router.get("/dashboard/stats")
 async def ws_stats() -> Dict[str, Any]:
     return {"connected_clients": manager.count}
+
+
+@router.websocket("/ws/ingest/{task_id}")
+async def ingest_progress_ws(ws: WebSocket, task_id: str) -> None:
+    """Stream ingest progress for a given task_id from Redis."""
+    await ws.accept()
+    logger.info("Ingest WS connected task_id=%s", task_id)
+
+    redis = None
+    try:
+        redis = getattr(ws.app.state, "redis", None)
+    except Exception:
+        pass
+
+    redis_key = f"ingest_progress:{task_id}"
+    deadline = time.time() + 600  # max 600s timeout
+    poll_interval = 0.5
+
+    try:
+        while time.time() < deadline:
+            # Check for client disconnect
+            try:
+                msg = await asyncio.wait_for(ws.receive_text(), timeout=0.0)
+                if msg == "ping":
+                    await ws.send_json({"event": "pong", "ts": time.time()})
+            except asyncio.TimeoutError:
+                pass
+            except WebSocketDisconnect:
+                break
+
+            # Poll Redis for progress
+            if redis is not None:
+                try:
+                    raw = await redis.get(redis_key)
+                    if raw:
+                        data = json.loads(raw)
+                        await ws.send_json(data)
+                        status = data.get("status", "")
+                        if status in ("completed", "failed"):
+                            break
+                except Exception as exc:
+                    logger.warning("ingest WS redis error task_id=%s: %s", task_id, exc)
+            else:
+                await ws.send_json({"status": "waiting", "message": "Redis unavailable"})
+
+            await asyncio.sleep(poll_interval)
+        else:
+            await ws.send_json({"status": "failed", "error": "timeout", "progress": 0})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        logger.info("Ingest WS disconnected task_id=%s", task_id)
