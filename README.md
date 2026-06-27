@@ -954,14 +954,14 @@ DAG: pdf_ingest_pipeline
 
 **ONNX / TensorRT — 模型推理加速**
 
-- [ ] BGE-M3 Embedding 导出为 ONNX 格式，使用 ONNX Runtime 推理（CPU 加速约 2×，GPU 加速约 5×）
-- [ ] bge-reranker 导出 TensorRT Engine（适用 NVIDIA T4/A10），精排延迟从 80ms 降至 15ms
-- [ ] 边缘部署场景：将量化后的 Embedding 模型（INT8）部署至车间工控机，无需联网即可完成向量化
+- [x] BGE-M3 Embedding 导出为 ONNX 格式，使用 ONNX Runtime 推理（CPU 加速约 2×，GPU 加速约 5×）
+- [x] bge-reranker 导出 TensorRT Engine（适用 NVIDIA T4/A10），精排延迟从 80ms 降至 15ms
+- [x] 边缘部署场景：将量化后的 Embedding 模型（INT8）部署至车间工控机，无需联网即可完成向量化
 
 **vLLM + PagedAttention — 高并发 LLM 服务**
 
-- [ ] 替换现有 LLM 调用方式：本地部署 `vllm serve Qwen2.5-7B-Instruct --port 8001`，PagedAttention 将 GPU 显存利用率提升 3×，支持数十并发流式请求
-- [ ] 前缀缓存（Prefix Caching）：相同系统提示的多个请求共享 KV Cache，与 Prompt Caching 策略协同
+- [x] 替换现有 LLM 调用方式：本地部署 `vllm serve Qwen2.5-7B-Instruct --port 8001`，PagedAttention 将 GPU 显存利用率提升 3×，支持数十并发流式请求
+- [x] 前缀缓存（Prefix Caching）：相同系统提示的多个请求共享 KV Cache，与 Prompt Caching 策略协同
 
 **Triton Inference Server — 统一模型服务网关**
 
