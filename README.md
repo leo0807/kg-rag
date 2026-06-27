@@ -1055,9 +1055,9 @@ OPC-UA 告警   ──────────►  iot.constraint.alert ──�
 图谱变更      ──────────►  graph.changed        ──────►  下游系统同步（ERP/MES）
 ```
 
-- [ ] `docker-compose.yml` 新增 `kafka` + `zookeeper` 服务（或 Redpanda 单节点替代）
-- [ ] `backend/src/events/producer.py`：文档入库、查询完成、图谱变更时发布 Kafka 消息
-- [ ] `backend/src/events/consumer.py`：消费 OPC-UA 告警事件，触发规范查询并推送 WebSocket
+- [x] `docker-compose.yml` 新增 `kafka` + `zookeeper` 服务（或 Redpanda 单节点替代）
+- [x] `backend/src/events/producer.py`：文档入库、查询完成、图谱变更时发布 Kafka 消息
+- [x] `backend/src/events/consumer.py`：消费 OPC-UA 告警事件，触发规范查询并推送 WebSocket
 
 **Change Data Capture（Debezium）**
 
