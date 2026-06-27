@@ -75,6 +75,7 @@ from .routers.entity_filter      import router as entity_filter_router
 from .routers.admin_api.lab        import router as admin_lab_router
 from .routers.admin_api.processing import router as admin_processing_router
 from .routers.graph_api.predict    import router as graph_predict_router
+from .routers.graph_api.conflict_check import router as graph_conflict_check_router
 from .routers.admin_api.health       import router as admin_health_router
 from .routers.admin_api.associations import router as admin_associations_router
 from .routers.admin_api.feedback_admin import router as admin_feedback_router
@@ -345,6 +346,7 @@ app.include_router(entity_filter_router)
 app.include_router(admin_lab_router)
 app.include_router(admin_processing_router)
 app.include_router(graph_predict_router)
+app.include_router(graph_conflict_check_router)
 app.include_router(admin_health_router)
 app.include_router(admin_associations_router)
 app.include_router(admin_feedback_router)
