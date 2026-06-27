@@ -18,6 +18,7 @@ export interface SidebarItem {
 export interface SidebarGroup {
   key: string;
   label: string;
+  Icon: LucideIcon;
   items: SidebarItem[];
 }
 
@@ -34,6 +35,7 @@ export const tier2Groups: SidebarGroup[] = [
   {
     key: "analysis",
     label: "分析",
+    Icon: BarChart2,
     items: [
       { href: "/advanced-search", label: "高级查询", Icon: Search },
       { href: "/generation",      label: "规范生成", Icon: FileText },
@@ -44,6 +46,7 @@ export const tier2Groups: SidebarGroup[] = [
   {
     key: "dev",
     label: "开发",
+    Icon: Code2,
     items: [
       { href: "/pipeline",   label: "检索链路",   Icon: Gauge },
       { href: "/cypher",     label: "Cypher",     Icon: Terminal },
@@ -56,13 +59,14 @@ export const adminGroups: SidebarGroup[] = [
   {
     key: "ops",
     label: "运营监控",
+    Icon: Activity,
     items: [
       { href: "/admin/metrics",    label: "系统监控",     Icon: Activity },
       { href: "/admin/status",     label: "系统状态",     Icon: Server },
       { href: "/admin/dashboard",  label: "系统健康看板", Icon: Gauge },
       { href: "/admin/ops",        label: "AI 工程台",    Icon: Bot },
       { href: "/admin/processing", label: "数据处理看板", Icon: Activity },
-      { href: "/admin/realtime",   label: "实时监控",     Icon: Radio },
+      { href: "/realtime",         label: "实时监控",     Icon: Radio },
       { href: "/admin/ask-data",   label: "数据问答",     Icon: HelpCircle },
       { href: "/admin/logs",       label: "系统日志",     Icon: ScrollText },
       { href: "/admin/audit",      label: "审计日志",     Icon: ClipboardList },
@@ -71,6 +75,7 @@ export const adminGroups: SidebarGroup[] = [
   {
     key: "quality",
     label: "数据质量",
+    Icon: ShieldCheck,
     items: [
       { href: "/admin/entities",     label: "实体审核",     Icon: ShieldCheck },
       { href: "/admin/associations", label: "隐性关联挖掘", Icon: GitBranch },
@@ -83,6 +88,7 @@ export const adminGroups: SidebarGroup[] = [
   {
     key: "eval",
     label: "评测调优",
+    Icon: FlaskConical,
     items: [
       { href: "/admin/eval",      label: "测试集评测", Icon: FlaskConical },
       { href: "/admin/prompts",   label: "Prompt 管理", Icon: BookMarked },
@@ -96,7 +102,7 @@ export const adminGroups: SidebarGroup[] = [
   {
     key: "config",
     label: "系统配置",
-    // 9 项（audit 移出 -1，ingest 收敛进来 +1，净变 0）
+    Icon: Settings,
     items: [
       { href: "/admin/schema",          label: "Schema",       Icon: Database },
       { href: "/admin/tenant-settings", label: "租户设置",     Icon: Settings },
@@ -112,6 +118,7 @@ export const adminGroups: SidebarGroup[] = [
   {
     key: "billing",
     label: "用量账单",
+    Icon: CreditCard,
     items: [
       { href: "/admin/billing", label: "账单中心", Icon: CreditCard },
       { href: "/admin/quota",   label: "配额使用", Icon: BarChart2 },

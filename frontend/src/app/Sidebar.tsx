@@ -11,6 +11,7 @@ import {
   superAdminItem,
   tier1Items,
   tier2Groups,
+  type SidebarGroup,
   type SidebarItem,
 } from "@/app/sidebar/sidebarItems";
 import { useCurrentUser } from "@/app/sidebar/useCurrentUser";
@@ -125,19 +126,16 @@ export default function Sidebar() {
           ))}
         </div>
 
-        {/* Tier 2 — 分析 / 开发（accordion，默认展开） */}
+        {/* Tier 2 — 分析 / 开发（accordion 展开 / rail flyout） */}
         {tier2Groups.map((group) => (
           <NavSubGroup
             key={group.key}
-            label={group.label}
+            group={group}
             open={openGroups.has(group.key)}
             collapsed={collapsed}
             onToggle={() => toggleGroup(group.key)}
-          >
-            {group.items.map(({ href, label, Icon }) => (
-              <SidebarLink key={href} href={href} label={label} Icon={Icon} active={isActive(href)} collapsed={collapsed} />
-            ))}
-          </NavSubGroup>
+            isActive={isActive}
+          />
         ))}
 
         {/* Admin — 仅 is_admin，5 子组默认折叠 */}
@@ -146,15 +144,12 @@ export default function Sidebar() {
             {adminGroups.map((group) => (
               <NavSubGroup
                 key={group.key}
-                label={group.label}
+                group={group}
                 open={openGroups.has(group.key)}
                 collapsed={collapsed}
                 onToggle={() => toggleGroup(group.key)}
-              >
-                {group.items.map(({ href, label, Icon }) => (
-                  <SidebarLink key={href} href={href} label={label} Icon={Icon} active={isActive(href)} collapsed={collapsed} />
-                ))}
-              </NavSubGroup>
+                isActive={isActive}
+              />
             ))}
             <SidebarLink
               href={superAdminItem.href}
@@ -173,15 +168,54 @@ export default function Sidebar() {
 }
 
 function NavSubGroup({
-  label, open, collapsed, onToggle, children,
+  group, open, collapsed, onToggle, isActive,
 }: {
-  label: string;
+  group: SidebarGroup;
   open: boolean;
   collapsed: boolean;
   onToggle: () => void;
-  children: React.ReactNode;
+  isActive: (href: string) => boolean;
 }) {
-  if (collapsed) return <div className="space-y-0.5">{children}</div>;
+  const { label, Icon: GroupIcon, items } = group;
+
+  if (collapsed) {
+    // Rail mode: one group-icon button; hover triggers flyout panel
+    return (
+      <div className="relative group/flyout py-0.5">
+        <div
+          className="flex items-center justify-center py-2 rounded-lg cursor-default"
+          style={{ color: "var(--nav-text-muted)" }}
+          title={label}
+        >
+          <GroupIcon size={15} />
+        </div>
+        {/* Flyout panel */}
+        <div
+          className="absolute left-full top-0 ml-1 z-50 hidden group-hover/flyout:flex flex-col min-w-[160px] rounded-lg border py-1 shadow-xl"
+          style={{ background: "var(--nav-bg)", borderColor: "var(--nav-border)" }}
+        >
+          <span
+            className="px-3 py-1.5 text-[10px] uppercase tracking-wider select-none"
+            style={{ color: "var(--nav-text-muted)" }}
+          >
+            {label}
+          </span>
+          {items.map(({ href, label: itemLabel, Icon }) => (
+            <SidebarLink
+              key={href}
+              href={href}
+              label={itemLabel}
+              Icon={Icon}
+              active={isActive(href)}
+              collapsed={false}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Expanded mode: accordion
   return (
     <div className="space-y-0.5 pb-1">
       <button
@@ -193,7 +227,20 @@ function NavSubGroup({
         <span>{label}</span>
         <ChevronDown size={12} className={`transition-transform ${open ? "" : "-rotate-90"}`} />
       </button>
-      {open && <div className="space-y-0.5">{children}</div>}
+      {open && (
+        <div className="space-y-0.5">
+          {items.map(({ href, label: itemLabel, Icon }) => (
+            <SidebarLink
+              key={href}
+              href={href}
+              label={itemLabel}
+              Icon={Icon}
+              active={isActive(href)}
+              collapsed={false}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
