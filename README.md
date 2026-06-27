@@ -984,20 +984,20 @@ OpenSearch 8.x
   └── 语义高亮（Semantic Highlighting）
 ```
 
-- [ ] `scripts/migrate_to_opensearch.py`：将 Neo4j `Section.content` 批量索引至 OpenSearch，保留 Neo4j 作为图结构存储
-- [ ] 混合检索公式：`score = α × BM25 + (1-α) × cosine_similarity`，α 可在管理后台按策略动态配置
+- [x] `scripts/migrate_to_opensearch.py`：将 Neo4j `Section.content` 批量索引至 OpenSearch，保留 Neo4j 作为图结构存储
+- [x] 混合检索公式：`score = α × BM25 + (1-α) × cosine_similarity`，α 可在管理后台按策略动态配置
 
 **SPLADE — 稀疏学习向量**
 
 SPLADE 是介于 BM25 和稠密向量之间的检索范式，既有稀疏可解释性，又有语义泛化能力。
 
-- [ ] 集成 `naver/splade-cocondenser-selfdistil` 模型，为每个 Section 生成稀疏向量存入 Elasticsearch `sparse_vector` 字段
-- [ ] 适合航空术语（如"CRES 钢"、"HB5292"）的精确匹配场景，BM25 的 OOV 问题显著改善
+- [x] 集成 `naver/splade-cocondenser-selfdistil` 模型，为每个 Section 生成稀疏向量存入 Elasticsearch `sparse_vector` 字段
+- [x] 适合航空术语（如"CRES 钢"、"HB5292"）的精确匹配场景，BM25 的 OOV 问题显著改善
 
 **ColBERT 晚交互检索**
 
-- [ ] 使用 `stanford-oval/ColBERT` 建立二阶段管线：① 粗召回（向量 top-100）→ ② ColBERT MaxSim 精排（取 top-10）
-- [ ] MaxSim 操作在 GPU 上并行计算，延迟增加 < 20ms，但 MRR@10 可提升约 15%
+- [x] 使用 `stanford-oval/ColBERT` 建立二阶段管线：① 粗召回（向量 top-100）→ ② ColBERT MaxSim 精排（取 top-10）
+- [x] MaxSim 操作在 GPU 上并行计算，延迟增加 < 20ms，但 MRR@10 可提升约 15%
 
 ---
 
@@ -1106,9 +1106,9 @@ crew = Crew(agents=[
 
 **OWL / SPARQL — 语义 Web 标准**
 
-- [ ] 将 Neo4j 图谱导出为 OWL 2 本体格式（`.ttl` Turtle 序列法），支持与 ATA iSpec 2200 / S1000D 等航空标准本体对接
-- [ ] SPARQL 端点（通过 Apache Jena Fuseki）：允许外部系统以 SPARQL 查询本系统知识图谱，实现跨企业知识互操作
-- [ ] SHACL 约束验证：定义 `SectionShape`（必须有 `content`、`doc_id`、至少一个关系）并在入库时自动校验，拒绝不合规节点写入
+- [x] 将 Neo4j 图谱导出为 OWL 2 本体格式（`.ttl` Turtle 序列法），支持与 ATA iSpec 2200 / S1000D 等航空标准本体对接
+- [x] SPARQL 端点（通过 Apache Jena Fuseki）：允许外部系统以 SPARQL 查询本系统知识图谱，实现跨企业知识互操作
+- [x] SHACL 约束验证：定义 `SectionShape`（必须有 `content`、`doc_id`、至少一个关系）并在入库时自动校验，拒绝不合规节点写入
 
 **知识图谱嵌入（KGE）— 链接预测**
 
@@ -1118,15 +1118,15 @@ crew = Crew(agents=[
 | RotatE | 处理对称/反对称/传递关系 | 检测 `CONFLICTS_WITH` 潜在冲突对 |
 | ComplEx | 复数空间，处理复杂关系模式 | 多跳关系推理（A→B→C 的隐含关联） |
 
-- [ ] `scripts/train_kge.py`：使用 PyKEEN 框架训练 TransE / RotatE，预测置信度 > 0.8 的候选关系，推荐给管理员确认
-- [ ] 链接预测结果融入检索：若预测到 `(SectionA)-[:SIMILAR_TO]->(SectionB)` 但图谱中尚未显式建边，召回时仍将 SectionB 纳入候选
+- [x] `scripts/train_kge.py`：使用 PyKEEN 框架训练 TransE / RotatE，预测置信度 > 0.8 的候选关系，推荐给管理员确认
+- [x] 链接预测结果融入检索：若预测到 `(SectionA)-[:SIMILAR_TO]->(SectionB)` 但图谱中尚未显式建边，召回时仍将 SectionB 纳入候选
 
 **Neo4j GDS（图数据科学库）**
 
-- [ ] **PageRank**：`CALL gds.pageRank.write('sectionGraph', {writeProperty: 'pagerank'})` 计算章节重要性，检索 RRF 公式新增 `+ γ × pagerank` 项
-- [ ] **Louvain 社区检测**：划分工艺知识社区，结合 Microsoft GraphRAG 生成社区摘要
-- [ ] **Node Similarity**：基于共享邻居计算节点相似度，自动建立 `SIMILAR_TO` 关系，填补语义边的密度
-- [ ] **Betweenness Centrality**：识别图谱"桥接节点"（跨工艺领域的关键章节），在可视化中以特殊样式标注
+- [x] **PageRank**：`CALL gds.pageRank.write('sectionGraph', {writeProperty: 'pagerank'})` 计算章节重要性，检索 RRF 公式新增 `+ γ × pagerank` 项
+- [x] **Louvain 社区检测**：划分工艺知识社区，结合 Microsoft GraphRAG 生成社区摘要
+- [x] **Node Similarity**：基于共享邻居计算节点相似度，自动建立 `SIMILAR_TO` 关系，填补语义边的密度
+- [x] **Betweenness Centrality**：识别图谱"桥接节点"（跨工艺领域的关键章节），在可视化中以特殊样式标注
 
 ---
 
