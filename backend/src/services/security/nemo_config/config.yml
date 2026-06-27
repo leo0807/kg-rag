@@ -1,0 +1,30 @@
+# NeMo Guardrails configuration for Aviation Knowledge Base
+# Colang 2.0 rules defined in aviation.co
+#
+# Install: pip install nemoguardrails
+# Run:
+#   from nemoguardrails import LLMRails, RailsConfig
+#   config = RailsConfig.from_path("backend/src/services/security/nemo_config")
+#   rails = LLMRails(config)
+#   response = await rails.generate_async(messages=[{"role":"user","content":question}])
+
+models:
+  - type: main
+    engine: openai            # or "openai_compatible" for local vLLM
+    model: gpt-4o-mini        # lightweight model for guardrail routing
+
+instructions:
+  - type: general
+    content: |
+      你是一个航空工艺规范知识库助手，只回答与航空制造、工艺规范、材料标准、
+      装配工艺相关的问题。对于无关问题，礼貌拒绝并说明系统用途。
+
+rails:
+  input:
+    flows:
+      - check off topic
+      - block sensitive requests
+  output:
+    flows:
+      - ensure source citation
+      - check response format

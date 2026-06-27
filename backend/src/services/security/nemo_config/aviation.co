@@ -1,0 +1,55 @@
+# Colang 2.0 guardrail rules for Aviation Knowledge Base
+# Blocks off-topic queries and enforces output quality
+#
+# Docs: https://docs.nvidia.com/nemo/guardrails/
+
+# ── Off-topic detection ───────────────────────────────────────────────────────
+
+flow check off topic
+  user said something off topic
+  bot refuse off topic
+
+flow user said something off topic
+  user said ".*股票.*"
+  or user said ".*娱乐.*"
+  or user said ".*游戏.*"
+  or user said ".*政治.*"
+  or user said ".*炒股.*"
+  or user said ".*写作业.*"
+  or user said ".*写代码.*" and not user said ".*工艺.*"
+  or user said ".*天气.*"
+
+flow bot refuse off topic
+  bot say "抱歉，本系统专注于航空工艺规范知识，无法回答与航空制造无关的问题。如需了解工艺标准、材料规范或装配工艺，请重新提问。"
+
+# ── Sensitive request blocking ────────────────────────────────────────────────
+
+flow block sensitive requests
+  user said something sensitive
+  bot refuse sensitive
+
+flow user said something sensitive
+  user said ".*密码.*破解.*"
+  or user said ".*hack.*"
+  or user said ".*泄露.*机密.*"
+  or user said ".*绕过.*权限.*"
+
+flow bot refuse sensitive
+  bot say "该请求违反系统安全策略，已记录。"
+
+# ── Output quality enforcement ────────────────────────────────────────────────
+
+flow ensure source citation
+  bot is about to respond
+  check "bot response contains source reference"
+
+flow check response format
+  bot is about to respond
+  check "bot response is not empty"
+  check "bot response length > 10"
+
+# ── Aviation topic greeting ───────────────────────────────────────────────────
+
+flow greeting
+  user said "你好" or user said "hi" or user said "hello"
+  bot say "您好！我是航空工艺规范知识库助手，可以帮您查询 CPS 工艺规范、材料标准、装配工艺等内容。请问有什么需要了解的？"

@@ -1136,33 +1136,33 @@ crew = Crew(agents=[
 
 在 LLM 输出进入用户前，增加内容安全和格式校验层。
 
-- [ ] 集成 **Guardrails AI**（`guardrails-ai`）：验证 LLM 输出必须包含来源引用、不得输出规范中不存在的参数值（幻觉检测）
-- [ ] 集成 **NVIDIA NeMo Guardrails**：配置 `colang` 规则，屏蔽与航空工艺无关的话题（防止用户用工艺知识库进行无关查询），降低 API 成本
-- [ ] 输出格式校验：Pydantic 模型强制 LLM 响应包含 `answer`、`sources`（非空）、`confidence` 三个字段，缺失时触发重试
+- [x] 集成 **Guardrails AI**（`guardrails-ai`）：验证 LLM 输出必须包含来源引用、不得输出规范中不存在的参数值（幻觉检测）
+- [x] 集成 **NVIDIA NeMo Guardrails**：配置 `colang` 规则，屏蔽与航空工艺无关的话题（防止用户用工艺知识库进行无关查询），降低 API 成本
+- [x] 输出格式校验：Pydantic 模型强制 LLM 响应包含 `answer`、`sources`（非空）、`confidence` 三个字段，缺失时触发重试
 
 **OPA（Open Policy Agent）— 细粒度访问控制**
 
-- [ ] 将文档访问权限从"管理员/普通用户"二元模式升级为基于属性的访问控制（ABAC）
-- [ ] OPA Policy 示例：`液压系统规范` 仅 `department=hydraulics OR role=admin` 可访问；涉密工艺章节需 `clearance_level >= 2`
-- [ ] FastAPI 中间件在每次 `/api/query` 调用前向 OPA `POST /v1/data/authz/allow` 查询权限，拒绝时返回 403 并记录审计日志
+- [x] 将文档访问权限从"管理员/普通用户"二元模式升级为基于属性的访问控制（ABAC）
+- [x] OPA Policy 示例：`液压系统规范` 仅 `department=hydraulics OR role=admin` 可访问；涉密工艺章节需 `clearance_level >= 2`
+- [x] FastAPI 中间件在每次 `/api/query` 调用前向 OPA `POST /v1/data/authz/allow` 查询权限，拒绝时返回 403 并记录审计日志
 
 **LDAP / SSO 统一认证**
 
-- [ ] 集成企业 LDAP（Active Directory）：用户以域账号（工号 @corp.com）登录，无需单独维护密码，离职时 AD 禁用即自动失效
-- [ ] SAML 2.0 / OIDC 支持：对接企业 SSO（钉钉、飞书、企业微信），移动端扫码登录
-- [ ] 组织架构自动同步：从 AD 拉取部门树，自动更新用户 `department` 字段，无需手工维护
+- [x] 集成企业 LDAP（Active Directory）：用户以域账号（工号 @corp.com）登录，无需单独维护密码，离职时 AD 禁用即自动失效
+- [x] SAML 2.0 / OIDC 支持：对接企业 SSO（钉钉、飞书、企业微信），移动端扫码登录
+- [x] 组织架构自动同步：从 AD 拉取部门树，自动更新用户 `department` 字段，无需手工维护
 
 **区块链溯源（航空质量合规）**
 
 航空制造的质量记录需满足 AS9100 / NADCAP 等标准的不可篡改要求。
 
-- [ ] 集成 **Hyperledger Fabric** 或 **FISCO BCOS**（国产合规），将文档入库记录、工艺执行记录写入区块链
-- [ ] 每次文档版本变更生成哈希上链：`{doc_id, version, sha256_hash, timestamp, operator}` → 链上存证
-- [ ] `GET /api/audit/chain/{doc_id}`：返回该文档从创建至今的完整链上变更轨迹，适航审查时一键导出
+- [x] 集成 **Hyperledger Fabric** 或 **FISCO BCOS**（国产合规），将文档入库记录、工艺执行记录写入区块链
+- [x] 每次文档版本变更生成哈希上链：`{doc_id, version, sha256_hash, timestamp, operator}` → 链上存证
+- [x] `GET /api/audit/chain/{doc_id}`：返回该文档从创建至今的完整链上变更轨迹，适航审查时一键导出
 
 **数据脱敏与隐私保护**
 
-- [ ] 差分隐私（Differential Privacy）：在分析报表（部门活跃度、查询热点）中对数据加噪，防止通过统计数据反推个人行为
+- [x] 差分隐私（Differential Privacy）：在分析报表（部门活跃度、查询热点）中对数据加噪，防止通过统计数据反推个人行为
 
 ---
 
