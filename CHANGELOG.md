@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/leo0807/kg-rag/compare/v1.1.0...v1.2.0) (2026-06-28)
+
+
+### Features
+
+* Agent可视化 — 推理链路时间线 ([f0b1ed5](https://github.com/leo0807/kg-rag/commit/f0b1ed50c4ebafbbccf8f043418d232f7656c7ab))
+
 # [1.1.0](https://github.com/leo0807/kg-rag/compare/v1.0.1...v1.1.0) (2026-06-28)
 
 
