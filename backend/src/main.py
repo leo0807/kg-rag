@@ -126,6 +126,14 @@ from .routers.admin_api.api_keys      import router as admin_api_keys_router
 from .routers.v1.open_api             import router as v1_open_api_router
 from .routers.shopfloor               import router as shopfloor_router
 from .routers.sso                     import router as sso_router
+from .routers.agents                  import router as agents_router
+from .routers.voice                   import router as voice_router
+from .routers.ar                      import router as ar_router
+from .routers.mes                     import router as mes_router
+from .routers.twin                    import router as twin_router
+from .routers.a2a                     import router as a2a_router
+from .routers.graph_api.communities   import router as graph_communities_router
+from .routers.admin_api.model_registry import router as admin_model_registry_router
 from .middleware.api_key_auth         import ApiKeyMiddleware
 from .middleware.idempotency          import IdempotencyMiddleware
 
@@ -388,6 +396,14 @@ app.include_router(admin_api_keys_router)
 app.include_router(v1_open_api_router)
 app.include_router(shopfloor_router)
 app.include_router(sso_router)
+app.include_router(agents_router)
+app.include_router(voice_router)
+app.include_router(ar_router)
+app.include_router(mes_router)
+app.include_router(twin_router)
+app.include_router(a2a_router)
+app.include_router(graph_communities_router)
+app.include_router(admin_model_registry_router)
 
 # G 模块：多租户支持
 app.include_router(platform_tenants_router)

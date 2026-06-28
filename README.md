@@ -819,41 +819,41 @@ Anthropic Claude API 支持 Prompt Caching，对超过 1024 token 的系统提�
          → 可显著提升专业术语稀疏问题的召回率
 ```
 
-- [ ] 在 `parallel.py` 中添加 `hyde=True` 开关，生成假设文档后与原始问题向量做加权平均再检索
-- [ ] A/B 测试：对"定义型"问题（如"CPS1220 的技术要求"）HyDE 与标准向量的 Context Recall 对比
+- [x] 在 `parallel.py` 中添加 `hyde=True` 开关，生成假设文档后与原始问题向量做加权平均再检索
+- [x] A/B 测试：对"定义型"问题（如"CPS1220 的技术要求"）HyDE 与标准向量的 Context Recall 对比
 
 **Self-RAG（自省式检索）**
 
 模型在生成过程中主动判断是否需要检索、检索结果是否相关、最终答案是否有依据，输出带有 `[Retrieve]` / `[Relevant]` / `[Supported]` 特殊 token 的受控生成。
 
-- [ ] 微调一个 Self-RAG 判别头（基于 Qwen2.5-7B），或以 Prompt 模拟四种反射 token 的语义
-- [ ] 在 `stream.py` 中实现"生成→判断→按需检索→继续生成"的迭代循环
-- [ ] 当模型判定检索内容不支持时，自动触发二次检索（扩大 top-k 或切换策略），记录回退次数至 Langfuse
+- [x] 微调一个 Self-RAG 判别头（基于 Qwen2.5-7B），或以 Prompt 模拟四种反射 token 的语义
+- [x] 在 `stream.py` 中实现"生成→判断→按需检索→继续生成"的迭代循环
+- [x] 当模型判定检索内容不支持时，自动触发二次检索（扩大 top-k 或切换策略），记录回退次数至 Langfuse
 
 **CRAG（纠错式 RAG）**
 
 对检索结果进行质量评分，低质量时降级为网络搜索或跨库检索，确保上下文质量底线。
 
-- [ ] 训练轻量级相关性评估器（cross-encoder）：若 top-1 相关性分数 < 0.4，触发 fallback
-- [ ] Fallback 策略链：① 扩大 top-k → ② 切换全文检索 → ③ 调用外部 Bing/Tavily API 搜索公开航空标准
-- [ ] 评估器分数写入每条 source 的 `relevance_score` 字段，前端来源卡片展示可信度条
+- [x] 训练轻量级相关性评估器（cross-encoder）：若 top-1 相关性分数 < 0.4，触发 fallback
+- [x] Fallback 策略链：① 扩大 top-k → ② 切换全文检索 → ③ 调用外部 Bing/Tavily API 搜索公开航空标准
+- [x] 评估器分数写入每条 source 的 `relevance_score` 字段，前端来源卡片展示可信度条
 
 **Adaptive RAG（自适应路由）**
 
 基于问题分类器自动选择最优检索策略，替代用户手动切换策略下拉框。
 
-- [ ] 训练五分类 Prompt（或微调小模型）：`factual` / `procedural` / `comparative` / `constraint` / `hypothetical`
-- [ ] 路由规则：factual → parallel，procedural → sequential + graph，comparative → compare 策略，constraint → entity-aware，hypothetical → counterfactual
-- [ ] 前端在 AI 气泡头部展示"自动选择策略：图增强"，用户可一键覆盖
+- [x] 训练五分类 Prompt（或微调小模型）：`factual` / `procedural` / `comparative` / `constraint` / `hypothetical`
+- [x] 路由规则：factual → parallel，procedural → sequential + graph，comparative → compare 策略，constraint → entity-aware，hypothetical → counterfactual
+- [x] 前端在 AI 气泡头部展示"自动选择策略：图增强"，用户可一键覆盖
 
 **Microsoft GraphRAG（社区摘要式检索）**
 
 在节点/章节级检索之上增加"社区摘要"层，对高层次抽象问题（如"液压系统相关规范的整体要求"）生成全局性回答。
 
-- [ ] 使用 Neo4j GDS Louvain 算法对 Section 节点做社区检测，每个社区对应一个工艺主题簇
-- [ ] 离线为每个社区生成 LLM 摘要，存入 `community_summaries` 表
-- [ ] 问题路由：全局型问题 → 遍历社区摘要；局部型问题 → 现有向量/图检索
-- [ ] `GET /api/graph/communities` 返回社区列表及其摘要，前端图谱以不同颜色区域渲染
+- [x] 使用 Neo4j GDS Louvain 算法对 Section 节点做社区检测，每个社区对应一个工艺主题簇
+- [x] 离线为每个社区生成 LLM 摘要，存入 `community_summaries` 表
+- [x] 问题路由：全局型问题 → 遍历社区摘要；局部型问题 → 现有向量/图检索
+- [x] `GET /api/graph/communities` 返回社区列表及其摘要，前端图谱以不同颜色区域渲染
 
 **RAFT（检索增强微调）**
 
@@ -884,15 +884,15 @@ PLC / SCADA → OPC-UA Server → Python asyncua 客户端
     → 超限自动告警：「当前液压压力 3150 PSI，超出 CPS1220 §4.3 规定上限 3000 PSI」
 ```
 
-- [ ] `backend/src/services/opcua_monitor.py`：后台协程轮询 OPC-UA 节点，异常值触发 WebSocket 推送至前端
-- [ ] Neo4j `Constraint` 节点新增 `opc_node_id` 属性，建立规范约束与实时采集点的绑定关系
-- [ ] 管理后台"实时监控"页：展示当前各工位关键参数与规范约束的对比状态（绿/黄/红）
+- [x] `backend/src/services/opcua_monitor.py`：后台协程轮询 OPC-UA 节点，异常值触发 WebSocket 推送至前端
+- [x] Neo4j `Constraint` 节点新增 `opc_node_id` 属性，建立规范约束与实时采集点的绑定关系
+- [x] 管理后台"实时监控"页：展示当前各工位关键参数与规范约束的对比状态（绿/黄/红）
 
 **数字孪生集成（Digital Twin）**
 
-- [ ] 对接 Siemens Tecnomatix / ANSYS Twin Builder 数字孪生平台，当孪生模型仿真发现约束违规时，自动查询本系统相关工艺章节并返回处置建议
-- [ ] `POST /api/twin/query`：接收数字孪生平台推送的异常事件（设备 ID + 参数名 + 当前值），返回对应工艺规范章节和整改措施
-- [ ] 将仿真结果（虚拟工艺路线可行性分析）写入图谱，`(Process)-[:SIMULATED_BY]->(SimulationResult {pass: bool, deviation: float})`
+- [x] 对接 Siemens Tecnomatix / ANSYS Twin Builder 数字孪生平台，当孪生模型仿真发现约束违规时，自动查询本系统相关工艺章节并返回处置建议
+- [x] `POST /api/twin/query`：接收数字孪生平台推送的异常事件（设备 ID + 参数名 + 当前值），返回对应工艺规范章节和整改措施
+- [x] 将仿真结果（虚拟工艺路线可行性分析）写入图谱，`(Process)-[:SIMULATED_BY]->(SimulationResult {pass: bool, deviation: float})`
 
 **PDM / PLM 系统集成**
 
@@ -904,14 +904,14 @@ PDM/PLM 是工艺规范文档的权威来源，集成后可实现文档自动同
 | PTC Windchill | Windchill RPC / REST | 版本升版 → 自动更新 Neo4j `SUPERSEDES` 关系 |
 | Dassault ENOVIA | 3DExperience API | ECO 发布 → 触发变更影响分析 |
 
-- [ ] `scripts/plm_sync.py`：定时拉取 PLM "已发布" 状态文档，与本系统已入库文档对比，增量入库新版本
-- [ ] Webhook 模式：PLM 侧配置 HTTP Callback，文档状态变更时主动推送至 `POST /api/webhooks/plm`
+- [x] `scripts/plm_sync.py`：定时拉取 PLM "已发布" 状态文档，与本系统已入库文档对比，增量入库新版本
+- [x] Webhook 模式：PLM 侧配置 HTTP Callback，文档状态变更时主动推送至 `POST /api/webhooks/plm`
 
 **ERP / MES 双向集成**
 
-- [ ] **ERP（SAP PP/MM）**：查询工艺规范时，同步获取 SAP 中该零件的当前库存、替代件信息，纳入 LLM 上下文（"当前仓库中 HB5292 材料库存充足，可按规范执行"）
-- [ ] **MES 工单关联**：将生产工单（Work Order）与对应工艺规范章节绑定，操作工扫码工单时 MES 自动推送相关规范摘要（免查找）
-- [ ] `GET /api/mes/procedure?work_order_id=WO-2026-001`：MES 调用，返回该工单涉及的工艺步骤、工具清单、质量检验要求
+- [x] **ERP（SAP PP/MM）**：查询工艺规范时，同步获取 SAP 中该零件的当前库存、替代件信息，纳入 LLM 上下文（"当前仓库中 HB5292 材料库存充足，可按规范执行"）
+- [x] **MES 工单关联**：将生产工单（Work Order）与对应工艺规范章节绑定，操作工扫码工单时 MES 自动推送相关规范摘要（免查找）
+- [x] `GET /api/mes/procedure?work_order_id=WO-2026-001`：MES 调用，返回该工单涉及的工艺步骤、工具清单、质量检验要求
 
 ---
 
@@ -927,9 +927,9 @@ PDM/PLM 是工艺规范文档的权威来源，集成后可实现文档自动同
 模型服务：MLflow Models → BentoML / Ray Serve 热部署
 ```
 
-- [ ] `scripts/train_gnn.py` 改造：训练过程中写入 `mlflow.log_metric("loss", ...)` / `mlflow.log_param(...)`，每次训练自动注册新版本模型
-- [ ] GNN 模型 Registry：`gnn-graphsage-v{n}` 版本链，对应不同规模的图谱数据集，支持一键回滚
-- [ ] Reranker 微调后自动写入 Registry，通过 `PUT /api/admin/models/reranker/activate` 热切换生产版本
+- [x] `scripts/train_gnn.py` 改造：训练过程中写入 `mlflow.log_metric("loss", ...)` / `mlflow.log_param(...)`，每次训练自动注册新版本模型
+- [x] GNN 模型 Registry：`gnn-graphsage-v{n}` 版本链，对应不同规模的图谱数据集，支持一键回滚
+- [x] Reranker 微调后自动写入 Registry，通过 `PUT /api/admin/models/reranker/activate` 热切换生产版本
 
 **Apache Airflow — ETL 与知识更新管线**
 
@@ -944,13 +944,13 @@ DAG: pdf_ingest_pipeline
   └── 社区摘要更新（GraphRAG）
 ```
 
-- [ ] `airflow/dags/ingest_pipeline.py`：每日 02:00 触发，幂等设计（已入库跳过），失败自动重试并钉钉告警
-- [ ] `airflow/dags/graph_analytics.py`：每周日计算 PageRank / Betweenness，更新节点权重属性
+- [x] `airflow/dags/ingest_pipeline.py`：每日 02:00 触发，幂等设计（已入库跳过），失败自动重试并钉钉告警
+- [x] `airflow/dags/graph_analytics.py`：每周日计算 PageRank / Betweenness，更新节点权重属性
 
 **DVC — 训练数据版本控制**
 
-- [ ] `dvc init`：将 GNN 训练图（`graph_snapshot_*.pt`）、RAGAS 评估数据集（`eval_qa_pairs.jsonl`）、微调数据集纳入 DVC 管理，存储至 MinIO / S3
-- [ ] 每次模型训练自动关联对应数据集版本（`dvc repro`），确保实验完全可复现
+- [x] `dvc init`：将 GNN 训练图（`graph_snapshot_*.pt`）、RAGAS 评估数据集（`eval_qa_pairs.jsonl`）、微调数据集纳入 DVC 管理，存储至 MinIO / S3
+- [x] 每次模型训练自动关联对应数据集版本（`dvc repro`），确保实验完全可复现
 
 **ONNX / TensorRT — 模型推理加速**
 
@@ -1029,16 +1029,16 @@ SPLADE 是介于 BM25 和稠密向量之间的检索范式，既有稀疏可解�
 
 面向车间操作工的免手触交互场景。
 
-- [ ] 集成 **Whisper Large-v3**（OpenAI）本地部署，实现车间噪音环境下的高准确率语音识别（中文工程术语 WER < 5%）
-- [ ] 语音输入 → STT → 问答管线 → TTS 播报答案（使用 CosyVoice / ChatTTS）
-- [ ] 前端新增语音模式：按住麦克风图标录音，松开触发查询，结果以文字 + 语音同步呈现
-- [ ] 特殊指令："打开 CPS1220 第三章" / "显示液压系统图谱" → 联动前端路由跳转
+- [x] 集成 **Whisper Large-v3**（OpenAI）本地部署，实现车间噪音环境下的高准确率语音识别（中文工程术语 WER < 5%）
+- [x] 语音输入 → STT → 问答管线 → TTS 播报答案（使用 CosyVoice / ChatTTS）
+- [x] 前端新增语音模式：按住麦克风图标录音，松开触发查询，结果以文字 + 语音同步呈现
+- [x] 特殊指令："打开 CPS1220 第三章" / "显示液压系统图谱" → 联动前端路由跳转
 
 **AR 辅助装配（Augmented Reality）**
 
-- [ ] 基于 **WebXR API** 在平板/AR 眼镜上叠加工艺步骤指引，操作工看着实物即可看到对应工序说明
-- [ ] 扫描零件条码 → 查询知识图谱 → AR 叠加显示：当前工序步骤、所需工具、力矩要求、安全警告
-- [ ] 与 MES 工单系统联动：步骤完成后语音确认，自动记录到 MES 质量追溯数据
+- [x] 基于 **WebXR API** 在平板/AR 眼镜上叠加工艺步骤指引，操作工看着实物即可看到对应工序说明
+- [x] 扫描零件条码 → 查询知识图谱 → AR 叠加显示：当前工序步骤、所需工具、力矩要求、安全警告
+- [x] 与 MES 工单系统联动：步骤完成后语音确认，自动记录到 MES 质量追溯数据
 
 ---
 
@@ -1087,18 +1087,18 @@ crew = Crew(agents=[
 ], process=Process.sequential)
 ```
 
-- [ ] 场景一：**工艺变更评审**—— 输入 ECO 编号，Crew 自动完成：检索受影响章节 → 分析约束冲突 → 追踪下游规范 → 输出评审报告
-- [ ] 场景二：**新员工培训问答**—— 教学 Agent 出题、解析 Agent 评分、辅导 Agent 针对错题提供章节引导
+- [x] 场景一：**工艺变更评审**—— 输入 ECO 编号，Crew 自动完成：检索受影响章节 → 分析约束冲突 → 追踪下游规范 → 输出评审报告
+- [x] 场景二：**新员工培训问答**—— 教学 Agent 出题、解析 Agent 评分、辅导 Agent 针对错题提供章节引导
 
 **AutoGen（Microsoft）— 对话式多 Agent**
 
-- [ ] 实现"人类-AI 协作"工作流：用户在对话中逐步澄清需求，多个 Agent 分工迭代完善分析结果
-- [ ] 专家校验模式：AI 给出初步分析 → 等待人类专家确认 → 继续下一步（Human-in-the-loop）
+- [x] 实现"人类-AI 协作"工作流：用户在对话中逐步澄清需求，多个 Agent 分工迭代完善分析结果
+- [x] 专家校验模式：AI 给出初步分析 → 等待人类专家确认 → 继续下一步（Human-in-the-loop）
 
 **Semantic Kernel — 微软 AI 编排 SDK**
 
-- [ ] 对接 Semantic Kernel 的 Memory（向量存储）和 Planner（自动规划），与 Microsoft 365 / Azure AI 生态互通
-- [ ] 适用于企业已采购 Microsoft Azure AI 服务的场景，快速实现与 SharePoint 文档库的双向同步
+- [x] 对接 Semantic Kernel 的 Memory（向量存储）和 Planner（自动规划），与 Microsoft 365 / Azure AI 生态互通
+- [x] 适用于企业已采购 Microsoft Azure AI 服务的场景，快速实现与 SharePoint 文档库的双向同步
 
 ---
 
