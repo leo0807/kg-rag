@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/leo0807/kg-rag/compare/v1.0.0...v1.0.1) (2026-06-28)
+
+
+### Bug Fixes
+
+* analytics misalignment, WebSocket loop, simulation examples, processing dashboard UI ([a4ae818](https://github.com/leo0807/kg-rag/commit/a4ae818582bc526aab6a0203b8601da1f691a326))
+
 # 1.0.0 (2026-06-28)
 
 
