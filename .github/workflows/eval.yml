@@ -1,0 +1,73 @@
+name: RAGAS Evaluation
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: "Retrieval strategy to evaluate"
+        default: "parallel"
+        type: choice
+        options: [parallel, graph_augmented, sequential, multi_hop]
+
+jobs:
+  ragas-eval:
+    name: RAGAS Quality Evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install evaluation dependencies
+        run: |
+          pip install ragas datasets httpx openai
+          pip install -r backend/requirements.txt
+
+      - name: Run RAGAS evaluation
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          BACKEND_API_KEY: ${{ secrets.BACKEND_API_KEY }}
+          BACKEND_URL: ${{ secrets.STAGING_BACKEND_URL || 'http://localhost:8000' }}
+        run: |
+          python scripts/eval/ragas_eval.py \
+            --endpoint "$BACKEND_URL" \
+            --qa-file scripts/eval/benchmark_questions.json \
+            --strategy "${{ inputs.strategy || 'parallel' }}" \
+            --output-dir /tmp/eval-results
+
+      - name: Upload evaluation results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragas-results-${{ inputs.strategy || 'parallel' }}
+          path: /tmp/eval-results/
+
+      - name: Post results to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const files = fs.readdirSync('/tmp/eval-results/');
+            if (files.length === 0) return;
+            const result = JSON.parse(fs.readFileSync(`/tmp/eval-results/${files[0]}`));
+            const scores = result.scores;
+            const body = `## RAGAS Evaluation Results\n\n` +
+              `**Strategy:** ${result.strategy}\n` +
+              `**Questions:** ${result.n_questions}\n\n` +
+              `| Metric | Score | Threshold |\n|--------|-------|----------|\n` +
+              `| Faithfulness | ${scores.faithfulness?.toFixed(3) || 'N/A'} | 0.85 |\n` +
+              `| Answer Relevancy | ${scores.answer_relevancy?.toFixed(3) || 'N/A'} | 0.80 |\n` +
+              `| Context Recall | ${scores.context_recall?.toFixed(3) || 'N/A'} | 0.75 |\n` +
+              `| Context Precision | ${scores.context_precision?.toFixed(3) || 'N/A'} | 0.70 |\n`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });

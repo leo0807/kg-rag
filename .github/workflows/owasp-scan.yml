@@ -1,0 +1,103 @@
+name: OWASP ZAP Security Scan
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"  # weekly Sunday 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Target URL to scan"
+        default: "http://localhost:8000"
+
+jobs:
+  zap-scan:
+    name: OWASP ZAP Active Scan
+    runs-on: ubuntu-latest
+    services:
+      app:
+        image: ghcr.io/${{ github.repository }}/backend:latest
+        ports:
+          - 8000:8000
+        env:
+          DATABASE_URL: sqlite:///./test.db
+          NEO4J_URI: bolt://localhost:7687
+          MILVUS_HOST: localhost
+          JWT_SECRET: ci-test-secret-not-for-production
+          REDIS_URL: redis://localhost:6379/0
+        options: >-
+          --health-cmd "curl -f http://localhost:8000/api/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for application to start
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/api/health && break
+            echo "Waiting... $i/30"
+            sleep 5
+          done
+
+      - name: OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: "http://localhost:8000"
+          rules_file_name: ".zap/rules.tsv"
+          cmd_options: "-a -j -l WARN"
+          issue_title: "OWASP ZAP Security Report"
+          fail_action: true
+          allow_issue_writing: true
+        env:
+          ZAP_AUTH_HEADER: "Authorization"
+          ZAP_AUTH_HEADER_VALUE: "Bearer ${{ secrets.TEST_JWT_TOKEN }}"
+
+      - name: OWASP ZAP API Scan
+        uses: zaproxy/action-api-scan@v0.7.0
+        with:
+          target: "http://localhost:8000/openapi.json"
+          format: openapi
+          cmd_options: "-l WARN"
+
+      - name: Upload ZAP Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-security-report
+          path: |
+            report_html.html
+            report_json.json
+            report_md.md
+
+      - name: Comment PR with ZAP Summary
+        if: github.event_name == 'pull_request'
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_title: "ZAP Scan Results"
+
+  dependency-check:
+    name: OWASP Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: OWASP Dependency Check (Python)
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: "kg-rag-backend"
+          path: "backend"
+          format: "HTML"
+          out: "reports"
+          args: >
+            --enableRetired
+            --enableExperimental
+            --suppression .owasp-suppression.xml
+
+      - name: Upload Dependency Check Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: reports/

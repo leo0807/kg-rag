@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "cps-knowledge-base": {
+      "command": "python",
+      "args": ["/path/to/kg-rag/mcp_server/server.py"],
+      "env": {
+        "BACKEND_URL": "http://localhost:8000",
+        "API_KEY": ""
+      }
+    }
+  }
+}
