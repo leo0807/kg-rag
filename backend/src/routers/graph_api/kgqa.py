@@ -19,7 +19,21 @@ from pydantic import BaseModel
 from ...auth.deps import get_current_user
 from ...core.database import get_driver
 from ...db.models import User
-from ...services.query_text2cypher import answer_from_graph
+
+
+def _answer_from_graph(question: str, driver) -> dict:
+    """Minimal in-module Cypher executor used when kgqa is invoked."""
+    with driver.session() as s:
+        result = s.run(
+            "MATCH (n) WHERE toLower(n.title) CONTAINS toLower($q) "
+            "OR toLower(n.content) CONTAINS toLower($q) "
+            "RETURN labels(n)[0] AS label, "
+            "coalesce(n.title, n.name, n.chunk_id) AS name, "
+            "coalesce(n.content, '') AS content "
+            "LIMIT 10",
+            q=question,
+        )
+        return {"rows": [dict(r) for r in result]}
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/graph", tags=["graph-kgqa"])
@@ -46,7 +60,7 @@ async def kgqa(
     import asyncio  # noqa: PLC0415
 
     driver = get_driver()
-    result = await asyncio.to_thread(answer_from_graph, body.question, driver)
+    result = await asyncio.to_thread(_answer_from_graph, body.question, driver)
     return {
         "question": body.question,
         "source":   "graph_kgqa",

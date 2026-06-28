@@ -31,7 +31,7 @@ export function QualityInsightsTab({ data, loading }: { data: QualityData | null
   return (
     <div className="space-y-4">
       {/* KPI */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3 stagger-scale">
         {[
           { label: "平均评分",   value: avgScore },
           { label: "反馈总数",   value: feedbackPie.reduce((s, f) => s + f.value, 0) },

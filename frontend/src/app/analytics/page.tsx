@@ -5,6 +5,7 @@ import { UsageInsightsTab }      from "./UsageInsightsTab";
 import { QualityInsightsTab }    from "./QualityInsightsTab";
 import { KnowledgeInsightsTab }  from "./KnowledgeInsightsTab";
 import { OperationsInsightsTab } from "./OperationsInsightsTab";
+import { DataStory }             from "./DataStory";
 
 const TABS = ["使用情况", "答案质量", "知识使用", "运营指标"] as const;
 type Tab = typeof TABS[number];
@@ -96,19 +97,24 @@ export default function AnalyticsPage() {
         ))}
       </div>
 
-      {/* Tab content */}
-      {tab === "使用情况" && (
-        <UsageInsightsTab data={data["使用情况"] as Parameters<typeof UsageInsightsTab>[0]["data"]} loading={loading} />
-      )}
-      {tab === "答案质量" && (
-        <QualityInsightsTab data={data["答案质量"] as Parameters<typeof QualityInsightsTab>[0]["data"]} loading={loading} />
-      )}
-      {tab === "知识使用" && (
-        <KnowledgeInsightsTab data={data["知识使用"] as Parameters<typeof KnowledgeInsightsTab>[0]["data"]} loading={loading} />
-      )}
-      {tab === "运营指标" && (
-        <OperationsInsightsTab data={data["运营指标"] as Parameters<typeof OperationsInsightsTab>[0]["data"]} loading={loading} />
-      )}
+      {/* Tab content — min-h prevents layout collapse when charts are empty */}
+      <div className="min-h-[320px]">
+        {tab === "使用情况" && (
+          <UsageInsightsTab data={data["使用情况"] as Parameters<typeof UsageInsightsTab>[0]["data"]} loading={loading} />
+        )}
+        {tab === "答案质量" && (
+          <QualityInsightsTab data={data["答案质量"] as Parameters<typeof QualityInsightsTab>[0]["data"]} loading={loading} />
+        )}
+        {tab === "知识使用" && (
+          <KnowledgeInsightsTab data={data["知识使用"] as Parameters<typeof KnowledgeInsightsTab>[0]["data"]} loading={loading} />
+        )}
+        {tab === "运营指标" && (
+          <OperationsInsightsTab data={data["运营指标"] as Parameters<typeof OperationsInsightsTab>[0]["data"]} loading={loading} />
+        )}
+      </div>
+
+      {/* Data story — always visible, fills remaining space meaningfully */}
+      <DataStory period={period} />
     </div>
   );
 }

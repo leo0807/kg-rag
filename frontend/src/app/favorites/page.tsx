@@ -263,7 +263,7 @@ export default function FavoritesPage() {
                         <EmptyWorkspace />
                     )
                 ) : (
-                    <div className="space-y-3 stagger-children">
+                    <div className="space-y-3 stagger-left">
                         {filtered.map(item => (
                             <FavoriteCard
                                 key={item.id}

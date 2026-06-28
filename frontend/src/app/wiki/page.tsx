@@ -86,7 +86,8 @@ export default function WikiIndexPage() {
           <>
             {Object.entries(byTypeOnPage).map(([type, items]) => (
               <div key={type} className="mb-8">
-                <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+                <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3"
+                  style={{ animation: "slide-in-left 0.4s ease both" }}>
                   {type} <span className="text-gray-700">({byType[type].length})</span>
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 stagger-children">

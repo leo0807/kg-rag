@@ -328,7 +328,7 @@ class Document(Base):
 
     # doc_id 对应 Neo4j 中 Document.name
     doc_id:     Mapped[str]           = mapped_column(String(200), primary_key=True)
-    owner_id:   Mapped[str | None]    = mapped_column(String(36),  nullable=True, index=True)
+    owner_id:   Mapped[str | None]    = mapped_column(String(36),  nullable=True)
     visibility: Mapped[str]           = mapped_column(String(20),  default="public")
     department: Mapped[str]           = mapped_column(String(64),  default="")
     created_at: Mapped[datetime]      = mapped_column(DateTime,    server_default=func.now())

@@ -19,7 +19,7 @@ export function OperationsInsightsTab({ data, loading }: { data: OpsData | null;
   return (
     <div className="space-y-4">
       {/* KPI */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3 stagger-scale">
         {[
           { label: "总请求数",   value: totalRequests.toLocaleString() },
           { label: "峰值 QPS",   value: maxQps.toLocaleString() },

@@ -31,7 +31,7 @@ export function KnowledgeInsightsTab({ data, loading }: { data: KnowledgeData | 
   return (
     <div className="space-y-4">
       {/* KPI */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3 stagger-scale">
         {[
           { label: "总查询文档数", value: hotCount },
           { label: "涉及主题数",   value: topicsCount },

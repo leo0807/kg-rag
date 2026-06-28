@@ -69,8 +69,22 @@ async def sync_schema(conn: "AsyncConnection") -> list[str]:
     except ImportError:
         pass
 
-    # 1. Create tables that don't exist at all.
-    await conn.run_sync(Base.metadata.create_all)
+    # 1. Create only tables that are actually missing, so we never touch
+    #    existing tables/indexes (asyncpg dialect doesn't honour checkfirst
+    #    for indexes and aborts the whole transaction on DuplicateTableError).
+    result = await conn.execute(text(
+        "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+    ))
+    existing_tables = {row[0] for row in result}
+    model_tables = {t.name for t in Base.metadata.sorted_tables}
+    missing = model_tables - existing_tables
+    if missing:
+        logger.info("schema_sync: creating new tables: %s", missing)
+        tables_to_create = [Base.metadata.tables[t] for t in missing]
+        async with conn.engine.begin() as fresh:
+            await fresh.run_sync(
+                lambda c: Base.metadata.create_all(c, tables=tables_to_create)
+            )
 
     # 2. For tables that already existed, add missing columns.
     result = await conn.execute(text(

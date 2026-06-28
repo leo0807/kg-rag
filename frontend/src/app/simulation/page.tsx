@@ -118,7 +118,7 @@ export default function SimulationPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-white" style={{ animation: "slide-up-fade 0.55s ease both" }}>仿真案例库</h1>
+          <h1 className="text-xl font-semibold text-white blur-in">仿真案例库</h1>
           <p className="text-gray-400 text-sm mt-1">CAE/CFD 仿真结果管理与检索</p>
         </div>
         <Link href="/simulation/new"

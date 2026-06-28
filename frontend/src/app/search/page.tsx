@@ -78,7 +78,7 @@ export default function SearchPage() {
 
   return (
     <div className="p-8 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold text-white mb-6" style={{ animation: "slide-up-fade 0.55s ease both" }}>全局搜索</h1>
+      <h1 className="text-2xl font-semibold text-white mb-6 blur-in">全局搜索</h1>
 
       {/* Search bar + dropdown */}
       <div className="relative mb-6">
@@ -173,7 +173,7 @@ export default function SearchPage() {
 
       {total > 0 && <div className="text-xs text-gray-500 mb-4">找到 {total} 个相关章节</div>}
 
-      <div className="space-y-3 stagger-children">
+      <div className="space-y-3 stagger-scale">
         {results.map(result => (
           <Link key={result.chunk_id} href={`/library/${result.doc_id}`}
             className="block p-4 bg-gray-900 rounded-xl border border-gray-800 hover:border-indigo-500 transition-colors tech-card">

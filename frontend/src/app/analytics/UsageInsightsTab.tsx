@@ -24,7 +24,7 @@ export function UsageInsightsTab({ data, loading }: { data: UsageData | null; lo
   return (
     <div className="space-y-4">
       {/* KPI row */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3 stagger-scale">
         {stats.map(s => (
           <div key={s.label} className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <p className="text-gray-400 text-xs">{s.label}</p>
