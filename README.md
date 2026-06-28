@@ -412,21 +412,21 @@ python -m pytest tests/ -v
 ### 一、图谱结构扩展：更丰富的知识表示
 
 **新节点类型**
-- [ ] **Standard（标准规范节点）**：将 GJB、AS9100、HB、MIL-SPEC 等外部标准写入图谱，与 Document 建立 `COMPLIES_WITH` / `REFERENCED_BY` 关系，支持合规性追踪
-- [ ] **Component（零件节点）**：从工艺规范中提取零件编号（如 P/N、件号），建立 `(Section)-[:APPLIES_TO]->(Component)` 关系，支持按零件查询所有相关工艺
-- [ ] **Person / Role（人员角色节点）**：文档编制者、审核者、批准者，`(Document)-[:AUTHORED_BY]->(Person)`，支持追溯文档责任链
-- [ ] **Equipment（设备/工装节点）**：区别于 Tool（手工工具），Equipment 指专用工装夹具、检测设备（如扭矩扳手校准仪），`(Section)-[:REQUIRES_EQUIPMENT]->(Equipment)`
-- [ ] **Step（工序步骤节点）**：将 Section 中的有序步骤拆解为独立节点，`(Section)-[:HAS_STEP {order}]->(Step)-[:NEXT_STEP]->(Step)`，支持步骤级检索与重排
-- [ ] **Hazard（危险源节点）**：从安全警告中提取危险源（如高压液压油喷射风险），`(Section)-[:WARNS_OF]->(Hazard)`，构建安全知识子图
-- [ ] **Inspection（检验节点）**：提取质量检验要求，`(Section)-[:REQUIRES_INSPECTION]->(Inspection {method, frequency, acceptance_criteria})`
-- [ ] **ChangeRecord（变更记录节点）**：每次文档版本更新时创建，存储变更原因、审批人、生效日期，`(Document)-[:HAS_CHANGE_RECORD]->(ChangeRecord)`
+- [x] **Standard（标准规范节点）**：将 GJB、AS9100、HB、MIL-SPEC 等外部标准写入图谱，与 Document 建立 `COMPLIES_WITH` / `REFERENCED_BY` 关系，支持合规性追踪
+- [x] **Component（零件节点）**：从工艺规范中提取零件编号（如 P/N、件号），建立 `(Section)-[:APPLIES_TO]->(Component)` 关系，支持按零件查询所有相关工艺
+- [x] **Person / Role（人员角色节点）**：文档编制者、审核者、批准者，`(Document)-[:AUTHORED_BY]->(Person)`，支持追溯文档责任链
+- [x] **Equipment（设备/工装节点）**：区别于 Tool（手工工具），Equipment 指专用工装夹具、检测设备（如扭矩扳手校准仪），`(Section)-[:REQUIRES_EQUIPMENT]->(Equipment)`
+- [x] **Step（工序步骤节点）**：将 Section 中的有序步骤拆解为独立节点，`(Section)-[:HAS_STEP {order}]->(Step)-[:NEXT_STEP]->(Step)`，支持步骤级检索与重排
+- [x] **Hazard（危险源节点）**：从安全警告中提取危险源（如高压液压油喷射风险），`(Section)-[:WARNS_OF]->(Hazard)`，构建安全知识子图
+- [x] **Inspection（检验节点）**：提取质量检验要求，`(Section)-[:REQUIRES_INSPECTION]->(Inspection {method, frequency, acceptance_criteria})`
+- [x] **ChangeRecord（变更记录节点）**：每次文档版本更新时创建，存储变更原因、审批人、生效日期，`(Document)-[:HAS_CHANGE_RECORD]->(ChangeRecord)`
 
 **新关系类型**
-- [ ] **`PRECEDES` / `FOLLOWS`（工序先后）**：跨章节的工序依赖关系，如"液压测试必须在管路安装后进行"，支持工艺流程的拓扑排序
-- [ ] **`CONFLICTS_WITH`（冲突检测）**：自动识别同一零件在不同文档中出现矛盾的工艺要求（如力矩值不一致），建立冲突边并告警
-- [ ] **`DERIVED_FROM`（知识溯源）**：当某工艺节点由另一基础规范推导而来时，建立溯源关系，支持"为什么要这样做"的深层追问
-- [ ] **`VALIDATED_BY`（验证关系）**：将工艺参数（Constraint）与试验报告或验证记录关联，`(Constraint)-[:VALIDATED_BY]->(Document {type: "test_report"})`
-- [ ] **`SUPERSEDES_SECTION`（章节级版本替换）**：粒度比文档级 `SUPERSEDES` 更细，精确到哪个章节被哪个新章节替代
+- [x] **`PRECEDES` / `FOLLOWS`（工序先后）**：跨章节的工序依赖关系，如"液压测试必须在管路安装后进行"，支持工艺流程的拓扑排序
+- [x] **`CONFLICTS_WITH`（冲突检测）**：自动识别同一零件在不同文档中出现矛盾的工艺要求（如力矩值不一致），建立冲突边并告警
+- [x] **`DERIVED_FROM`（知识溯源）**：当某工艺节点由另一基础规范推导而来时，建立溯源关系，支持"为什么要这样做"的深层追问
+- [x] **`VALIDATED_BY`（验证关系）**：将工艺参数（Constraint）与试验报告或验证记录关联，`(Constraint)-[:VALIDATED_BY]->(Document {type: "test_report"})`
+- [x] **`SUPERSEDES_SECTION`（章节级版本替换）**：粒度比文档级 `SUPERSEDES` 更细，精确到哪个章节被哪个新章节替代
 
 ---
 
@@ -436,9 +436,9 @@ python -m pytest tests/ -v
 - [x] **PageRank 重要性排序**：对 Section 节点运行 PageRank（被引用次数多的章节权重高），检索时将 PageRank 分数融入 RRF 排名，提升核心工艺章节的召回优先级
 - [x] **社区检测（Louvain / LPA）**：使用 Neo4j GDS 对节点进行社区发现，识别高度相关的工艺簇（如"液压系统相关章节集合"），用于自动生成工艺主题标签
 - [x] **中心性分析（Betweenness Centrality）**：找出图谱中的"桥接节点"（连接不同工艺领域的关键章节），高中心性节点可能是跨专业知识的核心交汇点
-- [ ] **最短路径查询**：`GET /api/graph/path?from=doc_id_A&to=doc_id_B` 返回两文档/章节之间的知识关联路径，解释为什么两份规范相互关联
-- [ ] **子图相似度**：当导入新文档时，自动计算与已有文档的子图结构相似度（GED / WL kernel），识别重复或高度相似的工艺规范
-- [ ] **知识覆盖度热力图**：对图谱进行密度分析，识别哪些零件类型、工艺领域的知识节点稀疏（知识盲区），输出覆盖度报告
+- [x] **最短路径查询**：`GET /api/graph/path?from=doc_id_A&to=doc_id_B` 返回两文档/章节之间的知识关联路径，解释为什么两份规范相互关联
+- [x] **子图相似度**：当导入新文档时，自动计算与已有文档的子图结构相似度（GED / WL kernel），识别重复或高度相似的工艺规范
+- [x] **知识覆盖度热力图**：对图谱进行密度分析，识别哪些零件类型、工艺领域的知识节点稀疏（知识盲区），输出覆盖度报告
 
 **推理与问题检测**
 - [x] **约束冲突检测引擎**：自动比对同一 Component 上来自不同 Document 的 Constraint 节点，若力矩范围、温度限值有交叉矛盾则生成告警，`POST /api/graph/conflict-check?component=`
@@ -453,15 +453,15 @@ python -m pytest tests/ -v
 
 **检索策略升级**
 - [x] **图神经网络（GNN）检索**：训练 GraphSAGE 模型，将节点结构特征（邻居类型分布、关系密度）融入节点 Embedding，替代纯文本向量，提升结构相似节点的检索精度
-- [ ] **个性化 PageRank（PPR）检索**：以用户查询锚定的初始节点为种子，运行个性化 PageRank，按随机游走概率排序候选节点，替代当前固定深度的 BFS 扩展
-- [ ] **关系路径感知检索**：将"两节点之间通过哪种路径连接"作为语义特征，区分"直接相关"（共享 Tool）与"间接相关"（共享 Material 再共享 Process），差异化加权
-- [ ] **时序感知检索**：查询时默认优先返回最新版本文档的章节，过期章节降权（基于 `SUPERSEDES` 关系链的版本时序）
-- [ ] **对比检索模式**：`strategy=compare` 新策略，自动并行检索两份文档的相同主题章节，输出结构化对比结果（差异项、共同点、冲突点）
-- [ ] **约束感知检索**：检测问题中是否含数值（如"液压压力 3000 PSI"），若有则优先召回 Constraint.value 范围覆盖该数值的章节
+- [x] **个性化 PageRank（PPR）检索**：以用户查询锚定的初始节点为种子，运行个性化 PageRank，按随机游走概率排序候选节点，替代当前固定深度的 BFS 扩展
+- [x] **关系路径感知检索**：将"两节点之间通过哪种路径连接"作为语义特征，区分"直接相关"（共享 Tool）与"间接相关"（共享 Material 再共享 Process），差异化加权
+- [x] **时序感知检索**：查询时默认优先返回最新版本文档的章节，过期章节降权（基于 `SUPERSEDES` 关系链的版本时序）
+- [x] **对比检索模式**：`strategy=compare` 新策略，自动并行检索两份文档的相同主题章节，输出结构化对比结果（差异项、共同点、冲突点）
+- [x] **约束感知检索**：检测问题中是否含数值（如"液压压力 3000 PSI"），若有则优先召回 Constraint.value 范围覆盖该数值的章节
 
 **上下文图构建**
-- [ ] **动态子图提取**：回答问题时不仅返回相关 Section，同时提取以这些节点为中心的 2 跳子图（包含 Tool、Material、Constraint），将子图结构序列化为 LLM 上下文的结构化补充
-- [ ] **推理链图谱化**：将多跳推理过程（子问题→节点→边→子答案）以图结构记录并存入 Neo4j，支持后续查询"这个答案是如何推理得出的"
+- [x] **动态子图提取**：回答问题时不仅返回相关 Section，同时提取以这些节点为中心的 2 跳子图（包含 Tool、Material、Constraint），将子图结构序列化为 LLM 上下文的结构化补充
+- [x] **推理链图谱化**：将多跳推理过程（子问题→节点→边→子答案）以图结构记录并存入 Neo4j，支持后续查询"这个答案是如何推理得出的"
 - [x] **反事实图查询**：支持"如果去掉 X 工序，Y 零件还能满足 Z 要求吗？"类型的假设推理，通过图谱中的约束路径模拟因果链
 
 ---
@@ -469,22 +469,22 @@ python -m pytest tests/ -v
 ### 四、时序与版本智能
 
 - [x] **版本时间线视图**：前端新增 Timeline 视图，以横轴为时间、纵轴为文档，展示版本演进、章节变更、关系新增的历史序列
-- [ ] **章节级 Diff 图谱**：对同一章节的两个版本，生成 Myers Diff 并将变更写入图谱（`CHANGED_TO` 边携带 diff patch 属性），支持"这个章节改了什么"的精确问答
+- [x] **章节级 Diff 图谱**：对同一章节的两个版本，生成 Myers Diff 并将变更写入图谱（`CHANGED_TO` 边携带 diff patch 属性），支持"这个章节改了什么"的精确问答
 - [x] **变更影响分析**：当一个 Document 更新版本时，自动沿 `REFERENCES` 关系扩散，找出所有引用该文档的下游规范，生成"受影响文档清单"，辅助变更管理
-- [ ] **变更频率热力图**：统计各 Section 节点的历史变更次数（`ChangeRecord` 节点数量），在图谱上以热力色渲染，识别"高度易变"章节（可能存在工艺不成熟问题）
-- [ ] **有效性时间窗口**：为 Document / Section 节点增加 `valid_from` / `valid_until` 属性，查询时自动过滤生效期外的节点（支持"查询某时间点有效的工艺规范"）
-- [ ] **废止预警**：定期扫描 `OBSOLETED_BY` 关系，若系统内存在指向已废止文档的 `REFERENCES` 边，则触发告警通知文档管理员
+- [x] **变更频率热力图**：统计各 Section 节点的历史变更次数（`ChangeRecord` 节点数量），在图谱上以热力色渲染，识别"高度易变"章节（可能存在工艺不成熟问题）
+- [x] **有效性时间窗口**：为 Document / Section 节点增加 `valid_from` / `valid_until` 属性，查询时自动过滤生效期外的节点（支持"查询某时间点有效的工艺规范"）
+- [x] **废止预警**：定期扫描 `OBSOLETED_BY` 关系，若系统内存在指向已废止文档的 `REFERENCES` 边，则触发告警通知文档管理员
 
 ---
 
 ### 五、领域本体与外部知识融合
 
-- [ ] **航空领域本体对齐**：导入 ATA 100 章节码（飞机系统分类标准）作为顶层分类本体，将 Document / Section 节点映射至对应 ATA Chapter，支持按 ATA 章节号检索（如"ATA 29 液压系统所有相关规范"）
-- [ ] **合规性矩阵**：构建规范 → 标准条款的映射图（如 GJB 241 §3.2.1 → 本系统某工艺章节），`GET /api/graph/compliance-matrix?standard=GJB241` 输出覆盖度矩阵，识别合规盲区
-- [ ] **术语本体（Ontology）**：建立航空制造术语同义词表，统一"液压泵"/"液压驱动泵"/"液压系统泵"等变体，作为图谱实体归一化的权威词典
-- [ ] **供应商知识图谱**：将材料供应商信息（`Supplier` 节点）接入，`(Material)-[:SUPPLIED_BY]->(Supplier {approval_status, lead_time})`，支持"这个材料有哪些合格供应商"
-- [ ] **BOM（物料清单）集成**：从 ERP/PDM 系统导入 BOM 数据，将零件号（Part Number）节点与图谱中的 Component 节点对齐，实现工艺规范与制造清单的双向追溯
-- [ ] **CAD 元数据关联**：从 STEP/IGES 文件中提取几何特征（材料、公差带、表面粗糙度），与图谱中的 Constraint 节点匹配，打通设计-工艺-制造数据孤岛
+- [x] **航空领域本体对齐**：导入 ATA 100 章节码（飞机系统分类标准）作为顶层分类本体，将 Document / Section 节点映射至对应 ATA Chapter，支持按 ATA 章节号检索（如"ATA 29 液压系统所有相关规范"）
+- [x] **合规性矩阵**：构建规范 → 标准条款的映射图（如 GJB 241 §3.2.1 → 本系统某工艺章节），`GET /api/graph/compliance-matrix?standard=GJB241` 输出覆盖度矩阵，识别合规盲区
+- [x] **术语本体（Ontology）**：建立航空制造术语同义词表，统一"液压泵"/"液压驱动泵"/"液压系统泵"等变体，作为图谱实体归一化的权威词典
+- [x] **供应商知识图谱**：将材料供应商信息（`Supplier` 节点）接入，`(Material)-[:SUPPLIED_BY]->(Supplier {approval_status, lead_time})`，支持"这个材料有哪些合格供应商"
+- [x] **BOM（物料清单）集成**：从 ERP/PDM 系统导入 BOM 数据，将零件号（Part Number）节点与图谱中的 Component 节点对齐，实现工艺规范与制造清单的双向追溯
+- [x] **CAD 元数据关联**：从 STEP/IGES 文件中提取几何特征（材料、公差带、表面粗糙度），与图谱中的 Constraint 节点匹配，打通设计-工艺-制造数据孤岛
 
 ---
 
@@ -570,11 +570,11 @@ python -m pytest tests/ -v
 
 ### 十、垂直领域深化（航空制造专项）
 
-- [ ] **适航符合性映射**：将工艺规范与适航条款（CCAR-25、FAR-25、CS-25）建立对应关系，支持适航审查时快速定位相关工艺依据
-- [ ] **工艺 FMEA 图谱化**：将失效模式与影响分析（FMEA）结构化录入：`(Process)-[:HAS_FAILURE_MODE]->(FailureMode {severity, occurrence, detection, RPN})`，支持按 RPN 值排序高风险工序
-- [ ] **特种工艺追踪**：为焊接、热处理、表面处理、无损检测等特种工艺建立专属节点类型，关联认证要求（操作者资质、设备鉴定周期）
-- [ ] **首件鉴定关联**：将首件鉴定报告（FAI）与相关工艺章节挂钩，`(Document {type:"FAI"})-[:VALIDATES]->(Section)`，支持"这个工序的首件鉴定状态"查询
-- [ ] **工程更改单（ECO）图谱**：将 ECO 作为图谱中的一等公民节点，连接变更前/后的 Section 节点和受影响的 Component 节点，实现工程变更的全链路追踪
+- [x] **适航符合性映射**：将工艺规范与适航条款（CCAR-25、FAR-25、CS-25）建立对应关系，支持适航审查时快速定位相关工艺依据
+- [x] **工艺 FMEA 图谱化**：将失效模式与影响分析（FMEA）结构化录入：`(Process)-[:HAS_FAILURE_MODE]->(FailureMode {severity, occurrence, detection, RPN})`，支持按 RPN 值排序高风险工序
+- [x] **特种工艺追踪**：为焊接、热处理、表面处理、无损检测等特种工艺建立专属节点类型，关联认证要求（操作者资质、设备鉴定周期）
+- [x] **首件鉴定关联**：将首件鉴定报告（FAI）与相关工艺章节挂钩，`(Document {type:"FAI"})-[:VALIDATES]->(Section)`，支持"这个工序的首件鉴定状态"查询
+- [x] **工程更改单（ECO）图谱**：将 ECO 作为图谱中的一等公民节点，连接变更前/后的 Section 节点和受影响的 Component 节点，实现工程变更的全链路追踪
 
 ---
 
@@ -965,8 +965,8 @@ DAG: pdf_ingest_pipeline
 
 **Triton Inference Server — 统一模型服务网关**
 
-- [ ] 将 BGE-M3、bge-reranker、GNN 推理、实体提取 LLM 统一部署至 Triton，通过 gRPC 调用
-- [ ] 动态批处理（Dynamic Batching）：自动将同一时间窗口内的多个 Embedding 请求合并为一个批次，GPU 利用率从 20% 提升至 80%+
+- [x] 将 BGE-M3、bge-reranker、GNN 推理、实体提取 LLM 统一部署至 Triton，通过 gRPC 调用
+- [x] 动态批处理（Dynamic Batching）：自动将同一时间窗口内的多个 Embedding 请求合并为一个批次，GPU 利用率从 20% 提升至 80%+
 
 ---
 

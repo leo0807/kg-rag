@@ -149,6 +149,13 @@ from .routers.graph_api.kgqa           import router as graph_kgqa_router
 from .routers.graph_api.graph_learn    import router as graph_learn_router
 from .routers.graph_api.visualizations import router as graph_viz_router
 from .middleware.prometheus_metrics    import setup_prometheus
+from .routers.graph_api.ontology       import router as graph_ontology_router
+from .routers.graph_api.supply_chain   import router as graph_supply_chain_router
+from .routers.graph_api.doc_lifecycle  import router as graph_doc_lifecycle_router
+from .routers.graph_api.adv_retrieval  import router as adv_retrieval_router
+from .routers.admin_api.schema_mgmt    import router as admin_schema_mgmt_router
+from .routers.graph_api.aviation_domain import router as graph_aviation_router
+from .routers.admin_api.triton_admin   import router as admin_triton_router
 
 from .services.infra.health import health_monitor
 from .services.ops.presence_service import track_request_activity
@@ -428,6 +435,13 @@ app.include_router(knowledge_collab_router)
 app.include_router(graph_kgqa_router)
 app.include_router(graph_learn_router)
 app.include_router(graph_viz_router)
+app.include_router(graph_ontology_router)
+app.include_router(graph_supply_chain_router)
+app.include_router(graph_doc_lifecycle_router)
+app.include_router(adv_retrieval_router)
+app.include_router(admin_schema_mgmt_router)
+app.include_router(graph_aviation_router)
+app.include_router(admin_triton_router)
 
 # G 模块：多租户支持
 app.include_router(platform_tenants_router)
