@@ -42,6 +42,7 @@ export default function RouteTransition({ children }: { children: React.ReactNod
       {/* Page content — re-keyed on route change triggers slide-up-fade */}
       <div
         key={key}
+        suppressHydrationWarning
         className="flex-1 overflow-auto"
         style={{ animation: "slide-up-fade 0.5s ease both" }}
       >

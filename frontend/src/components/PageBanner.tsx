@@ -31,6 +31,7 @@ export default function PageBanner() {
   return (
     <>
       <div
+        suppressHydrationWarning
         className="shrink-0 flex items-center gap-3 px-5 py-2.5 border-b border-gray-800/60 bg-gray-950/80 backdrop-blur-sm"
         style={{ animation: "slide-up-fade 0.55s ease both" }}
       >

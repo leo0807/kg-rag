@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 
 type SimCase = {
   id: string; case_name: string; case_code?: string; domain: string;
@@ -57,9 +58,10 @@ function ExampleCaseGrid() {
         <span className="text-xs text-gray-600 uppercase tracking-wider">示例案例（仅预览，新建后自动替换）</span>
         <div className="flex-1 h-px bg-gray-800" />
       </div>
-      <div className="grid grid-cols-3 gap-4 pointer-events-none select-none stagger-children">
+      <div className="grid grid-cols-3 gap-4 stagger-children">
         {EXAMPLE_CASES.map((c, i) => (
-          <div key={i} className="relative bg-gray-900/60 border border-gray-800/60 rounded-lg p-4 opacity-55">
+          <div key={i} onClick={() => toast.info("这是示例数据，新建真实案例后将自动替换")}
+            className="relative bg-gray-900/60 border border-gray-800/60 rounded-lg p-4 opacity-55 cursor-pointer hover:opacity-70 transition-opacity">
             <span className="absolute top-2.5 right-2.5 text-[9px] px-1.5 py-0.5 bg-gray-800 text-gray-600 rounded-full border border-gray-700">示例</span>
             <div className="flex items-start gap-2 mb-2 pr-10">
               <span className="text-white/70 font-medium text-sm line-clamp-2">{c.case_name}</span>

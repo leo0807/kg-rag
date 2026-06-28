@@ -19,20 +19,24 @@ export default function RealtimePage() {
   const [events, setEvents]       = useState<RawEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [paused, setPaused]       = useState(false);
-  const wsRef   = useRef<WebSocket | null>(null);
+  const wsRef    = useRef<WebSocket | null>(null);
   const pauseRef = useRef(false);
+  const aliveRef = useRef(true);
 
   useEffect(() => {
+    aliveRef.current = true;
+
     const connect = () => {
+      if (!aliveRef.current) return;
       const ws = new WebSocket(WS_URL());
       wsRef.current = ws;
 
       ws.onopen  = () => setConnected(true);
       ws.onclose = () => {
         setConnected(false);
-        setTimeout(connect, 3000); // auto-reconnect
+        if (aliveRef.current) setTimeout(connect, 3000);
       };
-      ws.onerror = () => ws.close();
+      ws.onerror = () => { /* browser closes automatically on error */ };
       ws.onmessage = (e) => {
         if (pauseRef.current) return;
         try {
@@ -51,8 +55,12 @@ export default function RealtimePage() {
         ws.close();
       };
     };
+
     const cleanup = connect();
-    return cleanup;
+    return () => {
+      aliveRef.current = false;
+      cleanup?.();
+    };
   }, []);
 
   const togglePause = () => {

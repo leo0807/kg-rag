@@ -36,7 +36,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className={`dark ${inter.variable} ${mono.variable}`}>
+    <html lang="zh-CN" data-scroll-behavior="smooth" className={`dark ${inter.variable} ${mono.variable}`}>
       <body>
         <ConditionalLayout>{children}</ConditionalLayout>
         <Toaster position="top-center" richColors closeButton />
