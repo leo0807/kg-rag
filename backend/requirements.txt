@@ -100,3 +100,31 @@ wrapt==1.17.3
 zipp==3.23.0
 celery[redis]>=5.3
 apscheduler==3.10.4
+
+# ── Prometheus 指标采集（prometheus_metrics.py 直接使用） ──────────
+prometheus-client>=0.20.0
+
+# ── 可选：Triton Inference Server gRPC 客户端 ──────────────────────
+# triton_client.py / triton_admin.py — 若不部署 Triton 可不安装
+# tritonclient[grpc]>=2.48.0
+
+# ── 可选：TruLens 在线 RAG 评分 ───────────────────────────────────
+# trulens_scorer.py — 不安装时自动降级为启发式评分
+# trulens-eval>=1.0.0
+
+# ── 可选：RAGAS 离线 RAG 评测 ────────────────────────────────────
+# scripts/ragas_eval.py / scripts/eval/ragas_eval.py
+# ragas>=0.2.0
+
+# ── 可选：DSPy 自动化 Prompt 优化 ────────────────────────────────
+# scripts/dspy_optimize_cypher.py / dspy_optimize_entity.py
+# dspy-ai>=2.5.0
+
+# ── 可选：模型微调后端 ─────────────────────────────────────────────
+# scripts/finetune_qwen.py — 二选一，不安装时 CPU 模式静默降级
+# llamafactory>=0.9.0
+# axolotl>=0.7.0
+
+# ── 可选：MLflow 实验追踪 ─────────────────────────────────────────
+# scripts/finetune_qwen.py / train_gnn.py — 不安装时自动跳过
+# mlflow>=2.14.0

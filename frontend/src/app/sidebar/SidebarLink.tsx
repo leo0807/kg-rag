@@ -24,15 +24,15 @@ export function SidebarLink({
       title={
         collapsed ? `${label}${shortcut ? `  ${shortcut}` : ""}` : undefined
       }
-      className={`flex items-center gap-2.5 rounded-lg text-sm transition-colors group
+      className={`flex items-center gap-2.5 rounded-lg text-sm transition-all duration-200 group
         ${collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2"}
         ${
           active
-            ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)]"
-            : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10"
+            ? "bg-[var(--nav-active-bg)] text-[var(--nav-text)] border-l-2 border-cyan-400/80 shadow-[inset_0_0_16px_rgba(34,211,238,0.07)]"
+            : "text-[var(--nav-text-muted)] hover:text-[var(--nav-text)] hover:bg-white/10 border-l-2 border-transparent"
         }`}
     >
-      <div className="relative flex-shrink-0">
+      <div className={`relative flex-shrink-0 transition-all duration-200 ${active ? "drop-shadow-[0_0_4px_rgba(34,211,238,0.7)]" : "group-hover:opacity-90"}`}>
         <Icon size={15} />
         {badge > 0 && collapsed && (
           <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-500 rounded-full flex items-center justify-center text-[8px] text-white font-bold">

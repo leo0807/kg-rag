@@ -77,9 +77,22 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex-shrink-0 border-r flex flex-col transition-all duration-200 h-full min-h-0 ${collapsed ? "w-14" : "w-44"}`}
+      className={`flex-shrink-0 border-r flex flex-col transition-all duration-200 h-full min-h-0 relative ${collapsed ? "w-14" : "w-44"}`}
       style={{ background: "var(--nav-bg)", borderColor: "var(--nav-border)" }}
     >
+      {/* Animated top accent scan-line */}
+      <div
+        className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none overflow-hidden"
+        aria-hidden
+      >
+        <div style={{
+          height: "100%",
+          backgroundSize: "200% 100%",
+          background: "linear-gradient(90deg, transparent 0%, rgba(34,211,238,0.6) 50%, transparent 100%)",
+          animation: "gradient-sweep 3s ease infinite",
+        }} />
+      </div>
+
       <div
         className="flex items-center justify-between px-3 py-4 min-h-[60px]"
         style={{ borderBottom: "1px solid var(--nav-border)" }}

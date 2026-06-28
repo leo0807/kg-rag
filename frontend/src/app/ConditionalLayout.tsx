@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ShortcutsModal from "@/components/ShortcutsModal";
+import RouteTransition from "@/components/RouteTransition";
 import { useGlobalKeyboard } from "@/hooks/useKeyboard";
 import { LogOut, Menu, X } from "lucide-react";
 import HelpDrawer from "@/components/HelpDrawer";
@@ -121,11 +122,11 @@ export default function ConditionalLayout({
                     </button>
                 </div>
 
-                <main className="flex-1 overflow-auto">
+                <RouteTransition>
                     <ErrorBoundary>
                         {children}
                     </ErrorBoundary>
-                </main>
+                </RouteTransition>
             </div>
 
             {/* 帮助抽屉（fixed 定位，挂载在布局根层，覆盖所有页面内容） */}

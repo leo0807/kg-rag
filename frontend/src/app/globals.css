@@ -21,10 +21,62 @@
   /* 字体变量（由 next/font 注入） */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
+
+  /* 首页动画工具类 */
+  --animate-gradient:  gradient-sweep 5s ease infinite;
+  --animate-blink:     blink-cursor 1s step-end infinite;
+  --animate-float:     float-y 3.5s ease-in-out infinite;
+  --animate-ring:      pulse-ring 1.8s ease-out infinite;
+  --animate-slide-up:  slide-up-fade 0.6s ease both;
+  --animate-spin-slow: spin-slow 12s linear infinite;
 }
 
 /* 开启手动 dark mode，通过 html 标签的 class 控制 */
 @variant dark (&:where(.dark, .dark *));
+
+/* ── 首页动画关键帧 ─────────────────────────────── */
+@keyframes gradient-sweep {
+  0%, 100% { background-position: 0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+@keyframes float-y {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-10px); }
+}
+@keyframes pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.6; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes slide-up-fade {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes progress-bar {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+/* Table / list row stagger — applied when parent has .animate-rows */
+.animate-rows tr,
+.animate-rows li {
+  animation: slide-up-fade 0.3s ease both;
+}
+.animate-rows tr:nth-child(1),  .animate-rows li:nth-child(1)  { animation-delay: 0ms; }
+.animate-rows tr:nth-child(2),  .animate-rows li:nth-child(2)  { animation-delay: 35ms; }
+.animate-rows tr:nth-child(3),  .animate-rows li:nth-child(3)  { animation-delay: 70ms; }
+.animate-rows tr:nth-child(4),  .animate-rows li:nth-child(4)  { animation-delay: 105ms; }
+.animate-rows tr:nth-child(5),  .animate-rows li:nth-child(5)  { animation-delay: 140ms; }
+.animate-rows tr:nth-child(6),  .animate-rows li:nth-child(6)  { animation-delay: 175ms; }
+.animate-rows tr:nth-child(7),  .animate-rows li:nth-child(7)  { animation-delay: 210ms; }
+.animate-rows tr:nth-child(8),  .animate-rows li:nth-child(8)  { animation-delay: 240ms; }
+.animate-rows tr:nth-child(n+9), .animate-rows li:nth-child(n+9) { animation-delay: 270ms; }
 
 /* ── 浅色模式：重映射调色板 ──────────────────────────────────
    1. 灰色系翻转，使 bg-gray-950/900/800 变为浅色背景
