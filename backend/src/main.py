@@ -137,6 +137,18 @@ from .routers.admin_api.model_registry import router as admin_model_registry_rou
 from .middleware.api_key_auth         import ApiKeyMiddleware
 from .middleware.idempotency          import IdempotencyMiddleware
 
+# 成本监控 + 告警 + SLA + 图谱管理
+from .routers.admin_api.budget         import router as admin_budget_router
+from .routers.admin_api.storage_stats  import router as admin_storage_router
+from .routers.admin_api.alerts         import router as admin_alerts_router
+from .routers.admin_api.sla            import router as admin_sla_router
+from .routers.admin_api.graph_backup   import router as admin_graph_backup_router
+from .routers.admin_api.doc_coverage   import router as admin_doc_coverage_router
+from .routers.admin_api.knowledge_collab import router as knowledge_collab_router
+from .routers.graph_api.kgqa           import router as graph_kgqa_router
+from .routers.graph_api.graph_learn    import router as graph_learn_router
+from .middleware.prometheus_metrics    import setup_prometheus
+
 from .services.infra.health import health_monitor
 from .services.ops.presence_service import track_request_activity
 
@@ -189,6 +201,7 @@ app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BODY_
 app.add_middleware(IdempotencyMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(TenantMiddleware)
+setup_prometheus(app)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(ApiKeyMiddleware)
 
@@ -404,6 +417,15 @@ app.include_router(twin_router)
 app.include_router(a2a_router)
 app.include_router(graph_communities_router)
 app.include_router(admin_model_registry_router)
+app.include_router(admin_budget_router)
+app.include_router(admin_storage_router)
+app.include_router(admin_alerts_router)
+app.include_router(admin_sla_router)
+app.include_router(admin_graph_backup_router)
+app.include_router(admin_doc_coverage_router)
+app.include_router(knowledge_collab_router)
+app.include_router(graph_kgqa_router)
+app.include_router(graph_learn_router)
 
 # G 模块：多租户支持
 app.include_router(platform_tenants_router)

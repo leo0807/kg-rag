@@ -510,44 +510,44 @@ python -m pytest tests/ -v
 ### 七、图谱驱动的 AI 能力
 
 **问答与推理**
-- [ ] **图谱原生问答（KGQA）**：将用户自然语言问题翻译为 Cypher 查询（Text2Cypher），直接从图谱结构中精确提取答案（如"GJB 241 中涉及的所有力矩约束值"），补充向量检索的精确性不足
-- [ ] **反向追问（Backward Chaining）**：给定一个结论（如某零件裂纹），沿因果关系链反向推导可能的根因工艺问题（Material 不合规 / Constraint 未满足 / Tool 磨损）
-- [ ] **工艺路线规划**：给定零件和目标状态，图谱自动推导最优工艺路线（拓扑排序 + 约束满足），输出有序的工序步骤清单
-- [ ] **知识图谱问题生成**：基于图谱结构自动生成考核题目（如"根据 CPS1220 §3.2，安装液压接头时应使用哪种扭矩工具？"），用于工艺培训考核
-- [ ] **异常工艺诊断**：描述一个工艺异常现象，图谱检索相关 Hazard / Constraint / Inspection 节点，LLM 结合图结构推断违规的工艺步骤和改正建议
+- [x] **图谱原生问答（KGQA）**：将用户自然语言问题翻译为 Cypher 查询（Text2Cypher），直接从图谱结构中精确提取答案（如"GJB 241 中涉及的所有力矩约束值"），补充向量检索的精确性不足
+- [x] **反向追问（Backward Chaining）**：给定一个结论（如某零件裂纹），沿因果关系链反向推导可能的根因工艺问题（Material 不合规 / Constraint 未满足 / Tool 磨损）
+- [x] **工艺路线规划**：给定零件和目标状态，图谱自动推导最优工艺路线（拓扑排序 + 约束满足），输出有序的工序步骤清单
+- [x] **知识图谱问题生成**：基于图谱结构自动生成考核题目（如"根据 CPS1220 §3.2，安装液压接头时应使用哪种扭矩工具？"），用于工艺培训考核
+- [x] **异常工艺诊断**：描述一个工艺异常现象，图谱检索相关 Hazard / Constraint / Inspection 节点，LLM 结合图结构推断违规的工艺步骤和改正建议
 
 **自动化与持续学习**
-- [ ] **图谱自动补全**：检测孤立 Section 节点（无 Tool/Material/Process 关联），批量提交 LLM 重新提取实体，实现图谱的自愈式数据填充
-- [ ] **关系预测（Link Prediction）**：训练 TransE / RotatE 等知识图谱嵌入模型，预测可能缺失的关系（如某 Section 可能还 `REQUIRES_TOOL` 某 Tool，但提取时遗漏），置信度高于阈值时推荐给管理员确认
-- [ ] **实体对齐（Entity Alignment）**：当导入来自不同供应商的规范时，自动识别不同文档中指称相同实体的节点（如"HB/T 5292" 与 "HB5292" 指同一标准），消除同义异名冗余
-- [ ] **图谱嵌入持久化**：定期（每周）将所有节点的图结构 Embedding（Node2Vec / GraphSAGE）写入 Milvus，支持"结构相似节点检索"（超越纯文本相似度）
-- [ ] **主动学习标注**：系统识别图谱中置信度低的边（如 `SIMILAR_TO` 分数在 0.8-0.9 之间的模糊关系），主动推送给领域专家确认或拒绝，持续提升图谱质量
+- [x] **图谱自动补全**：检测孤立 Section 节点（无 Tool/Material/Process 关联），批量提交 LLM 重新提取实体，实现图谱的自愈式数据填充
+- [x] **关系预测（Link Prediction）**：训练 TransE / RotatE 等知识图谱嵌入模型，预测可能缺失的关系（如某 Section 可能还 `REQUIRES_TOOL` 某 Tool，但提取时遗漏），置信度高于阈值时推荐给管理员确认
+- [x] **实体对齐（Entity Alignment）**：当导入来自不同供应商的规范时，自动识别不同文档中指称相同实体的节点（如"HB/T 5292" 与 "HB5292" 指同一标准），消除同义异名冗余
+- [x] **图谱嵌入持久化**：定期（每周）将所有节点的图结构 Embedding（Node2Vec / GraphSAGE）写入 Milvus，支持"结构相似节点检索"（超越纯文本相似度）
+- [x] **主动学习标注**：系统识别图谱中置信度低的边（如 `SIMILAR_TO` 分数在 0.8-0.9 之间的模糊关系），主动推送给领域专家确认或拒绝，持续提升图谱质量
 
 ---
 
 ### 八、协作与知识管理
 
-- [ ] **专家知识录入界面**：领域专家通过结构化表单（非自由文本）直接向图谱录入工艺知识条目（Tool / Process / Constraint），系统自动生成对应节点和关系，降低知识入库门槛
-- [ ] **图谱评审工作流**：新提取的节点/关系默认为 `draft` 状态，须经过至少一名领域专家审核（`APPROVED_BY`）后才进入正式检索，建立知识质量闸门
-- [ ] **知识订阅与推送**：用户可订阅特定 Document 或 Component 的图谱变更（如文档更新版本），订阅事件触发站内消息或邮件通知
-- [ ] **知识贡献排行**：统计每位用户审核通过的节点数、修正的实体合并数，形成知识贡献积分，激励专家参与图谱维护
-- [ ] **问题挂载到图谱**：用户提问后，将问题节点（`Query`）与回答涉及的 Section 节点挂载，`(Query)-[:ANSWERED_BY]->(Section)`，形成"常见问题图谱"，高频问题对应的章节自动提升权重
+- [x] **专家知识录入界面**：领域专家通过结构化表单（非自由文本）直接向图谱录入工艺知识条目（Tool / Process / Constraint），系统自动生成对应节点和关系，降低知识入库门槛
+- [x] **图谱评审工作流**：新提取的节点/关系默认为 `draft` 状态，须经过至少一名领域专家审核（`APPROVED_BY`）后才进入正式检索，建立知识质量闸门
+- [x] **知识订阅与推送**：用户可订阅特定 Document 或 Component 的图谱变更（如文档更新版本），订阅事件触发站内消息或邮件通知
+- [x] **知识贡献排行**：统计每位用户审核通过的节点数、修正的实体合并数，形成知识贡献积分，激励专家参与图谱维护
+- [x] **问题挂载到图谱**：用户提问后，将问题节点（`Query`）与回答涉及的 Section 节点挂载，`(Query)-[:ANSWERED_BY]->(Section)`，形成"常见问题图谱"，高频问题对应的章节自动提升权重
 
 ---
 
 ### 九、运营与监控
 
 **图谱健康度**
-- [ ] **图谱健康度仪表盘**：专属管理页面实时展示六项核心指标：孤立节点数（无任何关系的节点）、悬空引用数（`REFERENCES` 目标不在库中的比例）、Constraint 覆盖率（有约束节点的 Section 占比）、实体提取待处理队列长度、近 7 天新增节点/关系趋势折线图；综合健康分低于阈值时页面顶部 Banner 警示，`GET /api/admin/graph/health`
-- [ ] **悬空引用扫描**：`POST /api/admin/graph/scan-dangling` 扫描全库 `REFERENCES` 关系，列出目标文档不在库中的清单，结果写入 `SystemSetting`，每日定时自动触发；管理界面展示"待补充入库文档 Top 10"，一键跳转至批量导入页
-- [ ] **实体覆盖率报告**：对每份文档统计有 Tool / Material / Process 关联的 Section 占比，覆盖率低于 30% 的文档标记为"实体提取不完整"，`GET /api/admin/documents/coverage-report` 返回文档级覆盖度排行，支持批量触发 `/reanalyze` 补跑
-- [ ] **图谱一致性校验**：定期脚本检查：① Section 有 `doc_id` 但找不到父 Document；② Constraint 有 `chunk_id` 但关联 Section 已删除；③ `NEXT_SECTION` 关系是否形成环路；④ 图片节点 `path` 指向的文件是否仍然存在；发现异常写入 `audit_logs`，并在健康度仪表盘高亮显示
+- [x] **图谱健康度仪表盘**：专属管理页面实时展示六项核心指标：孤立节点数（无任何关系的节点）、悬空引用数（`REFERENCES` 目标不在库中的比例）、Constraint 覆盖率（有约束节点的 Section 占比）、实体提取待处理队列长度、近 7 天新增节点/关系趋势折线图；综合健康分低于阈值时页面顶部 Banner 警示，`GET /api/admin/graph/health`
+- [x] **悬空引用扫描**：`POST /api/admin/graph/scan-dangling` 扫描全库 `REFERENCES` 关系，列出目标文档不在库中的清单，结果写入 `SystemSetting`，每日定时自动触发；管理界面展示"待补充入库文档 Top 10"，一键跳转至批量导入页
+- [x] **实体覆盖率报告**：对每份文档统计有 Tool / Material / Process 关联的 Section 占比，覆盖率低于 30% 的文档标记为"实体提取不完整"，`GET /api/admin/documents/coverage-report` 返回文档级覆盖度排行，支持批量触发 `/reanalyze` 补跑
+- [x] **图谱一致性校验**：定期脚本检查：① Section 有 `doc_id` 但找不到父 Document；② Constraint 有 `chunk_id` 但关联 Section 已删除；③ `NEXT_SECTION` 关系是否形成环路；④ 图片节点 `path` 指向的文件是否仍然存在；发现异常写入 `audit_logs`，并在健康度仪表盘高亮显示
 
 **变更管理**
-- [ ] **图谱变更日志**：记录每次节点创建/修改/删除、关系新增/删除的操作日志（`operator`, `timestamp`, `operation_type`, `entity_type`, `entity_id`, `before`, `after`），存入 PostgreSQL `graph_changelog` 表；`GET /api/admin/graph/changelog?since=&type=&operator=` 支持多维过滤，`GET /api/admin/graph/changelog/{id}` 查看变更前后快照对比
-- [ ] **变更回滚**：`POST /api/admin/graph/changelog/{id}/rollback` 执行单条变更的反向操作（删除→重建、属性修改→还原旧值、关系删除→重建），支持按时间段批量回滚同一操作集，回滚前要求管理员二次确认
-- [ ] **增量同步 API**：`GET /api/graph/changelog?since=2026-01-01&format=ndjson` 返回指定时间后的图谱变更列表（JSON Patch 格式，含节点属性 diff），支持 ETag 增量拉取；供下游系统（ERP / MES / PLM）定时订阅，实现工艺知识库与制造执行系统的双向同步
-- [ ] **图谱备份与时间点恢复**：APScheduler 定时任务（每日凌晨 2:00）触发 `neo4j-admin dump` 快照，压缩归档至对象存储（MinIO / S3），保留最近 30 天；`POST /api/admin/graph/restore?snapshot_id=` 支持回滚至任意历史快照，恢复前自动创建当前状态备份，满足等保三级审计留痕要求
+- [x] **图谱变更日志**：记录每次节点创建/修改/删除、关系新增/删除的操作日志（`operator`, `timestamp`, `operation_type`, `entity_type`, `entity_id`, `before`, `after`），存入 PostgreSQL `graph_changelog` 表；`GET /api/admin/graph/changelog?since=&type=&operator=` 支持多维过滤，`GET /api/admin/graph/changelog/{id}` 查看变更前后快照对比
+- [x] **变更回滚**：`POST /api/admin/graph/changelog/{id}/rollback` 执行单条变更的反向操作（删除→重建、属性修改→还原旧值、关系删除→重建），支持按时间段批量回滚同一操作集，回滚前要求管理员二次确认
+- [x] **增量同步 API**：`GET /api/graph/changelog?since=2026-01-01&format=ndjson` 返回指定时间后的图谱变更列表（JSON Patch 格式，含节点属性 diff），支持 ETag 增量拉取；供下游系统（ERP / MES / PLM）定时订阅，实现工艺知识库与制造执行系统的双向同步
+- [x] **图谱备份与时间点恢复**：APScheduler 定时任务（每日凌晨 2:00）触发 `neo4j-admin dump` 快照，压缩归档至对象存储（MinIO / S3），保留最近 30 天；`POST /api/admin/graph/restore?snapshot_id=` 支持回滚至任意历史快照，恢复前自动创建当前状态备份，满足等保三级审计留痕要求
 
 **查询运营分析**
 - [x] **查询热力分析**：统计哪些 Section 节点作为检索来源被引用最频繁（基于 `query_feedback` 的 `clicked_source` 事件 + 流式返回的 sources 列表），`GET /api/admin/analytics/hot-nodes?top_k=20&days=30` 输出热点节点排行，热力值反映在可视化图谱的节点大小/亮度上，指导图谱扩充优先级
@@ -557,14 +557,14 @@ python -m pytest tests/ -v
 
 **成本与资源监控**
 - [x] **LLM 成本追踪**：每次 LLM 调用将 prompt / completion token 数和费用估算（USD / CNY）写入 `llm_usage` 表，`GET /api/admin/llm-costs?days=30&group_by=user|department|model|day` 多维度费用分摊报表；Langfuse generation 同步推送完整用量元数据，支持可观测性仪表盘实时查看
-- [ ] **Token 预算告警**：`SystemSetting` 中存储 `budget_usd_{department}` 各部门月度预算，消耗超过 80% 时推送预警（邮件 / 钉钉），超过 100% 时自动降级至预设的低价备用模型，防止超支；`GET /api/admin/llm-costs/budget-status` 返回各部门预算消耗进度
-- [ ] **存储容量监控**：定期统计 Neo4j 节点/关系总量、Milvus 向量条数与磁盘占用、PostgreSQL 各表大小、`uploads/` 目录 PDF 文件总大小，`GET /api/admin/storage/stats`；容量超过水位线（80%）时触发告警，并输出各文档占用空间 Top 10 辅助清理决策
-- [ ] **Prometheus + Grafana 运营大盘**：集成 `starlette-prometheus` 暴露 `/metrics` 端点，导出 QPS、P50/P99 检索延迟、缓存命中率、Neo4j / Milvus 连接池状态、LLM token 消耗趋势等指标；Grafana 大盘分"实时监控"与"运营周报"两个视角；Alertmanager 配置在错误率 > 5%、P99 > 5s、服务宕机时触发告警
+- [x] **Token 预算告警**：`SystemSetting` 中存储 `budget_usd_{department}` 各部门月度预算，消耗超过 80% 时推送预警（邮件 / 钉钉），超过 100% 时自动降级至预设的低价备用模型，防止超支；`GET /api/admin/llm-costs/budget-status` 返回各部门预算消耗进度
+- [x] **存储容量监控**：定期统计 Neo4j 节点/关系总量、Milvus 向量条数与磁盘占用、PostgreSQL 各表大小、`uploads/` 目录 PDF 文件总大小，`GET /api/admin/storage/stats`；容量超过水位线（80%）时触发告警，并输出各文档占用空间 Top 10 辅助清理决策
+- [x] **Prometheus + Grafana 运营大盘**：集成 `starlette-prometheus` 暴露 `/metrics` 端点，导出 QPS、P50/P99 检索延迟、缓存命中率、Neo4j / Milvus 连接池状态、LLM token 消耗趋势等指标；Grafana 大盘分"实时监控"与"运营周报"两个视角；Alertmanager 配置在错误率 > 5%、P99 > 5s、服务宕机时触发告警
 
 **告警与通知**
-- [ ] **多通道告警路由**：支持钉钉群机器人、企业微信 Webhook、邮件三种告警通道，`SystemSetting` 中存储各通道配置；按告警级别路由——INFO 写日志、WARN 推企业微信、CRITICAL 推钉钉并抄送邮件；`POST /api/admin/alerts/test` 发送测试告警验证配置有效性
-- [ ] **告警聚合与静默**：同类告警 10 分钟内合并为一条推送，避免告警风暴；`POST /api/admin/alerts/silence` 支持在维护窗口期间临时屏蔽指定告警规则（含过期自动恢复）；所有告警事件持久化至 `audit_logs`，支持告警历史回溯
-- [ ] **SLA 可用性统计**：以分钟为粒度记录 `/api/query` 和 `/api/query/stream` 的成功率，滚动计算 30 天 SLA（目标 99.9% = 月均故障 < 43 分钟）；`GET /api/admin/sla` 返回每日可用性热力日历和月度 SLA 达标情况，供服务协议履约核查
+- [x] **多通道告警路由**：支持钉钉群机器人、企业微信 Webhook、邮件三种告警通道，`SystemSetting` 中存储各通道配置；按告警级别路由——INFO 写日志、WARN 推企业微信、CRITICAL 推钉钉并抄送邮件；`POST /api/admin/alerts/test` 发送测试告警验证配置有效性
+- [x] **告警聚合与静默**：同类告警 10 分钟内合并为一条推送，避免告警风暴；`POST /api/admin/alerts/silence` 支持在维护窗口期间临时屏蔽指定告警规则（含过期自动恢复）；所有告警事件持久化至 `audit_logs`，支持告警历史回溯
+- [x] **SLA 可用性统计**：以分钟为粒度记录 `/api/query` 和 `/api/query/stream` 的成功率，滚动计算 30 天 SLA（目标 99.9% = 月均故障 < 43 分钟）；`GET /api/admin/sla` 返回每日可用性热力日历和月度 SLA 达标情况，供服务协议履约核查
 
 ---
 
