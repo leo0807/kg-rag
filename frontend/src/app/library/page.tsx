@@ -234,7 +234,7 @@ export default function LibraryPage() {
                   <div className="absolute inset-0 bg-gray-950/50 z-10 pointer-events-none rounded" />
                 )}
                 <table className="w-full text-sm">
-                  <thead style={{ animation: "slide-up-fade 0.25s ease both" }}>
+                  <thead style={{ animation: "slide-up-fade 0.55s ease both" }}>
                     <tr className="border-b border-gray-800 text-gray-400 text-left">
                       <th className="pb-3 pr-6">规范编号</th>
                       <th className="pb-3 pr-6">标题</th>

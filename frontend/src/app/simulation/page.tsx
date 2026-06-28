@@ -20,6 +20,75 @@ const CONF_COLOR: Record<string, string> = {
 
 import { fetchApi } from "@/lib/api";
 
+const EXAMPLE_CASES = [
+  {
+    case_name: "C919 主翼盒复合材料铺层结构强度验证",
+    case_code: "SIM-STRUCT-2024-001",
+    domain: "structural",
+    application: "结构分析",
+    software: "ABAQUS",
+    confidence_level: "已验证",
+    related_specs: ["CPS-CM-2201", "CPS-HY-0412"],
+  },
+  {
+    case_name: "发动机吊架热应力分析（含热-结构耦合）",
+    case_code: "SIM-COUPLED-2024-007",
+    domain: "coupled",
+    application: "热结构耦合",
+    software: "ANSYS",
+    confidence_level: "参考",
+    related_specs: ["CPS-TH-0318"],
+  },
+  {
+    case_name: "机翼前缘除冰系统气流场仿真",
+    case_code: "SIM-FLUID-2024-012",
+    domain: "fluid",
+    application: "CFD 流场",
+    software: "FLUENT",
+    confidence_level: "初步",
+    related_specs: ["CPS-FL-1102", "CPS-DE-0205"],
+  },
+];
+
+function ExampleCaseGrid() {
+  return (
+    <div style={{ animation: "slide-up-fade 0.6s ease both" }}>
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-xs text-gray-600 uppercase tracking-wider">示例案例（仅预览，新建后自动替换）</span>
+        <div className="flex-1 h-px bg-gray-800" />
+      </div>
+      <div className="grid grid-cols-3 gap-4 pointer-events-none select-none stagger-children">
+        {EXAMPLE_CASES.map((c, i) => (
+          <div key={i} className="relative bg-gray-900/60 border border-gray-800/60 rounded-lg p-4 opacity-55">
+            <span className="absolute top-2.5 right-2.5 text-[9px] px-1.5 py-0.5 bg-gray-800 text-gray-600 rounded-full border border-gray-700">示例</span>
+            <div className="flex items-start gap-2 mb-2 pr-10">
+              <span className="text-white/70 font-medium text-sm line-clamp-2">{c.case_name}</span>
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className={`text-xs px-2 py-0.5 rounded ${CONF_COLOR[c.confidence_level] ?? "bg-gray-800 text-gray-400"}`}>
+                {c.confidence_level}
+              </span>
+              <span className="text-gray-600 text-xs font-mono">{c.case_code}</span>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <span className="text-xs bg-gray-800/80 text-gray-400 px-2 py-0.5 rounded">{DOMAIN_LABEL[c.domain]}</span>
+              <span className="text-xs bg-gray-800/80 text-gray-400 px-2 py-0.5 rounded">{c.application}</span>
+              <span className="text-xs bg-gray-800/80 text-blue-400/60 px-2 py-0.5 rounded">{c.software}</span>
+            </div>
+            <p className="text-gray-600 text-xs mt-2">关联规范: {c.related_specs.join(", ")}</p>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-center mt-8">
+        <Link href="/simulation/new"
+          className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors">
+          + 新建第一个仿真案例
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function SimulationPage() {
   const [cases, setCases]     = useState<SimCase[]>([]);
   const [domain, setDomain]   = useState("");
@@ -47,7 +116,7 @@ export default function SimulationPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-white">仿真案例库</h1>
+          <h1 className="text-xl font-semibold text-white" style={{ animation: "slide-up-fade 0.55s ease both" }}>仿真案例库</h1>
           <p className="text-gray-400 text-sm mt-1">CAE/CFD 仿真结果管理与检索</p>
         </div>
         <Link href="/simulation/new"
@@ -90,12 +159,12 @@ export default function SimulationPage() {
           ))}
         </div>
       ) : cases.length === 0 ? (
-        <div className="text-center text-gray-500 py-20">暂无仿真案例，点击右上角新建</div>
+        <ExampleCaseGrid />
       ) : (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-4 stagger-children">
           {cases.map(c => (
             <Link key={c.id} href={`/simulation/${c.id}`}
-              className="bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-600 transition-colors block">
+              className="bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-600 transition-colors block tech-card">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <span className="text-white font-medium text-sm line-clamp-2">{c.case_name}</span>
                 <span className={`shrink-0 text-xs px-2 py-0.5 rounded ${CONF_COLOR[c.confidence_level] ?? "bg-gray-800 text-gray-400"}`}>

@@ -54,7 +54,7 @@ export default function AnalyticsPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between" style={{ animation: "slide-up-fade 0.55s ease both" }}>
         <div>
           <h1 className="text-xl font-semibold text-white">数据洞察中心</h1>
           <p className="text-gray-400 text-sm mt-1">全面了解系统运行状态与业务价值</p>

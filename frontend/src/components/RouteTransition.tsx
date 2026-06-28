@@ -43,7 +43,7 @@ export default function RouteTransition({ children }: { children: React.ReactNod
       <div
         key={key}
         className="flex-1 overflow-auto"
-        style={{ animation: "slide-up-fade 0.32s ease both" }}
+        style={{ animation: "slide-up-fade 0.5s ease both" }}
       >
         {children}
       </div>

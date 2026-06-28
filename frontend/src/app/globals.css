@@ -52,7 +52,7 @@
   100% { transform: scale(2.4); opacity: 0; }
 }
 @keyframes slide-up-fade {
-  from { opacity: 0; transform: translateY(24px); }
+  from { opacity: 0; transform: translateY(18px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes spin-slow {
@@ -63,20 +63,71 @@
   from { transform: translateX(-100%); }
   to   { transform: translateX(100%); }
 }
+@keyframes scan-down {
+  0%   { top: -2px; opacity: 0; }
+  5%   { opacity: 0.85; }
+  95%  { opacity: 0.85; }
+  100% { top: calc(100% + 2px); opacity: 0; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes shine {
+  from { background-position: -200% center; }
+  to   { background-position:  200% center; }
+}
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(34,211,238,0.3); }
+  50%       { box-shadow: 0 0 16px rgba(34,211,238,0.7); }
+}
+@keyframes border-flow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+/* ── 全局交互增强 ──────────────────────────────────────────── */
+
+/* Button press tactile feedback */
+button:not([disabled]):active {
+  transform: scale(0.97);
+  transition: transform 80ms ease;
+}
+
+/* Tech card: hover glow border (add class "tech-card" to any panel/card div) */
+.tech-card {
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.tech-card:hover {
+  border-color: rgba(34, 211, 238, 0.18) !important;
+  box-shadow: 0 0 24px rgba(34, 211, 238, 0.06), 0 4px 20px rgba(0,0,0,0.3);
+}
+
+/* Page-level stagger: add .stagger-children to a wrapper,
+   direct children slide-up with incremental delays (up to 8 items) */
+.stagger-children > *:nth-child(1)  { animation: slide-up-fade 0.55s ease both 0ms; }
+.stagger-children > *:nth-child(2)  { animation: slide-up-fade 0.55s ease both 90ms; }
+.stagger-children > *:nth-child(3)  { animation: slide-up-fade 0.55s ease both 180ms; }
+.stagger-children > *:nth-child(4)  { animation: slide-up-fade 0.55s ease both 270ms; }
+.stagger-children > *:nth-child(5)  { animation: slide-up-fade 0.55s ease both 340ms; }
+.stagger-children > *:nth-child(6)  { animation: slide-up-fade 0.55s ease both 410ms; }
+.stagger-children > *:nth-child(7)  { animation: slide-up-fade 0.55s ease both 480ms; }
+.stagger-children > *:nth-child(n+8){ animation: slide-up-fade 0.55s ease both 540ms; }
+
 /* Table / list row stagger — applied when parent has .animate-rows */
 .animate-rows tr,
 .animate-rows li {
-  animation: slide-up-fade 0.3s ease both;
+  animation: slide-up-fade 0.45s ease both;
 }
 .animate-rows tr:nth-child(1),  .animate-rows li:nth-child(1)  { animation-delay: 0ms; }
-.animate-rows tr:nth-child(2),  .animate-rows li:nth-child(2)  { animation-delay: 35ms; }
-.animate-rows tr:nth-child(3),  .animate-rows li:nth-child(3)  { animation-delay: 70ms; }
-.animate-rows tr:nth-child(4),  .animate-rows li:nth-child(4)  { animation-delay: 105ms; }
-.animate-rows tr:nth-child(5),  .animate-rows li:nth-child(5)  { animation-delay: 140ms; }
-.animate-rows tr:nth-child(6),  .animate-rows li:nth-child(6)  { animation-delay: 175ms; }
-.animate-rows tr:nth-child(7),  .animate-rows li:nth-child(7)  { animation-delay: 210ms; }
-.animate-rows tr:nth-child(8),  .animate-rows li:nth-child(8)  { animation-delay: 240ms; }
-.animate-rows tr:nth-child(n+9), .animate-rows li:nth-child(n+9) { animation-delay: 270ms; }
+.animate-rows tr:nth-child(2),  .animate-rows li:nth-child(2)  { animation-delay: 55ms; }
+.animate-rows tr:nth-child(3),  .animate-rows li:nth-child(3)  { animation-delay: 110ms; }
+.animate-rows tr:nth-child(4),  .animate-rows li:nth-child(4)  { animation-delay: 165ms; }
+.animate-rows tr:nth-child(5),  .animate-rows li:nth-child(5)  { animation-delay: 220ms; }
+.animate-rows tr:nth-child(6),  .animate-rows li:nth-child(6)  { animation-delay: 275ms; }
+.animate-rows tr:nth-child(7),  .animate-rows li:nth-child(7)  { animation-delay: 330ms; }
+.animate-rows tr:nth-child(8),  .animate-rows li:nth-child(8)  { animation-delay: 380ms; }
+.animate-rows tr:nth-child(n+9), .animate-rows li:nth-child(n+9) { animation-delay: 420ms; }
 
 /* ── 浅色模式：重映射调色板 ──────────────────────────────────
    1. 灰色系翻转，使 bg-gray-950/900/800 变为浅色背景

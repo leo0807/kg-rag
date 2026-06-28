@@ -6,6 +6,7 @@ import Sidebar from "./Sidebar";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ShortcutsModal from "@/components/ShortcutsModal";
 import RouteTransition from "@/components/RouteTransition";
+import PageBanner from "@/components/PageBanner";
 import { useGlobalKeyboard } from "@/hooks/useKeyboard";
 import { LogOut, Menu, X } from "lucide-react";
 import HelpDrawer from "@/components/HelpDrawer";
@@ -122,6 +123,7 @@ export default function ConditionalLayout({
                     </button>
                 </div>
 
+                <PageBanner />
                 <RouteTransition>
                     <ErrorBoundary>
                         {children}

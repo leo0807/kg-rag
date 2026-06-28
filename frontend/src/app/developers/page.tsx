@@ -73,7 +73,7 @@ resp = requests.post(
 print(resp.json())`;
 
   return (
-    <div className="p-6 max-w-5xl space-y-6">
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-white">开发者门户</h1>
         <p className="text-gray-400 text-sm mt-1">API Key 管理、接口文档与调用示例</p>
@@ -191,8 +191,30 @@ print(resp.json())`;
       )}
 
       {tab === "history" && (
-        <div className="text-gray-400 text-sm p-4">
-          请点击具体 API Key 查看调用历史（GET /api/admin/api-keys/{"{id}"}/usage）
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-gray-800 border border-gray-700 flex items-center justify-center mx-auto">
+            <span className="text-gray-500 text-xl">⏱</span>
+          </div>
+          <p className="text-gray-300 text-sm font-medium">调用历史</p>
+          <p className="text-gray-600 text-xs max-w-sm mx-auto leading-relaxed">
+            调用历史按 API Key 分别记录。请先在「API Keys」标签页选择一个 Key，随后通过接口
+            <code className="text-green-400 mx-1">GET /api/admin/api-keys/{"{{id}}"}/usage</code>
+            获取该 Key 的详细调用统计。
+          </p>
+          <div className="border-t border-gray-800 pt-4 mt-4 text-left space-y-2 max-w-sm mx-auto">
+            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">返回字段说明</div>
+            {[
+              ["total_calls", "总调用次数"],
+              ["success_rate", "成功率 (%)"],
+              ["avg_latency_ms", "平均延迟（毫秒）"],
+              ["last_called_at", "最后调用时间"],
+            ].map(([field, desc]) => (
+              <div key={field} className="flex items-center justify-between">
+                <code className="text-green-400 text-xs">{field}</code>
+                <span className="text-gray-500 text-xs">{desc}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

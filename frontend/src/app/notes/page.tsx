@@ -89,14 +89,14 @@ export default function NotesPage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto px-2 py-2 space-y-1">
+        <div className="flex-1 overflow-auto px-2 py-2 space-y-1 stagger-children">
           {notes.length === 0 && (
             <p className="text-xs text-gray-600 text-center py-8">暂无笔记</p>
           )}
           {notes.map((note) => (
             <div key={note.id}
               onClick={() => openEdit(note)}
-              className={`group p-3 rounded-xl border cursor-pointer transition-colors ${
+              className={`group p-3 rounded-xl border cursor-pointer transition-colors tech-card ${
                 editing?.id === note.id
                   ? "border-indigo-700 bg-indigo-900/20"
                   : "border-gray-800 hover:border-gray-700 hover:bg-gray-900/50"

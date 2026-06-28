@@ -75,7 +75,7 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 lg:px-8 lg:py-8">
       <div className="mb-6 lg:mb-8">
-        <h1 className="text-2xl font-semibold text-white">设置</h1>
+        <h1 className="text-2xl font-semibold text-white" style={{ animation: "slide-up-fade 0.55s ease both" }}>设置</h1>
         <p className="text-sm text-gray-500 mt-1">
           管理账号信息、模型参数与系统配置
         </p>

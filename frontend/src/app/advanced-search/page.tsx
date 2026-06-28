@@ -85,7 +85,7 @@ export default function AdvancedSearchPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-lg font-semibold text-gray-100 mb-6">高级查询</h1>
+      <h1 className="text-lg font-semibold text-gray-100 mb-6" style={{ animation: "slide-up-fade 0.55s ease both" }}>高级查询</h1>
 
       <div className="flex gap-1 mb-6 bg-gray-900 border border-gray-800 rounded-lg p-0.5 w-fit">
         {TABS.map(t => (
@@ -140,7 +140,7 @@ export default function AdvancedSearchPage() {
               <div className="px-4 py-2 border-b border-gray-800 text-xs text-gray-500">
                 找到 {cResults.length} 条约束
               </div>
-              <div className="divide-y divide-gray-800 max-h-[400px] overflow-y-auto">
+              <div className="divide-y divide-gray-800 max-h-[400px] overflow-y-auto animate-rows">
                 {cResults.map(r => (
                   <div key={r.chunk_id} className="px-4 py-3 hover:bg-gray-800/30">
                     <div className="flex items-center justify-between mb-1">
@@ -224,7 +224,7 @@ export default function AdvancedSearchPage() {
               <div className="px-4 py-2 border-b border-gray-800 text-xs text-gray-500">
                 {xResults.length} 个章节引用了此规范
               </div>
-              <div className="divide-y divide-gray-800 max-h-[400px] overflow-y-auto">
+              <div className="divide-y divide-gray-800 max-h-[400px] overflow-y-auto animate-rows">
                 {xResults.map(r => (
                   <div key={r.chunk_id} className="px-4 py-3 hover:bg-gray-800/30">
                     <div className="text-xs text-indigo-400 font-mono mb-1">{r.doc_title} § {r.number}</div>
