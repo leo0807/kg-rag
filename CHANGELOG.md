@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/leo0807/kg-rag/compare/v1.0.1...v1.1.0) (2026-06-28)
+
+
+### Features
+
+* analytics whitespace fix, diverse animations, billing layout ([a0a7f19](https://github.com/leo0807/kg-rag/commit/a0a7f19f8caf565f4a93f39b5315ab877228318a))
+
 ## [1.0.1](https://github.com/leo0807/kg-rag/compare/v1.0.0...v1.0.1) (2026-06-28)
 
 
