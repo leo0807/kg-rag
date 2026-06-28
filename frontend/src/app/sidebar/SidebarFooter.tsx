@@ -62,7 +62,7 @@ export function SidebarFooter({ collapsed, user, onLogout }: Props) {
       >
         {!collapsed && (
           <div className="text-xs" style={{ color: "var(--nav-text-muted)" }}>
-            v1.1.0
+            v1.0.0
           </div>
         )}
         <ThemeToggle />
