@@ -491,16 +491,16 @@ python -m pytest tests/ -v
 ### 六、可视化与交互升级
 
 **多视图模式**
-- [ ] **层级树状图（Hierarchy View）**：Document → Section → Subsection 的树形折叠展开，适合快速浏览单个规范的章节结构，与力导向图互相切换
-- [ ] **关系矩阵视图（Adjacency Matrix）**：行列均为 Document 节点，格子颜色编码 `REFERENCES` / `SIMILAR_TO` 关系强度，适合发现文档间的高频引用簇
-- [ ] **桑基图（Sankey Diagram）**：展示从工艺流程（Process）→ 使用的工具（Tool）→ 消耗的材料（Material）→ 产生的约束（Constraint）的能量流向，直观呈现工艺链路
+- [x] **层级树状图（Hierarchy View）**：Document → Section → Subsection 的树形折叠展开，适合快速浏览单个规范的章节结构，与力导向图互相切换
+- [x] **关系矩阵视图（Adjacency Matrix）**：行列均为 Document 节点，格子颜色编码 `REFERENCES` / `SIMILAR_TO` 关系强度，适合发现文档间的高频引用簇
+- [x] **桑基图（Sankey Diagram）**：展示从工艺流程（Process）→ 使用的工具（Tool）→ 消耗的材料（Material）→ 产生的约束（Constraint）的能量流向，直观呈现工艺链路
 - [x] **时间线图（Timeline View）**：以版本号为 X 轴，文档为 Y 轴，节点变更事件为气泡，动态播放知识库演进历史
-- [ ] **地理热力图**：若文档与工厂车间（Shop）关联，在厂区平面图上叠加工艺规范热力（哪个工位涉及最多规范），支持数字化车间场景
+- [x] **地理热力图**：若文档与工厂车间（Shop）关联，在厂区平面图上叠加工艺规范热力（哪个工位涉及最多规范），支持数字化车间场景
 
 **交互能力**
-- [ ] **图上直接编辑**：管理员在可视化界面中拖拽创建关系（如将两个 Tool 节点连上 `ALTERNATIVE_TO` 边），无需写 Cypher，操作自动同步至 Neo4j
-- [ ] **Cypher 查询控制台**：专家用户可直接输入 Cypher 查询语句，结果实时渲染为交互图谱，支持图谱探索性分析
-- [ ] **节点注释与标注**：用户可对任意节点添加注释（`Note` 节点），`(Section)-[:HAS_NOTE {author, created_at}]->(Note)`，团队协作标注知识盲点或疑问
+- [x] **图上直接编辑**：管理员在可视化界面中拖拽创建关系（如将两个 Tool 节点连上 `ALTERNATIVE_TO` 边），无需写 Cypher，操作自动同步至 Neo4j
+- [x] **Cypher 查询控制台**：专家用户可直接输入 Cypher 查询语句，结果实时渲染为交互图谱，支持图谱探索性分析
+- [x] **节点注释与标注**：用户可对任意节点添加注释（`Note` 节点），`(Section)-[:HAS_NOTE {author, created_at}]->(Note)`，团队协作标注知识盲点或疑问
 - [x] **图谱快照与分享**：将当前图谱视图（含过滤、高亮状态）保存为 URL 可分享的快照，团队成员打开链接可复现完全相同的视图状态
 - [x] **增量渲染与虚拟化**：节点超过 1000 时切换为 WebGL（Three.js / PixiJS）渲染，维持交互帧率 > 30fps；超过 5000 时降级为 Canvas 静态热力图
 - [x] **图谱漫游模式（Graph Tour）**：以某主题（如"液压系统安装"）为起点，AI 自动规划一条穿越相关节点的导览路径，逐步展开讲解每个节点的知识要点

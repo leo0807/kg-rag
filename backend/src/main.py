@@ -147,6 +147,7 @@ from .routers.admin_api.doc_coverage   import router as admin_doc_coverage_route
 from .routers.admin_api.knowledge_collab import router as knowledge_collab_router
 from .routers.graph_api.kgqa           import router as graph_kgqa_router
 from .routers.graph_api.graph_learn    import router as graph_learn_router
+from .routers.graph_api.visualizations import router as graph_viz_router
 from .middleware.prometheus_metrics    import setup_prometheus
 
 from .services.infra.health import health_monitor
@@ -426,6 +427,7 @@ app.include_router(admin_doc_coverage_router)
 app.include_router(knowledge_collab_router)
 app.include_router(graph_kgqa_router)
 app.include_router(graph_learn_router)
+app.include_router(graph_viz_router)
 
 # G 模块：多租户支持
 app.include_router(platform_tenants_router)
