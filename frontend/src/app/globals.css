@@ -34,7 +34,58 @@
 /* 开启手动 dark mode，通过 html 标签的 class 控制 */
 @variant dark (&:where(.dark, .dark *));
 
-/* ── 首页动画关键帧 ─────────────────────────────── */
+/* ── 关键帧 ─────────────────────────────────────── */
+
+/* 路由切换页面整体进场 */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.995); filter: blur(2px); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);     filter: blur(0); }
+}
+
+/* 雷达扫描旋转 */
+@keyframes radar-sweep {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* 水平扫描线下移 */
+@keyframes scanline {
+  0%   { transform: translateY(-4px); opacity: 0; }
+  5%   { opacity: 0.7; }
+  95%  { opacity: 0.7; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+/* 文字故障偏移层 A */
+@keyframes glitch-a {
+  0%, 92%, 100%     { clip-path: inset(0 0 100% 0); transform: translateX(0); }
+  93%               { clip-path: inset(20% 0 60% 0); transform: translateX(-4px); }
+  95%               { clip-path: inset(55% 0 25% 0); transform: translateX(4px); }
+  97%               { clip-path: inset(80% 0 5%  0); transform: translateX(-2px); }
+}
+
+/* 文字故障偏移层 B */
+@keyframes glitch-b {
+  0%, 93%, 100%     { clip-path: inset(100% 0 0 0); transform: translateX(0); }
+  94%               { clip-path: inset(60% 0 20% 0); transform: translateX(3px); }
+  96%               { clip-path: inset(10% 0 75% 0); transform: translateX(-3px); }
+  98%               { clip-path: inset(40% 0 45% 0); transform: translateX(2px); }
+}
+
+/* 数据流粒子上浮 */
+@keyframes float-up {
+  0%   { opacity: 0; transform: translateY(0); }
+  15%  { opacity: 0.6; }
+  85%  { opacity: 0.6; }
+  100% { opacity: 0; transform: translateY(-120px); }
+}
+
+/* 角框描边渐现 */
+@keyframes corner-appear {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
 @keyframes gradient-sweep {
   0%, 100% { background-position: 0% 50%; }
   50%       { background-position: 100% 50%; }
@@ -162,6 +213,17 @@ button:not([disabled]):active {
 
 /* Blur-fade — for page titles and section headers */
 .blur-in { animation: blur-fade 0.6s ease both; }
+
+/* ── 全局页面场入动画 ──────────────────────────────────────────
+   RouteTransition 给页面根 div 加 .page-animated 类。
+   此处用 :where() 零优先级自动对其下两层子节点做层叠延迟，
+   任何具体 class 动画（优先级 > 0）均可自动覆盖此规则。   */
+:where(.page-animated > * > *:nth-child(1))  { animation: slide-up-fade 0.48s ease both  55ms; }
+:where(.page-animated > * > *:nth-child(2))  { animation: slide-up-fade 0.48s ease both 130ms; }
+:where(.page-animated > * > *:nth-child(3))  { animation: slide-up-fade 0.48s ease both 200ms; }
+:where(.page-animated > * > *:nth-child(4))  { animation: slide-up-fade 0.48s ease both 265ms; }
+:where(.page-animated > * > *:nth-child(5))  { animation: slide-up-fade 0.48s ease both 325ms; }
+:where(.page-animated > * > *:nth-child(n+6)){ animation: slide-up-fade 0.48s ease both 380ms; }
 
 /* ── 浅色模式：重映射调色板 ──────────────────────────────────
    1. 灰色系翻转，使 bg-gray-950/900/800 变为浅色背景

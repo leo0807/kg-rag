@@ -46,3 +46,8 @@ models/
 !backend/src/models/
 !backend/src/models/*.py
 backend/.venv/
+
+# SSL 证书（不入库）
+nginx/certs/*.crt
+nginx/certs/*.key
+nginx/certs/*.pem
