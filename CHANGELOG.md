@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/leo0807/kg-rag/compare/v1.4.1...v1.5.0) (2026-06-29)
+
+
+### Features
+
+* **login:** 科幻感强化 + 工号输入验证 ([680d04b](https://github.com/leo0807/kg-rag/commit/680d04b9e30b7b1d74ae894979a999cc758847b5))
+
 ## [1.4.1](https://github.com/leo0807/kg-rag/compare/v1.4.0...v1.4.1) (2026-06-29)
 
 
