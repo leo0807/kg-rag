@@ -113,7 +113,7 @@ export default function LoginPage() {
                 <Shield size={12} className="text-cyan-400/60" />
                 <span className="text-[10px] font-mono text-gray-600 tracking-[0.2em] uppercase">身份验证</span>
                 <div className="flex-1 h-px bg-gradient-to-r from-gray-700/60 to-transparent" />
-                <span className="text-[9px] font-mono text-gray-700">ACCESS_CTRL</span>
+                <span className="text-[9px] font-mono text-gray-700">访问控制</span>
               </div>
 
               {/* Forgot panel */}
@@ -138,10 +138,11 @@ export default function LoginPage() {
               <div className="space-y-4">
                 {/* Username */}
                 <div>
-                  <label className="text-[10px] font-mono text-gray-600 mb-1.5 block tracking-widest">EMPLOYEE_ID</label>
+                  <label className="text-[10px] font-mono text-gray-600 mb-1.5 block tracking-widest">工号</label>
                   <input
                     value={form.username}
-                    onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+                    onChange={e => setForm(f => ({ ...f, username: e.target.value.replace(/\D/g, "") }))}
+                    inputMode="numeric"
                     placeholder="输入 6 位工号"
                     maxLength={6}
                     className="w-full px-3 py-3 bg-gray-900/70 border border-gray-700/60 rounded-xl text-sm text-gray-200 outline-none placeholder-gray-700 transition-all font-mono focus:border-cyan-500/60 focus:bg-gray-900 focus:shadow-[0_0_16px_rgba(34,211,238,0.08)]"
@@ -151,7 +152,7 @@ export default function LoginPage() {
                 {/* Password */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[10px] font-mono text-gray-600 tracking-widest">ACCESS_CODE</label>
+                    <label className="text-[10px] font-mono text-gray-600 tracking-widest">密码</label>
                     <button type="button" onClick={() => setShowForgot(v => !v)}
                       className="text-[10px] font-mono text-cyan-400/50 hover:text-cyan-400 transition-colors">
                       忘记密码？
@@ -181,7 +182,7 @@ export default function LoginPage() {
                       {rememberMe && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                     </div>
                   </div>
-                  <span className="text-[10px] font-mono text-gray-600 group-hover:text-gray-400 transition-colors">REMEMBER_ID</span>
+                  <span className="text-[10px] font-mono text-gray-600 group-hover:text-gray-400 transition-colors">记住工号</span>
                 </label>
 
                 {/* Submit */}
