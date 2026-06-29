@@ -6,6 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ...services.infra.health import health_monitor
 
+# 持久线程池：避免每次检索都创建/销毁线程（每次约 1-3ms 开销）
+_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="parallel_search")
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,11 +81,10 @@ def search_fulltext_and_vector(
         finally:
             logger.info("[timing] 向量检索 %.2fs", time.time() - t_vec)
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        ft_future = pool.submit(_search_fulltext)
-        vec_future = pool.submit(_search_vector)
-        ft_ids, ft_score_map = ft_future.result()
-        vector_ids = vec_future.result()
+    ft_future = _POOL.submit(_search_fulltext)
+    vec_future = _POOL.submit(_search_vector)
+    ft_ids, ft_score_map = ft_future.result()
+    vector_ids = vec_future.result()
 
     logger.info("[timing] parallel_search 总耗时 %.2fs", time.time() - t0)
     return search_query, expansion_info, ft_ids, ft_score_map, vector_ids

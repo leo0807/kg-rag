@@ -66,69 +66,54 @@ async def source_graph(
 
     rank_map = {cid: idx + 1 for idx, cid in enumerate(ids)}
 
+    nodes: list[dict] = []
+    seen_ids: set[str] = set()
+
     with driver.session() as session:
-        sec_result = session.run("""
+        # 4 次串行查询合并为 1 次 UNION ALL，节省 3 次网络往返
+        node_result = session.run("""
             UNWIND $ids AS cid
             MATCH (s:Section {chunk_id: cid})
-            RETURN s.chunk_id AS id, s.title AS name,
-                   s.doc_id AS doc_id, s.number AS number
-        """, ids=ids)
-        nodes = []
-        seen_ids: set[str] = set()
-        for r in sec_result:
-            cid = r["id"]
-            nodes.append({
-                "id": cid, "name": r["name"] or cid, "type": "Section",
-                "doc_id": r["doc_id"] or "", "number": r["number"] or "",
-                "rank": rank_map.get(cid, 0),
-            })
-            seen_ids.add(cid)
-
-        doc_result = session.run("""
+            RETURN s.chunk_id AS id, coalesce(s.title, cid) AS name,
+                   'Section' AS node_type,
+                   coalesce(s.doc_id, '') AS doc_id, coalesce(s.number, '') AS number
+            UNION ALL
             UNWIND $ids AS cid
             MATCH (s:Section {chunk_id: cid})<-[:HAS_SECTION]-(d:Document)
-            RETURN DISTINCT d.name AS id, coalesce(d.title, d.name) AS name, d.name AS doc_id
-        """, ids=ids)
-        for r in doc_result:
-            if r["id"] not in seen_ids:
-                nodes.append({"id": r["id"], "name": r["name"], "type": "Document",
-                               "doc_id": r["doc_id"], "rank": 0})
-                seen_ids.add(r["id"])
-
-        entity_result = session.run("""
+            RETURN DISTINCT d.name AS id, coalesce(d.title, d.name) AS name,
+                   'Document' AS node_type, d.name AS doc_id, '' AS number
+            UNION ALL
             UNWIND $ids AS cid
-            MATCH (s:Section {chunk_id: cid})-[r]->(e)
-            WHERE e:Tool OR e:Material OR e:Process OR e:Constraint
+            MATCH (s:Section {chunk_id: cid})-[]->(e)
+            WHERE (e:Tool OR e:Material OR e:Process OR e:Constraint)
             RETURN DISTINCT
                 coalesce(e.name, e.constraint_id) AS id,
-                coalesce(e.name, e.type + ': ' + e.value + e.unit) AS name,
-                labels(e)[0] AS type,
-                coalesce(e.doc_id, '') AS doc_id
+                coalesce(e.name, coalesce(e.constraint_id, '')) AS name,
+                labels(e)[0] AS node_type,
+                coalesce(e.doc_id, '') AS doc_id, '' AS number
             LIMIT 40
-        """, ids=ids)
-        for r in entity_result:
-            eid = r["id"]
-            if eid and eid not in seen_ids:
-                nodes.append({"id": eid, "name": r["name"] or eid,
-                               "type": r["type"], "doc_id": r["doc_id"], "rank": 0})
-                seen_ids.add(eid)
-
-        neighbor_result = session.run("""
+            UNION ALL
             UNWIND $ids AS cid
             MATCH (s:Section {chunk_id: cid})-[:HAS_SUBSECTION|NEXT_SECTION]->(nb:Section)
             WHERE NOT nb.chunk_id IN $ids
-            RETURN DISTINCT nb.chunk_id AS id, nb.title AS name,
-                            nb.doc_id AS doc_id, nb.number AS number
+            RETURN DISTINCT nb.chunk_id AS id, coalesce(nb.title, nb.chunk_id) AS name,
+                   'Section' AS node_type,
+                   coalesce(nb.doc_id, '') AS doc_id, coalesce(nb.number, '') AS number
             LIMIT 20
         """, ids=ids)
-        for r in neighbor_result:
+        for r in node_result:
             nid = r["id"]
-            if nid not in seen_ids:
-                nodes.append({"id": nid, "name": r["name"] or nid, "type": "Section",
-                               "doc_id": r["doc_id"] or "", "number": r["number"] or "", "rank": 0})
-                seen_ids.add(nid)
+            if not nid or nid in seen_ids:
+                continue
+            node_type = r["node_type"]
+            nodes.append({
+                "id": nid, "name": r["name"] or nid, "type": node_type,
+                "doc_id": r["doc_id"] or "", "number": r["number"] or "",
+                "rank": rank_map.get(nid, 0) if node_type == "Section" else 0,
+            })
+            seen_ids.add(nid)
 
-        edges = []
+        edges: list[dict] = []
         edge_result = session.run("""
             MATCH (a)-[r]->(b)
             WHERE (a.chunk_id IN $seen OR a.name IN $seen OR a.constraint_id IN $seen)
@@ -158,27 +143,23 @@ async def query_suggest(
 
     suggestions = []
     with driver.session() as session:
-        sec_result = session.run("""
+        # 2 次串行查询合并为 1 次 UNION ALL
+        result = session.run("""
             MATCH (s:Section)
             WHERE toLower(s.title)   CONTAINS toLower($q)
                OR toLower(s.content) CONTAINS toLower($q)
-            RETURN DISTINCT s.title AS text, 'section' AS type, s.doc_id AS doc_id
+            RETURN DISTINCT s.title AS text, 'section' AS type, coalesce(s.doc_id, '') AS doc_id
             LIMIT 5
-        """, q=q)
-        for r in sec_result:
-            if r["text"]:
-                suggestions.append({"text": r["text"], "type": r["type"], "doc_id": r["doc_id"] or ""})
-
-        entity_result = session.run("""
+            UNION ALL
             MATCH (e)
             WHERE (e:Tool OR e:Material OR e:Process)
               AND toLower(e.name) CONTAINS toLower($q)
-            RETURN DISTINCT e.name AS text, labels(e)[0] AS type, e.doc_id AS doc_id
+            RETURN DISTINCT e.name AS text, toLower(labels(e)[0]) AS type, coalesce(e.doc_id, '') AS doc_id
             LIMIT 5
         """, q=q)
-        for r in entity_result:
+        for r in result:
             if r["text"]:
-                suggestions.append({"text": r["text"], "type": r["type"].lower(), "doc_id": r["doc_id"] or ""})
+                suggestions.append({"text": r["text"], "type": r["type"], "doc_id": r["doc_id"]})
 
     return {"suggestions": suggestions[:10]}
 

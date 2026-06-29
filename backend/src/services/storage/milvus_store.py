@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 COLLECTION_NAME = "cps_sections"
 DIM             = 1024  # bge-m3 输出维度
 
+# 模块级单例：避免每次检索都重复 has_collection() + load() 两次 Milvus 网络往返
+_col_cache: "Collection | None" = None
+
 def _trunc_utf8(s: str, max_bytes: int = 4000) -> str:
     """Truncate string so its UTF-8 encoding is at most max_bytes bytes."""
     enc = s.encode("utf-8")
@@ -108,11 +111,16 @@ def ensure_milvus_connected() -> None:
 
 
 def get_or_create_collection() -> Collection:
-    """获取或创建 Collection，保证幂等"""
+    """获取或创建 Collection，保证幂等。单例缓存，跳过重复的 has_collection+load。"""
+    global _col_cache
+    if _col_cache is not None:
+        return _col_cache
+
     ensure_milvus_connected()
     if utility.has_collection(COLLECTION_NAME):
         col = Collection(COLLECTION_NAME)
         col.load()
+        _col_cache = col
         return col
 
     fields = [
@@ -136,6 +144,7 @@ def get_or_create_collection() -> Collection:
     )
     col.load()
     logger.info("Milvus Collection 创建完成: %s", COLLECTION_NAME)
+    _col_cache = col
     return col
 
 
@@ -249,9 +258,11 @@ def search_sections(
 
 async def begin_bulk_load() -> None:
     """Release index before bulk insert for higher throughput."""
+    global _col_cache
     try:
         col = get_or_create_collection()
         col.release()
+        _col_cache = None  # 释放后使单例失效，下次重建
         logger.info("Milvus collection released for bulk load")
     except Exception as exc:
         logger.warning("begin_bulk_load release failed: %s", exc)
@@ -259,6 +270,8 @@ async def begin_bulk_load() -> None:
 
 async def end_bulk_load() -> None:
     """Rebuild HNSW index and reload collection after bulk insert."""
+    global _col_cache
+    _col_cache = None  # 强制下次重新 load
     try:
         col = get_or_create_collection()
         col.create_index(
@@ -270,6 +283,7 @@ async def end_bulk_load() -> None:
             },
         )
         col.load()
+        _col_cache = col
         logger.info("Milvus collection index rebuilt and loaded after bulk load")
     except Exception as exc:
         logger.warning("end_bulk_load index rebuild failed: %s", exc)
