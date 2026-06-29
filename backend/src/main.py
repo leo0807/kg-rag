@@ -26,6 +26,7 @@ from .routers.graph_api.tour     import router as graph_tour_router
 from .routers.query              import router as query_router
 from .routers.sessions           import router as sessions_router
 from .routers.auth               import router as auth_router
+from .routers.auth_profile       import router as auth_profile_router
 from .routers.settings           import router as settings_router
 from .routers.users              import router as users_router
 from .routers.feedback           import router as feedback_router
@@ -327,6 +328,7 @@ app.include_router(graph_schema_router)
 app.include_router(graph_tour_router)
 app.include_router(query_router)
 app.include_router(auth_router)
+app.include_router(auth_profile_router)
 app.include_router(settings_router)
 app.include_router(users_router)
 app.include_router(feedback_router)

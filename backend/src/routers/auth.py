@@ -5,8 +5,9 @@ src/routers/auth.py
 import uuid
 import logging
 import re
+from datetime import datetime, timezone
 from pydantic import BaseModel, field_validator
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, EmailStr
@@ -56,22 +57,6 @@ class TokenResponse(BaseModel):
     full_name:    str
     department:   str
     is_admin:     bool
-
-class ChangePasswordRequest(BaseModel):
-    old_password: str
-    new_password: str
-
-    @field_validator("new_password")
-    @classmethod
-    def validate_new_password(cls, v: str) -> str:
-        if len(v) < 6:
-            raise ValueError("新密码至少6位")
-        return v
-
-class UpdateProfileRequest(BaseModel):
-    full_name:  str = ""
-    department: str = ""
-    email:      str = ""
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -167,100 +152,82 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         is_admin     = user.is_admin,
     )
 
-@router.put("/password")
-async def change_password(
-    req:  ChangePasswordRequest,
-    db:   AsyncSession = Depends(get_db),
-    user: User         = Depends(get_current_user),
+_PW_RESET_TTL = 86400  # 24 小时（秒）
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    username: str = Body(..., embed=True),
+    db: AsyncSession = Depends(get_db),
 ):
-    if not verify_password(req.old_password, user.hashed_pw):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="原密码错误",
+    """
+    密码重置申请：向管理员发送通知邮件/Webhook。
+    同一用户 24 小时内只发送一次；超时未处理后允许重新发起。
+    """
+    # 1. 验证用户存在
+    user = (await db.execute(select(User).where(User.username == username))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在，请确认工号")
+
+    # 2. Redis 限速检查（24h 内只允许一次）
+    try:
+        from ..services.infra.cache import get_redis
+        r = get_redis()
+        rate_key = f"pw_reset_req:{username}"
+        ttl = r.ttl(rate_key)
+        if ttl > 0:
+            h, m = ttl // 3600, (ttl % 3600) // 60
+            raise HTTPException(
+                status_code=429,
+                detail=f"申请已提交，管理员处理中。距可重新申请还有 {h} 小时 {m} 分钟",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Redis 限速检查失败，跳过: %s", e)
+        r = None
+        rate_key = None
+
+    # 3. 获取所有管理员邮箱
+    admins = (await db.execute(select(User).where(User.is_admin == True))).scalars().all()
+    admin_emails = [a.email for a in admins if a.email and "@" in a.email]
+
+    # 4. 发送通知（邮件 + Webhook 双通道）
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    body = (
+        f"用户密码重置申请\n\n"
+        f"工号：{user.username}\n"
+        f"姓名：{user.full_name or '—'}\n"
+        f"部门：{user.department or '—'}\n"
+        f"申请时间：{now_str}\n\n"
+        f"请登录后台 → 用户管理 → 找到该用户 → 执行密码重置操作。"
+    )
+    try:
+        from ..services.monitoring.alert_sender import alert_sender
+        for email in admin_emails:
+            await alert_sender.send_email(
+                to=email,
+                subject=f"[CPS知识库] 密码重置申请 · 工号 {user.username}",
+                body=body,
+            )
+        # Webhook 作为备用通知渠道
+        await alert_sender.send_dingtalk(
+            f"📌 **密码重置申请**\n工号：{user.username}  姓名：{user.full_name or '—'}\n{now_str}",
+            level="warning",
         )
+    except Exception as e:
+        logger.warning("重置申请通知发送失败: %s", e)
 
-    user.hashed_pw = hash_password(req.new_password)
+    # 5. 写入 Redis 限速键（24h TTL）
+    try:
+        if r is not None and rate_key:
+            r.setex(rate_key, _PW_RESET_TTL, "1")
+    except Exception as e:
+        logger.warning("Redis 限速键写入失败: %s", e)
 
-    log = AuditLog(
-        user_id  = user.id,
-        action   = "change_password",
-        resource = "user",
-        detail   = f"用户 {user.username} 修改了密码",
-    )
-    db.add(log)
-    await db.commit()
-    return {"status": "OK", "message": "密码修改成功"}
-
-@router.put("/profile")
-async def update_profile(
-    req:  UpdateProfileRequest,
-    db:   AsyncSession = Depends(get_db),
-    user: User         = Depends(get_current_user),
-):
-    if req.full_name:
-        user.full_name = req.full_name
-    if req.department:
-        user.department = req.department
-    if req.email:
-        # 检查邮箱是否已被使用
-        result = await db.execute(
-            select(User).where(User.email == req.email, User.id != user.id)
-        )
-        if result.scalar_one_or_none():
-            raise HTTPException(400, "邮箱已被其他用户使用")
-        user.email = req.email
-
-    log = AuditLog(
-        user_id  = user.id,
-        action   = "update_profile",
-        resource = "user",
-        detail   = f"用户 {user.username} 更新了个人资料",
-    )
-    db.add(log)
-    await db.commit()
-
-    return {
-        "status":     "OK",
-        "username":   user.username,
-        "full_name":  user.full_name,
-        "department": user.department,
-        "email":      user.email,
-    }
+    logger.info("密码重置申请 username=%s emails=%s", username, admin_emails)
+    return {"detail": "申请已发送，请等待管理员处理（通常 1 个工作日内）"}
 
 
-@router.get("/profile")
-async def get_profile(
-    db:   AsyncSession = Depends(get_db),
-    user: User         = Depends(get_current_user),
-):
-    return {
-        "user_id":    user.id,
-        "username":   user.username,
-        "full_name":  user.full_name,
-        "department": user.department,
-        "email":      user.email,
-        "is_admin":   user.is_admin,
-        "created_at": user.created_at.isoformat(),
-    }
-
-@router.post("/refresh")
-async def refresh_token(
-    db:   AsyncSession = Depends(get_db),
-    user: User         = Depends(get_current_user),
-):
-    """刷新 token，返回新 token"""
-    new_token = create_access_token(user.id, user.is_admin, tenant_id=user.tenant_id)
-
-    log = AuditLog(
-        user_id  = user.id,
-        action   = "refresh_token",
-        resource = "auth",
-        detail   = f"用户 {user.username} 刷新了 token",
-    )
-    db.add(log)
-    await db.commit()
-
-    return {
-        "access_token": new_token,
-        "token_type":   "bearer",
-    }
+# 密码修改、个人资料、token 刷新已迁移至 auth_profile.py
+# 原有路由由 auth_profile_router 提供，与此模块共享 /api/auth 前缀
