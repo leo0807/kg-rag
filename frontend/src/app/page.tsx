@@ -1,8 +1,9 @@
 import dynamic from "next/dynamic";
-import HeroTitle  from "@/components/home/HeroTitle";
-import StatsRow   from "@/components/home/StatsRow";
+import HeroTitle   from "@/components/home/HeroTitle";
+import StatsRow    from "@/components/home/StatsRow";
 import FeatureGrid from "@/components/home/FeatureGrid";
-import CtaButton  from "@/components/home/CtaButton";
+import CtaButton   from "@/components/home/CtaButton";
+import TickerBanner from "@/components/home/TickerBanner";
 
 // 重型 canvas / 动画组件懒加载，不阻塞首屏渲染
 const ParticleCanvas = dynamic(() => import("@/components/home/ParticleCanvas"), { ssr: false });
@@ -11,7 +12,7 @@ const SideHUD        = dynamic(() => import("@/components/home/SideHUD"),       
 
 export default function HomePage() {
   return (
-    <div className="relative min-h-screen bg-gray-950 flex flex-col items-center justify-center overflow-hidden px-5 py-14">
+    <div className="relative min-h-screen bg-gray-950 flex flex-col items-center justify-center overflow-hidden px-5 py-14 pb-20">
 
       {/* ── 背景层（由远到近）────────────────────── */}
 
@@ -48,6 +49,14 @@ export default function HomePage() {
            style={{ background: "linear-gradient(90deg,transparent,rgba(34,211,238,0.65) 50%,transparent)" }} />
       <div className="absolute bottom-0 left-0 right-0 h-px pointer-events-none"
            style={{ background: "linear-gradient(90deg,transparent,rgba(99,102,241,0.4) 50%,transparent)" }} />
+
+      {/* 顶部分类条 */}
+      <div className="absolute top-0 left-0 right-0 h-6 flex items-center justify-center gap-4 pointer-events-none z-10"
+           style={{ background: "rgba(2,8,20,0.7)", borderBottom: "1px solid rgba(34,211,238,0.1)" }}>
+        {["COMAC INTERNAL", "CPS-GRAPHRAG-SYS", "SEC-LEVEL-2", "ATA100 SPEC", "NOT FOR DISTRIBUTION"].map((t, i) => (
+          <span key={i} className="text-[8px] font-mono text-gray-700 tracking-widest hidden sm:inline">{t}</span>
+        ))}
+      </div>
 
       {/* ── HUD 角框 ─────────────────────────────── */}
       {[
@@ -88,6 +97,9 @@ export default function HomePage() {
 
       {/* ── 侧边 HUD ─────────────────────────────── */}
       <SideHUD />
+
+      {/* ── 底部 ticker ──────────────────────────── */}
+      <TickerBanner />
 
       {/* ── 主内容区 ─────────────────────────────── */}
       <div className="relative z-10 flex flex-col items-center gap-10 w-full max-w-3xl">
