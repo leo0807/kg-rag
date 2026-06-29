@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/leo0807/kg-rag/compare/v1.7.0...v1.7.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **admin:** 租户设置 + 外部集成 UI 留白修复 ([06cae5d](https://github.com/leo0807/kg-rag/commit/06cae5d9f60844f3ba1ba33f98f5e90adbd0d6fc))
+
 # [1.7.0](https://github.com/leo0807/kg-rag/compare/v1.6.1...v1.7.0) (2026-06-29)
 
 
