@@ -157,6 +157,10 @@
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
+@keyframes circuit-flow {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -40; }
+}
 /* ── 全局交互增强 ──────────────────────────────────────────── */
 
 /* Button press tactile feedback */
