@@ -1,3 +1,11 @@
+# [1.4.0](https://github.com/leo0807/kg-rag/compare/v1.3.0...v1.4.0) (2026-06-29)
+
+
+### Features
+
+* **auth:** 忘记密码申请流程 + 登录页重构 ([98894f1](https://github.com/leo0807/kg-rag/commit/98894f12698b0c42a3f47aeeabfdab39b5b061ea))
+* **home:** 首页视觉强化 — 分类条 + 实时 ticker ([0129442](https://github.com/leo0807/kg-rag/commit/0129442e3fe9ae95f53c73494c7b7602d294ae8e))
+
 # [1.3.0](https://github.com/leo0807/kg-rag/compare/v1.2.0...v1.3.0) (2026-06-29)
 
 
