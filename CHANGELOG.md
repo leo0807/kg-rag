@@ -1,3 +1,10 @@
+## [1.6.1](https://github.com/leo0807/kg-rag/compare/v1.6.0...v1.6.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **login:** 修复 SES-ID 水合错误 ([e05806c](https://github.com/leo0807/kg-rag/commit/e05806c904a4bcebc102743058fdb5fbfa599905))
+
 # [1.6.0](https://github.com/leo0807/kg-rag/compare/v1.5.0...v1.6.0) (2026-06-29)
 
 
