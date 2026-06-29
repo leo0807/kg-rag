@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/leo0807/kg-rag/compare/v1.5.0...v1.6.0) (2026-06-29)
+
+
+### Features
+
+* **login:** 科幻感全面升级 — 电路板追踪 + 雷达 + 安全日志 + 认证序列 ([ade78eb](https://github.com/leo0807/kg-rag/commit/ade78ebdebe56adfcbfdbfa151f8153a0b8690f8))
+
 # [1.5.0](https://github.com/leo0807/kg-rag/compare/v1.4.1...v1.5.0) (2026-06-29)
 
 
