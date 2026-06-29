@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/leo0807/kg-rag/compare/v1.4.0...v1.4.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **login:** 工号仅限数字输入 + 关键标签中文化 ([61488d9](https://github.com/leo0807/kg-rag/commit/61488d9475df1d4ae7f5706b528bf8e0029efe8a))
+
 # [1.4.0](https://github.com/leo0807/kg-rag/compare/v1.3.0...v1.4.0) (2026-06-29)
 
 
