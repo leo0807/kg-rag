@@ -1,3 +1,17 @@
+# [1.3.0](https://github.com/leo0807/kg-rag/compare/v1.2.0...v1.3.0) (2026-06-29)
+
+
+### Features
+
+* **ui+infra:** 首页/登录页科幻重设计、全局入场动画、nginx/docker 生产配置 ([c8af9d7](https://github.com/leo0807/kg-rag/commit/c8af9d777816907b08b70ca5769f169b78d2ba12))
+* 配额使用情况 — 全宽卡片式布局，消除右侧留白 ([f03e30a](https://github.com/leo0807/kg-rag/commit/f03e30abd0e34c84003adbe71ff35db4967d18b7))
+
+
+### Performance Improvements
+
+* **backend:** Milvus 单例缓存、持久线程池、Neo4j 查询合并 ([ad71a1c](https://github.com/leo0807/kg-rag/commit/ad71a1c1c5b7e48f93723f37d64dc6a0ed1c4df2))
+* **frontend:** 重型组件懒加载 + next.config 优化 ([317d036](https://github.com/leo0807/kg-rag/commit/317d036e903607435c7a98eb262858f0975fa483))
+
 # [1.2.0](https://github.com/leo0807/kg-rag/compare/v1.1.0...v1.2.0) (2026-06-28)
 
 
