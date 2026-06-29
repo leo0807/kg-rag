@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { BrainCircuit, Eye, EyeOff, X, Shield, ChevronRight, Activity, Database, Network, Cpu } from "lucide-react";
-import ParticleCanvas from "@/components/home/ParticleCanvas";
-import FloatingData from "@/components/home/FloatingData";
+
+const ParticleCanvas = dynamic(() => import("@/components/home/ParticleCanvas"), { ssr: false });
+const FloatingData   = dynamic(() => import("@/components/home/FloatingData"),   { ssr: false });
 
 const FEATURES = [
   { Icon: Network,   text: "GraphRAG 四策略混合检索" },
@@ -21,7 +23,7 @@ export default function LoginPage() {
   const [showForgot, setShowForgot] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [form, setForm] = useState({ username: "", password: "" });
-  const [tick, setTick] = useState(new Date().toLocaleTimeString("en-GB"));
+  const [tick, setTick] = useState("");  // 空字符串避免 SSR/客户端时间不一致导致 hydration 错误
 
   useEffect(() => {
     const saved = localStorage.getItem("remembered_username");
@@ -29,6 +31,7 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
+    setTick(new Date().toLocaleTimeString("en-GB"));  // 首次渲染后立即同步
     const iv = setInterval(() => setTick(new Date().toLocaleTimeString("en-GB")), 1000);
     return () => clearInterval(iv);
   }, []);

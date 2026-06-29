@@ -28,25 +28,19 @@ async def get_dashboard_stats(
 ):
     """获取图谱健康度与活跃度统计"""
     
-    # 1. 图谱健康度 (Neo4j)
+    # 1. 图谱健康度 (Neo4j) — 2 次串行查询合并为 1 次 UNION ALL
     with driver.session() as session:
-        # 基础统计
-        basic_res = session.run("""
-            MATCH (n) WITH count(n) AS node_count
-            MATCH ()-[r]->() WITH node_count, count(r) AS rel_count
-            RETURN node_count, rel_count
-        """).single()
-        
-        # 孤立节点 (没有出边也没有入边)
-        orphan_res = session.run("""
-            MATCH (n)
-            WHERE NOT (n)--()
-            RETURN count(n) AS orphan_count
-        """).single()
-        
-        node_count = basic_res["node_count"]
-        rel_count = basic_res["rel_count"]
-        orphan_count = orphan_res["orphan_count"]
+        rows = session.run("""
+            MATCH (n) RETURN count(n) AS val, 0 AS val2, 'nodes'   AS kind
+            UNION ALL
+            MATCH ()-[r]->() RETURN count(r) AS val, 0 AS val2, 'rels'    AS kind
+            UNION ALL
+            MATCH (n) WHERE NOT (n)--() RETURN count(n) AS val, 0 AS val2, 'orphans' AS kind
+        """).data()
+        _m = {r["kind"]: r["val"] for r in rows}
+        node_count   = _m.get("nodes",   0)
+        rel_count    = _m.get("rels",    0)
+        orphan_count = _m.get("orphans", 0)
         
         density = rel_count / (node_count * (node_count - 1)) if node_count > 1 else 0
         orphan_ratio = orphan_count / node_count if node_count > 0 else 0
