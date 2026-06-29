@@ -1,10 +1,13 @@
-import ParticleCanvas from "@/components/home/ParticleCanvas";
-import FloatingData   from "@/components/home/FloatingData";
-import SideHUD        from "@/components/home/SideHUD";
-import HeroTitle      from "@/components/home/HeroTitle";
-import StatsRow       from "@/components/home/StatsRow";
-import FeatureGrid    from "@/components/home/FeatureGrid";
-import CtaButton      from "@/components/home/CtaButton";
+import dynamic from "next/dynamic";
+import HeroTitle  from "@/components/home/HeroTitle";
+import StatsRow   from "@/components/home/StatsRow";
+import FeatureGrid from "@/components/home/FeatureGrid";
+import CtaButton  from "@/components/home/CtaButton";
+
+// 重型 canvas / 动画组件懒加载，不阻塞首屏渲染
+const ParticleCanvas = dynamic(() => import("@/components/home/ParticleCanvas"), { ssr: false });
+const FloatingData   = dynamic(() => import("@/components/home/FloatingData"),   { ssr: false });
+const SideHUD        = dynamic(() => import("@/components/home/SideHUD"),        { ssr: false });
 
 export default function HomePage() {
   return (
