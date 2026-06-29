@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { type ForgotState } from "./ForgotPanel";
@@ -22,7 +22,7 @@ export default function LoginPage() {
   const [tick, setTick] = useState("");
   const [forgotState, setForgotState] = useState<ForgotState>("idle");
   const [forgotMsg, setForgotMsg] = useState("");
-  const sessionId = useRef(`${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`);
+  const [sessionId, setSessionId] = useState("··········");
 
   useEffect(() => {
     const saved = localStorage.getItem("remembered_username");
@@ -33,6 +33,10 @@ export default function LoginPage() {
     setTick(new Date().toLocaleTimeString("en-GB"));
     const iv = setInterval(() => setTick(new Date().toLocaleTimeString("en-GB")), 1000);
     return () => clearInterval(iv);
+  }, []);
+
+  useEffect(() => {
+    setSessionId(`${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`);
   }, []);
 
   async function handleForgot() {
@@ -96,7 +100,7 @@ export default function LoginPage() {
               setShowPw={setShowPw} setShowForgot={setShowForgot} setRememberMe={setRememberMe}
               setForm={setForm} setForgotState={setForgotState} setForgotMsg={setForgotMsg}
               handleForgot={handleForgot} handleLogin={handleLogin}
-              sessionId={sessionId.current}
+              sessionId={sessionId}
             />
           </div>
         </div>
