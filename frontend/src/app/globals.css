@@ -161,6 +161,10 @@
   from { stroke-dashoffset: 0; }
   to   { stroke-dashoffset: -40; }
 }
+@keyframes data-stream-up {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-50%); }
+}
 /* ── 全局交互增强 ──────────────────────────────────────────── */
 
 /* Button press tactile feedback */

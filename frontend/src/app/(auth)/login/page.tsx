@@ -8,8 +8,9 @@ import LoginInfoPanel from "./LoginInfoPanel";
 import LoginBackdrop from "./LoginBackdrop";
 import LoginFormPanel from "./LoginFormPanel";
 
-const ParticleCanvas = dynamic(() => import("@/components/home/ParticleCanvas"), { ssr: false });
-const FloatingData   = dynamic(() => import("@/components/home/FloatingData"),   { ssr: false });
+const ParticleCanvas = dynamic(() => import("@/components/home/ParticleCanvas"),      { ssr: false });
+const FloatingData   = dynamic(() => import("@/components/home/FloatingData"),         { ssr: false });
+const LoginHUD       = dynamic(() => import("./LoginHUD"),                             { ssr: false });
 
 export default function LoginPage() {
   const router = useRouter();
@@ -76,13 +77,18 @@ export default function LoginPage() {
       <ParticleCanvas />
       <FloatingData />
       <LoginBackdrop />
+      <LoginHUD />
 
       {/* ── Main card ───────────────────────── */}
       <div className="relative z-10 w-full max-w-4xl mt-6" style={{ animation: "page-enter 0.5s ease both" }}>
+        {/* Outer glow ring */}
+        <div className="absolute -inset-4 rounded-3xl pointer-events-none"
+             style={{ background: "radial-gradient(ellipse,rgba(34,211,238,0.06) 0%,rgba(99,102,241,0.04) 50%,transparent 70%)" }} />
         {/* Glowing border wrapper */}
         <div className="relative rounded-2xl p-[1px]" style={{
-          background: "linear-gradient(135deg,rgba(34,211,238,0.4),rgba(99,102,241,0.2),rgba(34,211,238,0.15))",
+          background: "linear-gradient(135deg,rgba(34,211,238,0.5),rgba(99,102,241,0.3),rgba(34,211,238,0.2))",
           backgroundSize: "200% 200%", animation: "gradient-sweep 5s ease infinite",
+          boxShadow: "0 0 60px rgba(34,211,238,0.1), 0 0 120px rgba(99,102,241,0.06)",
         }}>
           {/* Card scan line */}
           <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none z-20">
