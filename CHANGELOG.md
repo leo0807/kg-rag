@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/leo0807/kg-rag/compare/v1.6.1...v1.7.0) (2026-06-29)
+
+
+### Features
+
+* **login:** 全屏 HUD 层 + 卡片外发光强化 ([2756ced](https://github.com/leo0807/kg-rag/commit/2756cedf771bdde8e287a6f99b8ea7e0e9970baf))
+
 ## [1.6.1](https://github.com/leo0807/kg-rag/compare/v1.6.0...v1.6.1) (2026-06-29)
 
 
