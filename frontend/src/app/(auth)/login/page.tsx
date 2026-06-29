@@ -109,11 +109,27 @@ export default function LoginPage() {
               </div>
 
               {/* Section label */}
-              <div className="flex items-center gap-2 mb-6">
+              <div className="flex items-center gap-2 mb-4">
                 <Shield size={12} className="text-cyan-400/60" />
                 <span className="text-[10px] font-mono text-gray-600 tracking-[0.2em] uppercase">身份验证</span>
                 <div className="flex-1 h-px bg-gradient-to-r from-gray-700/60 to-transparent" />
                 <span className="text-[9px] font-mono text-gray-700">访问控制</span>
+              </div>
+
+              {/* Connection status row */}
+              <div className="flex items-center gap-3 mb-5 px-2 py-1.5 rounded-lg border"
+                   style={{ background: "rgba(2,8,20,0.5)", borderColor: "rgba(34,211,238,0.08)" }}>
+                {[
+                  { dot: "#4ade80", label: "AUTH_SVC" },
+                  { dot: "#60a5fa", label: "NEO4J" },
+                  { dot: "#a78bfa", label: "LLM_API" },
+                  { dot: "#22d3ee", label: "TLS_1.3" },
+                ].map(({ dot, label }) => (
+                  <span key={label} className="flex items-center gap-1 text-[8px] font-mono text-gray-700">
+                    <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: dot, boxShadow: `0 0 4px ${dot}` }} />
+                    {label}
+                  </span>
+                ))}
               </div>
 
               {/* Forgot panel */}
@@ -147,6 +163,11 @@ export default function LoginPage() {
                     maxLength={6}
                     className="w-full px-3 py-3 bg-gray-900/70 border border-gray-700/60 rounded-xl text-sm text-gray-200 outline-none placeholder-gray-700 transition-all font-mono focus:border-cyan-500/60 focus:bg-gray-900 focus:shadow-[0_0_16px_rgba(34,211,238,0.08)]"
                   />
+                  {form.username.length > 0 && form.username.length < 6 && (
+                    <p className="mt-1 text-[10px] font-mono text-amber-500/80">
+                      工号须为 6 位数字（已输入 {form.username.length} 位）
+                    </p>
+                  )}
                 </div>
 
                 {/* Password */}
@@ -213,10 +234,12 @@ export default function LoginPage() {
                 </button>
               </div>
 
-              <p className="text-center text-[10px] font-mono text-gray-700 mt-6 leading-relaxed">
-                新用户账号由系统管理员统一创建<br />
-                <span className="text-gray-800">ACCESS REQUEST → ADMIN → USER_MGMT</span>
-              </p>
+              <div className="mt-5 border-t pt-4 space-y-1" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
+                <p className="text-center text-[10px] font-mono text-gray-700">新用户账号由系统管理员统一创建</p>
+                <p className="text-center text-[8px] font-mono text-gray-800 tracking-widest">
+                  ALL ACCESS LOGGED · 0 ANONYMOUS SESSIONS · AES-256-GCM
+                </p>
+              </div>
             </div>
           </div>
         </div>
