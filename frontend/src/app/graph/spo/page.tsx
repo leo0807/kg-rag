@@ -95,7 +95,11 @@ export default function SPOGraphPage() {
               onKeyDown={e => e.key === "Enter" && loadGraph(g.graph_id)}>
               <div className="min-w-0">
                 <div className="text-xs font-medium text-gray-200 truncate">
-                  第 {g.chapter} 章 · {g.doc_id.slice(0, 18)}{g.doc_id.length > 18 ? "…" : ""}
+                  {g.chapter === "ALL" && g.doc_id === "ALL"
+                    ? "全局知识图谱"
+                    : g.chapter === "ALL"
+                    ? `全文 · ${g.doc_id.slice(0, 16)}`
+                    : `第 ${g.chapter} 章 · ${g.doc_id.slice(0, 14)}${g.doc_id.length > 14 ? "…" : ""}`}
                 </div>
                 <div className="text-[10px] text-gray-500 mt-0.5">
                   {g.node_count ?? "—"} 节点 · {g.edge_count ?? "—"} 边
@@ -136,8 +140,16 @@ export default function SPOGraphPage() {
         {meta && (
           <div className="flex items-center gap-6 px-5 py-2 border-b border-gray-800 bg-gray-900/60">
             <span className="text-xs text-gray-400">
-              <span className="text-white font-medium">第 {meta.chapter} 章</span>
-              <span className="mx-1 text-gray-600">·</span>{meta.doc_id}
+              <span className="text-white font-medium">
+                {meta.chapter === "ALL" && meta.doc_id === "ALL"
+                  ? "全局知识图谱"
+                  : meta.chapter === "ALL"
+                  ? `全文 · ${meta.doc_id}`
+                  : `第 ${meta.chapter} 章`}
+              </span>
+              {!(meta.chapter === "ALL" && meta.doc_id === "ALL") && (
+                <><span className="mx-1 text-gray-600">·</span>{meta.doc_id}</>
+              )}
             </span>
             <div className="flex items-center gap-1 text-indigo-400">
               <Layers size={12} />

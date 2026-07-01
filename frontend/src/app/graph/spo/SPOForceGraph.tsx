@@ -7,7 +7,7 @@ interface SPONode { node_id: string; name: string; type: string; graph_id: strin
 interface SPOEdge { source: string; target: string; predicate: string; predicate_type: string }
 
 interface SimNode extends d3.SimulationNodeDatum {
-  node_id: string; name: string; type: string; graph_id: string;
+  node_id: string; name: string; type: string;
 }
 interface SimEdge extends d3.SimulationLinkDatum<SimNode> {
   predicate: string; predicate_type: string;
@@ -16,132 +16,154 @@ interface SimEdge extends d3.SimulationLinkDatum<SimNode> {
 interface Props { nodes: SPONode[]; edges: SPOEdge[] }
 
 const TYPE_COLOR: Record<string, string> = {
-  System:       "#6366f1",
-  Component:    "#8b5cf6",
-  Process:      "#10b981",
-  Material:     "#f59e0b",
-  Tool:         "#06b6d4",
-  Parameter:    "#ec4899",
-  Standard:     "#3b82f6",
-  Requirement:  "#ef4444",
-  Organization: "#84cc16",
-  Concept:      "#9ca3af",
+  System: "#6366f1", Component: "#8b5cf6", Process: "#10b981",
+  Material: "#f59e0b", Tool: "#06b6d4", Parameter: "#ec4899",
+  Standard: "#3b82f6", Requirement: "#ef4444", Organization: "#84cc16",
+  Concept: "#9ca3af",
 };
 
-function nodeColor(type: string) {
-  return TYPE_COLOR[type] ?? "#6b7280";
-}
-
 export function SPOForceGraph({ nodes, edges }: Props) {
-  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const svgRef      = useRef<SVGSVGElement>(null);
+  const simRef      = useRef<d3.Simulation<SimNode, SimEdge> | null>(null);
 
   useEffect(() => {
-    if (!svgRef.current || nodes.length === 0) return;
+    const container = containerRef.current;
+    const svgEl     = svgRef.current;
+    if (!container || !svgEl || nodes.length === 0) return;
 
-    const el   = svgRef.current;
-    const W    = el.clientWidth  || 900;
-    const H    = el.clientHeight || 560;
-    const svg  = d3.select(el);
-    svg.selectAll("*").remove();
+    simRef.current?.stop();
 
-    const g = svg.append("g");
+    function build(W: number, H: number) {
+      const sel = d3.select(svgEl!);
+      sel.selectAll("*").remove();
+      // Set explicit pixel attributes so the coordinate space matches DOM pixels
+      sel.attr("width", W).attr("height", H);
 
-    // Zoom
-    svg.call(
-      d3.zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.2, 4])
-        .on("zoom", (e) => g.attr("transform", e.transform)),
-    );
+      const g = sel.append("g");
 
-    // Arrow marker
-    svg.append("defs").append("marker")
-      .attr("id", "arrow")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 22).attr("refY", 0)
-      .attr("markerWidth", 6).attr("markerHeight", 6)
-      .attr("orient", "auto")
-      .append("path")
-      .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "#4b5563");
-
-    // Build simulation data
-    const simNodes: SimNode[] = nodes.map(n => ({ ...n, x: W / 2, y: H / 2 }));
-    const idIdx = new Map(simNodes.map((n, i) => [n.node_id, i]));
-    const simEdges: SimEdge[] = edges
-      .filter(e => idIdx.has(e.source) && idIdx.has(e.target))
-      .map(e => ({ ...e, source: idIdx.get(e.source)!, target: idIdx.get(e.target)! }));
-
-    const simulation = d3.forceSimulation<SimNode>(simNodes)
-      .force("link",   d3.forceLink<SimNode, SimEdge>(simEdges).id((_, i) => i).distance(120).strength(0.6))
-      .force("charge", d3.forceManyBody().strength(-280))
-      .force("center", d3.forceCenter(W / 2, H / 2))
-      .force("collide", d3.forceCollide(28));
-
-    // Edges
-    const link = g.append("g").selectAll("line")
-      .data(simEdges).join("line")
-      .attr("stroke", "#374151")
-      .attr("stroke-width", 1.5)
-      .attr("marker-end", "url(#arrow)");
-
-    // Edge labels
-    const edgeLabel = g.append("g").selectAll("text")
-      .data(simEdges).join("text")
-      .text(d => d.predicate.length > 10 ? d.predicate.slice(0, 10) + "…" : d.predicate)
-      .attr("fill", "#6b7280")
-      .attr("font-size", 9)
-      .attr("text-anchor", "middle");
-
-    // Nodes (draggable)
-    const node = g.append("g").selectAll<SVGGElement, SimNode>("g")
-      .data(simNodes).join("g")
-      .attr("cursor", "pointer")
-      .call(
-        d3.drag<SVGGElement, SimNode>()
-          .on("start", (event, d) => {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x; d.fy = d.y;
-          })
-          .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
-          .on("end", (event, d) => {
-            if (!event.active) simulation.alphaTarget(0);
-            d.fx = null; d.fy = null;
-          }),
+      sel.call(
+        d3.zoom<SVGSVGElement, unknown>()
+          .scaleExtent([0.1, 8])
+          .on("zoom", e => g.attr("transform", e.transform)),
       );
 
-    node.append("circle")
-      .attr("r", 14)
-      .attr("fill", d => nodeColor(d.type))
-      .attr("fill-opacity", 0.85)
-      .attr("stroke", "#1f2937")
-      .attr("stroke-width", 2);
+      sel.append("defs").append("marker")
+        .attr("id", "spo-arr").attr("viewBox", "0 -5 10 10")
+        .attr("refX", 22).attr("refY", 0)
+        .attr("markerWidth", 5).attr("markerHeight", 5)
+        .attr("orient", "auto")
+        .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#4b5563");
 
-    node.append("text")
-      .text(d => d.name.length > 8 ? d.name.slice(0, 8) + "…" : d.name)
-      .attr("dy", 28).attr("text-anchor", "middle")
-      .attr("fill", "#d1d5db").attr("font-size", 10);
+      // Spread nodes randomly so simulation converges faster
+      const simNodes: SimNode[] = nodes.map(n => ({
+        ...n,
+        x: W / 2 + (Math.random() - 0.5) * Math.min(W, H) * 0.6,
+        y: H / 2 + (Math.random() - 0.5) * Math.min(W, H) * 0.6,
+      }));
 
-    // Tooltip
-    node.append("title").text(d => `[${d.type}] ${d.name}`);
+      // Use string node_id as D3 link ID — no index-mapping needed
+      const nodeSet = new Set(simNodes.map(n => n.node_id));
+      const simEdges: SimEdge[] = edges
+        .filter(e => nodeSet.has(e.source) && nodeSet.has(e.target))
+        .map(e => ({ source: e.source, target: e.target, predicate: e.predicate, predicate_type: e.predicate_type }));
 
-    simulation.on("tick", () => {
-      link
-        .attr("x1", d => (d.source as SimNode).x ?? 0)
-        .attr("y1", d => (d.source as SimNode).y ?? 0)
-        .attr("x2", d => (d.target as SimNode).x ?? 0)
-        .attr("y2", d => (d.target as SimNode).y ?? 0);
+      // Skip edge labels for large graphs — the #1 performance killer
+      const showLabels = simEdges.length <= 60;
 
-      edgeLabel
-        .attr("x", d => (((d.source as SimNode).x ?? 0) + ((d.target as SimNode).x ?? 0)) / 2)
-        .attr("y", d => (((d.source as SimNode).y ?? 0) + ((d.target as SimNode).y ?? 0)) / 2 - 4);
+      const sim = d3.forceSimulation<SimNode>(simNodes)
+        .force("link",    d3.forceLink<SimNode, SimEdge>(simEdges)
+          .id(d => d.node_id).distance(110).strength(0.6))
+        .force("charge",  d3.forceManyBody().strength(-240).distanceMax(350))
+        .force("center",  d3.forceCenter(W / 2, H / 2).strength(0.08))
+        .force("collide", d3.forceCollide(22))
+        .alphaDecay(0.05)    // converge in ~60 ticks instead of 300
+        .velocityDecay(0.4);
 
-      node.attr("transform", d => `translate(${d.x ?? 0},${d.y ?? 0})`);
+      simRef.current = sim;
+
+      const link = g.append("g")
+        .selectAll<SVGLineElement, SimEdge>("line")
+        .data(simEdges).join("line")
+        .attr("stroke", "#374151").attr("stroke-width", 1.5)
+        .attr("marker-end", "url(#spo-arr)");
+
+      const edgeLabel = showLabels
+        ? g.append("g")
+            .selectAll<SVGTextElement, SimEdge>("text")
+            .data(simEdges).join("text")
+            .text(d => d.predicate.length > 10 ? d.predicate.slice(0, 10) + "…" : d.predicate)
+            .attr("fill", "#6b7280").attr("font-size", 9).attr("text-anchor", "middle")
+            .attr("pointer-events", "none")
+        : null;
+
+      const nodeG = g.append("g")
+        .selectAll<SVGGElement, SimNode>("g")
+        .data(simNodes).join("g")
+        .attr("cursor", "pointer")
+        .call(
+          d3.drag<SVGGElement, SimNode>()
+            .on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(0.2).restart(); d.fx = d.x; d.fy = d.y; })
+            .on("drag",  (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+            .on("end",   (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }),
+        );
+
+      nodeG.append("circle")
+        .attr("r", 14)
+        .attr("fill", d => TYPE_COLOR[d.type] ?? "#6b7280")
+        .attr("fill-opacity", 0.9)
+        .attr("stroke", "#111827").attr("stroke-width", 1.5);
+
+      nodeG.append("text")
+        .text(d => d.name.length > 8 ? d.name.slice(0, 8) + "…" : d.name)
+        .attr("dy", 28).attr("text-anchor", "middle")
+        .attr("fill", "#d1d5db").attr("font-size", 10)
+        .attr("pointer-events", "none");
+
+      nodeG.append("title").text(d => `[${d.type}] ${d.name}`);
+
+      sim.on("tick", () => {
+        link
+          .attr("x1", d => (d.source as SimNode).x ?? 0)
+          .attr("y1", d => (d.source as SimNode).y ?? 0)
+          .attr("x2", d => (d.target as SimNode).x ?? 0)
+          .attr("y2", d => (d.target as SimNode).y ?? 0);
+
+        edgeLabel
+          ?.attr("x", d => (((d.source as SimNode).x ?? 0) + ((d.target as SimNode).x ?? 0)) / 2)
+           .attr("y", d => (((d.source as SimNode).y ?? 0) + ((d.target as SimNode).y ?? 0)) / 2 - 4);
+
+        nodeG.attr("transform", d => `translate(${d.x ?? 0},${d.y ?? 0})`);
+      });
+    }
+
+    // ResizeObserver: wait for the container to have actual layout dimensions.
+    // SVG clientWidth is unreliable across browsers; div clientWidth is stable.
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) {
+        ro.disconnect();
+        build(width, height);
+      }
     });
+    ro.observe(container);
 
-    return () => { simulation.stop(); };
+    // Also try immediately in case the element is already sized
+    const rect = container.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      ro.disconnect();
+      build(rect.width, rect.height);
+    }
+
+    return () => {
+      ro.disconnect();
+      simRef.current?.stop();
+    };
   }, [nodes, edges]);
 
   return (
-    <svg ref={svgRef} className="w-full h-full" style={{ background: "#030712" }} />
+    <div ref={containerRef} className="w-full h-full">
+      <svg ref={svgRef} style={{ display: "block", background: "#030712" }} />
+    </div>
   );
 }
