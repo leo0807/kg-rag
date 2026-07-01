@@ -35,7 +35,7 @@ function MetricCard({ icon: Icon, label, value, sub, color = "indigo" }: {
     cyan:    "ring-cyan-500/30   bg-cyan-500/10   text-cyan-400",
   };
   return (
-    <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 flex items-start gap-4">
+    <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 flex items-start gap-4 hover-lift">
       <div className={`rounded-xl ring-1 p-2.5 shrink-0 ${ring[color]}`}><Icon size={18} /></div>
       <div className="min-w-0">
         <div className="text-xs text-gray-500 mb-1">{label}</div>
@@ -100,7 +100,7 @@ export default function UsagePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 stagger-scale">
         <MetricCard icon={Activity} label="今日请求数" value={loading ? "—" : String(today?.requests ?? 0)}
           sub={`本周共 ${week?.requests ?? 0} 次`} color="indigo" />
         <MetricCard icon={Zap} label="今日 Token"

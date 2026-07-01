@@ -126,10 +126,10 @@ export default function WikiIndexPage() {
                     <span className="text-xs text-gray-700">{byType[type].length} 份</span>
                     <div className="flex-1 h-px bg-gray-800/60" />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 stagger-scale">
                     {items.map(doc => (
                       <Link key={doc.doc_id} href={`/wiki/${doc.doc_id}`}
-                        className="group relative flex flex-col p-4 bg-gray-900 border border-gray-800 rounded-xl hover:border-gray-700 hover:bg-gray-900/80 transition-all">
+                        className="group relative flex flex-col p-4 bg-gray-900 border border-gray-800 rounded-xl hover:border-gray-700 hover:bg-gray-900/80 transition-all hover-lift">
                         {/* Top row */}
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <span className="text-xs font-mono font-semibold text-indigo-400 leading-tight">{doc.doc_id}</span>

@@ -85,7 +85,7 @@ export default function FavoritesPage() {
             <EmptyWorkspace />
           )
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 stagger-children">
             {filtered.map(item => (
               <FavoriteCard
                 key={item.id}

@@ -159,9 +159,11 @@ export default function SearchPage() {
           </div>
         )}
 
-        {!loading && results.map(r => (
+        {!loading && results.length > 0 && (
+        <div className="stagger-children space-y-4">
+        {results.map(r => (
           <Link key={r.chunk_id} href={`/library/${r.doc_id}`}
-            className="block p-4 bg-gray-900 rounded-xl border border-gray-800 hover:border-indigo-500/50 transition-all group">
+            className="block p-4 bg-gray-900 rounded-xl border border-gray-800 hover:border-indigo-500/50 transition-all group hover-lift">
             <div className="flex items-start justify-between gap-3 mb-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] font-mono text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded">
@@ -187,6 +189,8 @@ export default function SearchPage() {
               }} />
           </Link>
         ))}
+        </div>
+        )}
 
         {!loading && hasSearched && results.length === 0 && (
           <div className="text-center py-16">

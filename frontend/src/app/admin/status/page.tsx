@@ -73,7 +73,7 @@ export default function SystemStatusPage() {
 
         {overview && (
           <>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4 stagger-scale">
               {[
                 { label: "实时在线人数",    value: overview.presence.active_users,
                   sub: `近 ${Math.round(overview.presence.active_window_seconds / 60)} 分钟活跃`,

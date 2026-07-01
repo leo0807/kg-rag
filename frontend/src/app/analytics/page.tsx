@@ -99,7 +99,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Tab content */}
-      <div>
+      <div className="tab-content">
         {tab === "使用情况" && (
           <UsageInsightsTab data={data["使用情况"] as Parameters<typeof UsageInsightsTab>[0]["data"]} loading={loading} />
         )}

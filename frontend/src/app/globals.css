@@ -237,6 +237,106 @@ button:not([disabled]):active {
 :where(.page-animated > * > *:nth-child(5))  { animation: slide-up-fade 0.48s ease both 325ms; }
 :where(.page-animated > * > *:nth-child(n+6)){ animation: slide-up-fade 0.48s ease both 380ms; }
 
+/* Level-3 stagger: section children inside animated page regions */
+:where(.page-animated > * > * > *:nth-child(1))  { animation: slide-up-fade 0.42s ease both 150ms; }
+:where(.page-animated > * > * > *:nth-child(2))  { animation: slide-up-fade 0.42s ease both 210ms; }
+:where(.page-animated > * > * > *:nth-child(3))  { animation: slide-up-fade 0.42s ease both 265ms; }
+:where(.page-animated > * > * > *:nth-child(4))  { animation: slide-up-fade 0.42s ease both 315ms; }
+:where(.page-animated > * > * > *:nth-child(n+5)){ animation: slide-up-fade 0.42s ease both 360ms; }
+
+/* ── 悬停提升（卡片、面板通用） ──────────────────────────────── */
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.25s ease !important;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.25);
+  border-color: rgba(99,102,241,.35) !important;
+}
+
+/* ── 表格行悬停（作用于所有使用 table 的页面） ─────────────── */
+table tbody tr {
+  transition: background-color 0.13s ease;
+}
+table tbody tr:hover td {
+  background-color: rgba(55,65,81,.4);
+}
+
+/* ── 按钮悬停亮度提升 ────────────────────────────────────────── */
+button:not([disabled]):hover:not([class*="bg-"]:hover) {
+  filter: brightness(1.1);
+}
+
+/* ── 单元素进场动画工具 ──────────────────────────────────────── */
+.fade-in-up   { animation: slide-up-fade  0.5s ease both; }
+.fade-in      { animation: fade-in        0.4s ease both; }
+.scale-in     { animation: scale-fade     0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+.pop-in       { animation: pop-in         0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
+.slide-left   { animation: slide-in-left  0.4s ease both; }
+.slide-right  { animation: slide-in-right 0.4s ease both; }
+.blur-reveal  { animation: blur-fade      0.55s ease both; }
+.num-appear   { animation: number-appear  0.45s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+@keyframes pop-in {
+  0%   { transform: scale(0.7); opacity: 0; }
+  70%  { transform: scale(1.05); }
+  100% { transform: scale(1);   opacity: 1; }
+}
+@keyframes number-appear {
+  from { opacity: 0; transform: translateY(10px) scale(0.92); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+/* ── 加载中小圆点 ────────────────────────────────────────────── */
+@keyframes loading-dot {
+  0%, 80%, 100% { transform: scale(0.55); opacity: 0.35; }
+  40%           { transform: scale(1);    opacity: 1; }
+}
+.loading-dots { display: inline-flex; gap: 4px; align-items: center; }
+.loading-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor;
+  animation: loading-dot 1.2s ease-in-out infinite;
+}
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── 骨架屏 ─────────────────────────────────────────────────── */
+.skeleton {
+  animation: shimmer 1.6s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    rgba(55,65,81,.45) 25%,
+    rgba(75,85,99,.65) 50%,
+    rgba(55,65,81,.45) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: 6px;
+}
+.skeleton-sm  { height: 0.75rem; }
+.skeleton-md  { height: 1rem; }
+.skeleton-lg  { height: 1.5rem; }
+.skeleton-xl  { height: 2rem; }
+.skeleton-2xl { height: 3rem; }
+
+/* ── Tab / section 内容切换淡入 ─────────────────────────────── */
+.tab-content { animation: scale-fade 0.3s ease both; }
+
+/* ── 链接悬停下划线动画 ──────────────────────────────────────── */
+.animated-link {
+  position: relative;
+  text-decoration: none;
+}
+.animated-link::after {
+  content: "";
+  position: absolute;
+  bottom: -1px; left: 0;
+  width: 0; height: 1px;
+  background: currentColor;
+  transition: width 0.25s ease;
+}
+.animated-link:hover::after { width: 100%; }
+
 /* ── 浅色模式：重映射调色板 ──────────────────────────────────
    1. 灰色系翻转，使 bg-gray-950/900/800 变为浅色背景
    2. Indigo 系重映射到 COMAC 品牌蓝

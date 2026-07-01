@@ -6,6 +6,7 @@ import { fetchApi } from "@/lib/api";
 import { LibraryListTab } from "./LibraryListTab";
 import { LibraryIngestTab } from "./LibraryIngestTab";
 import { LibraryReprocessTab } from "./LibraryReprocessTab";
+import { SkeletonStat } from "@/components/ui/Skeleton";
 
 interface LibraryStats { total_docs?: number; documents?: number; total_sections?: number; sections?: number; analyzed_images?: number; total_images?: number }
 
@@ -13,7 +14,7 @@ function KpiCard({ icon: Icon, label, value, sub, color }: {
   icon: React.ElementType; label: string; value: string | number; sub?: string; color: string;
 }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-4 flex items-center gap-3">
+    <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-4 flex items-center gap-3 hover-lift">
       <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${color}`}>
         <Icon size={16} />
       </div>
@@ -64,16 +65,22 @@ export default function LibraryPage() {
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard icon={FileText}  label="规范文档"    color="bg-blue-500/10 text-blue-400"
-          value={docCount !== null ? docCount.toLocaleString() : "—"} />
-        <KpiCard icon={Layers}    label="章节总数"    color="bg-indigo-500/10 text-indigo-400"
-          value={secCount !== null ? secCount.toLocaleString() : "—"} />
-        <KpiCard icon={ImageIcon} label="平均章节/文档" color="bg-emerald-500/10 text-emerald-400"
-          value={avgSec !== null ? avgSec : "—"} />
-        <KpiCard icon={BookOpen}  label="知识图谱节点" color="bg-amber-500/10 text-amber-400"
-          value={stats ? ((stats as { total?: number }).total ?? 0).toLocaleString() : "—"} />
-      </div>
+      {stats === null ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[...Array(4)].map((_, i) => <SkeletonStat key={i} />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 stagger-scale">
+          <KpiCard icon={FileText}  label="规范文档"    color="bg-blue-500/10 text-blue-400"
+            value={(stats.documents ?? stats.total_docs ?? 0).toLocaleString()} />
+          <KpiCard icon={Layers}    label="章节总数"    color="bg-indigo-500/10 text-indigo-400"
+            value={(stats.sections ?? stats.total_sections ?? 0).toLocaleString()} />
+          <KpiCard icon={ImageIcon} label="平均章节/文档" color="bg-emerald-500/10 text-emerald-400"
+            value={avgSec !== null ? String(avgSec) : "—"} />
+          <KpiCard icon={BookOpen}  label="知识图谱节点" color="bg-amber-500/10 text-amber-400"
+            value={((stats as { total?: number }).total ?? 0).toLocaleString()} />
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-gray-800">
@@ -94,10 +101,10 @@ export default function LibraryPage() {
 
       {/* Tab content */}
       {activeTab === "ingest" && isAdmin && (
-        <LibraryIngestTab onDone={() => { switchTab("list"); }} />
+        <div className="tab-content"><LibraryIngestTab onDone={() => { switchTab("list"); }} /></div>
       )}
-      {activeTab === "reprocess" && <LibraryReprocessTab isAdmin={isAdmin} />}
-      {activeTab === "list" && <LibraryListTab />}
+      {activeTab === "reprocess" && <div className="tab-content"><LibraryReprocessTab isAdmin={isAdmin} /></div>}
+      {activeTab === "list" && <div className="tab-content"><LibraryListTab /></div>}
     </div>
   );
 }
