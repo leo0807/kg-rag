@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/leo0807/kg-rag/compare/v1.11.1...v1.12.0) (2026-07-01)
+
+
+### Features
+
+* **graph:** smooth loading animations for main graph and SPO graph ([0538d97](https://github.com/leo0807/kg-rag/commit/0538d97a9d9caf152440eddec43be1f76af9cc00))
+
 ## [1.11.1](https://github.com/leo0807/kg-rag/compare/v1.11.0...v1.11.1) (2026-07-01)
 
 
