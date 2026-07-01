@@ -1,3 +1,10 @@
+## [1.8.1](https://github.com/leo0807/kg-rag/compare/v1.8.0...v1.8.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **spo:** 修复图谱空白与卡顿问题 ([50517a5](https://github.com/leo0807/kg-rag/commit/50517a5a0db8878bd9f1f55a463b92bba71c4a76))
+
 # [1.8.0](https://github.com/leo0807/kg-rag/compare/v1.7.1...v1.8.0) (2026-07-01)
 
 
