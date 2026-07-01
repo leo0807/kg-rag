@@ -53,14 +53,14 @@ export default function AnalyticsPage() {
   useEffect(() => { load(tab); }, [tab, period]);
 
   return (
-    <div className="flex-1 overflow-auto bg-gray-950 p-6 space-y-5">
+    <div className="flex-1 overflow-auto bg-gray-950 p-4 sm:p-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-white">数据洞察中心</h1>
           <p className="text-gray-400 text-sm mt-0.5">全面了解系统运行状态与业务价值</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <div className="flex rounded-lg overflow-hidden border border-gray-700">
             {PERIODS.map(p => (
               <button
@@ -82,7 +82,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-800">
+      <div className="flex overflow-x-auto border-b border-gray-800 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-none">
         {TABS.map(t => (
           <button
             key={t}

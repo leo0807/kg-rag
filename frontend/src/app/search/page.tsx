@@ -76,7 +76,7 @@ export default function SearchPage() {
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Hero */}
-      <div className="bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.15),transparent_60%)] border-b border-gray-800/60 px-6 py-10">
+      <div className="bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.15),transparent_60%)] border-b border-gray-800/60 px-4 py-8 sm:px-6 sm:py-10">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
@@ -117,7 +117,7 @@ export default function SearchPage() {
       </div>
 
       {/* Body */}
-      <div className="max-w-2xl mx-auto px-6 py-6 space-y-4">
+      <div className="max-w-2xl mx-auto px-4 py-4 sm:px-6 sm:py-6 space-y-4">
         {/* Entity panel */}
         {entity && (
           <div className="p-4 bg-gray-900 border border-gray-700/60 rounded-xl">

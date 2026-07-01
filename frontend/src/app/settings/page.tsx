@@ -47,7 +47,7 @@ export default function SettingsPage() {
   const active = tabs.find(t => t.key === tab);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="px-4 py-4 sm:p-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-white">设置</h1>

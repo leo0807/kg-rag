@@ -74,9 +74,9 @@ export default function UsagePage() {
   const trend   = data?.daily_trend ?? [];
 
   return (
-    <div className="flex-1 overflow-auto bg-gray-950 p-6 space-y-6">
-      <div className="rounded-3xl border border-gray-800 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.18),transparent_42%),radial-gradient(circle_at_top_right,rgba(16,185,129,0.1),transparent_36%),#111827] p-6">
-        <div className="flex items-start justify-between flex-wrap gap-4">
+    <div className="flex-1 overflow-auto bg-gray-950 p-4 sm:p-6 space-y-6">
+      <div className="rounded-3xl border border-gray-800 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.18),transparent_42%),radial-gradient(circle_at_top_right,rgba(16,185,129,0.1),transparent_36%),#111827] p-4 sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-white flex items-center gap-2">
               <Zap size={22} className="text-indigo-400" /> Token 用量监控
@@ -115,7 +115,7 @@ export default function UsagePage() {
           sub={`本周均值 ${fmtMs(week?.avg_latency_ms ?? 0)}`} color="cyan" />
       </div>
 
-      <div className="grid xl:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-2 gap-6">
         <div className="rounded-3xl border border-gray-800 bg-gray-900 p-5">
           <div className="text-white font-medium mb-4">模型调用分布（近 7 天）</div>
           <ModelDistributionChart data={pieData} />

@@ -54,7 +54,7 @@ export default function WikiIndexPage() {
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-gray-950 p-6">
+    <div className="flex-1 overflow-auto bg-gray-950 p-4 sm:p-6">
       <div className="max-w-5xl mx-auto space-y-6">
         {/* Hero header */}
         <div className="rounded-2xl border border-gray-800 bg-[radial-gradient(ellipse_at_top_left,rgba(99,102,241,0.1),transparent_50%),#0f1117] p-6">

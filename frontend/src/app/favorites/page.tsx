@@ -34,7 +34,7 @@ export default function FavoritesPage() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-3xl mx-auto px-6 py-10">
+      <div className="max-w-3xl mx-auto px-4 py-8 sm:px-6 sm:py-10">
         <div className="flex items-center gap-3 mb-8">
           <Star size={20} className="text-amber-400 fill-amber-400" />
           <h1 className="text-xl font-semibold text-gray-100">收藏夹</h1>

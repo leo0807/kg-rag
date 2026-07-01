@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type Notification = {
   id: string;
@@ -49,7 +49,7 @@ export default function NotificationsPage() {
   };
 
   return (
-    <div className="p-6 max-w-3xl space-y-6">
+    <div className="px-4 py-4 sm:p-6 max-w-3xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-white">通知中心</h1>
