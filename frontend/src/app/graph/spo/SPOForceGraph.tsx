@@ -62,7 +62,7 @@ export function SPOForceGraph({ nodes, edges }: Props) {
         .attr("refX", 22).attr("refY", 0)
         .attr("markerWidth", 5).attr("markerHeight", 5)
         .attr("orient", "auto")
-        .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#4b5563");
+        .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#6b7280");
 
       const simNodes: SimNode[] = nodes.map(n => ({
         ...n,
@@ -95,7 +95,7 @@ export function SPOForceGraph({ nodes, edges }: Props) {
       const link = g.append("g")
         .selectAll<SVGLineElement, SimEdge>("line")
         .data(simEdges).join("line")
-        .attr("stroke", "#374151").attr("stroke-width", 1.5)
+        .attr("stroke", "#6b7280").attr("stroke-width", 2).attr("stroke-opacity", 0.7)
         .attr("marker-end", "url(#spo-arr)");
 
       const edgeLabel = showLabels
