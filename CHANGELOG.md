@@ -1,3 +1,10 @@
+## [1.9.1](https://github.com/leo0807/kg-rag/compare/v1.9.0...v1.9.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **graph:** restore node visibility — revert filter_all_isolated + remove page-animated child stagger ([28d7c0d](https://github.com/leo0807/kg-rag/commit/28d7c0dbf0b3d4ffafb8ba20378adcca14f7a1b2))
+
 # [1.9.0](https://github.com/leo0807/kg-rag/compare/v1.8.1...v1.9.0) (2026-07-01)
 
 
