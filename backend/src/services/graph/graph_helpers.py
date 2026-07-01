@@ -64,12 +64,23 @@ def _load_document_nodes(session, doc_ids: list[str]) -> list[dict]:
     ]
 
 
+_ISOLATED_FILTER_TYPES = {"Document", "Tool", "Material", "Process", "Constraint"}
+
+
 def _filter_zero_degree_document_nodes(
     nodes: list[dict],
     edges: list[dict],
     *,
     keep_doc_ids: set[str] | None = None,
+    filter_all_isolated: bool = True,
 ) -> list[dict]:
+    """Filter isolated nodes from the result set.
+
+    By default (filter_all_isolated=True) removes any Document / entity node
+    that has no edge in the current result. Sections, Images, Tables are kept
+    regardless, since they are structurally meaningful even when isolated in a
+    partial view.
+    """
     keep_doc_ids = keep_doc_ids or set()
     degree: dict[str, int] = {}
     for edge in edges:
@@ -79,11 +90,24 @@ def _filter_zero_degree_document_nodes(
             degree[source] = degree.get(source, 0) + 1
         if target:
             degree[target] = degree.get(target, 0) + 1
+
+    def _keep(node: dict) -> bool:
+        ntype = node.get("type") or ""
+        nid   = str(node.get("id") or "").strip()
+        if ntype not in _ISOLATED_FILTER_TYPES:
+            return True
+        if ntype == "Document" and nid in keep_doc_ids:
+            return True
+        return degree.get(nid, 0) > 0
+
+    if filter_all_isolated:
+        return [n for n in nodes if _keep(n)]
+    # Legacy: only filter Document nodes
     return [
-        node for node in nodes
-        if node.get("type") != "Document"
-        or str(node.get("id") or "") in keep_doc_ids
-        or degree.get(str(node.get("id") or ""), 0) > 0
+        n for n in nodes
+        if n.get("type") != "Document"
+        or str(n.get("id") or "") in keep_doc_ids
+        or degree.get(str(n.get("id") or ""), 0) > 0
     ]
 
 

@@ -35,7 +35,7 @@ async def stats(driver: Driver = Depends(get_driver)):
         record = result.single()
         data = {"total": record["total"], "documents": record["documents"], "sections": record["sections"]}
     try:
-        if r: r.setex("neo4j:stats", 60, _json.dumps(data))
+        if r: r.setex("neo4j:stats", 300, _json.dumps(data))
     except Exception:
         pass
     return data
