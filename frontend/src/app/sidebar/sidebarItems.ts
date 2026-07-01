@@ -28,6 +28,7 @@ export const tier1Items: SidebarItem[] = [
   { href: "/search",    label: "搜索",     shortcut: "⌘K", Icon: Search },
   { href: "/wiki",      label: "规范百科",                  Icon: Globe },
   { href: "/graph",     label: "知识图谱",                  Icon: Network },
+  { href: "/graph/spo", label: "SPO 图谱",                  Icon: GitBranch },
   { href: "/favorites", label: "工作区",                    Icon: Star },
 ];
 

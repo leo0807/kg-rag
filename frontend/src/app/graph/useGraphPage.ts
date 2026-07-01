@@ -98,8 +98,8 @@ export function useGraphPage({
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [limits, setLimits] = useState<Limits>({
     doc: 100,
-    sec: 500,
-    entity: 200,
+    sec: 1000,
+    entity: 500,
     tbl: 0,
     show_level: 0,
     show_images: true,
@@ -226,8 +226,8 @@ export function useGraphPage({
       if (searchQuery) p.set("sq", searchQuery);
       if (docFilter) p.set("df", docFilter);
       if (limits.doc !== 100) p.set("ld", String(limits.doc));
-      if (limits.sec !== 500) p.set("ls", String(limits.sec));
-      if (limits.entity !== 200) p.set("le", String(limits.entity));
+      if (limits.sec !== 1000) p.set("ls", String(limits.sec));
+      if (limits.entity !== 500) p.set("le", String(limits.entity));
       if (limits.tbl !== 0) p.set("lt", String(limits.tbl));
       if (selectedNode) p.set("sn", selectedNode.id);
       if (manualMode ?? renderMode) p.set("rm", manualMode ?? renderMode);
@@ -286,8 +286,8 @@ export function useGraphPage({
       setLimits((prev) => ({
         ...prev,
         doc: Number(p.get("ld") || 100),
-        sec: Number(p.get("ls") || 500),
-        entity: Number(p.get("le") || 200),
+        sec: Number(p.get("ls") || 1000),
+        entity: Number(p.get("le") || 500),
         tbl: Number(p.get("lt") || 0),
       }));
     if (p.has("sq")) setSearchQuery(p.get("sq") || "");
@@ -763,10 +763,12 @@ export function useGraphPage({
       nodeEdgeCounts.set(src, (nodeEdgeCounts.get(src) ?? 0) + 1);
       nodeEdgeCounts.set(tgt, (nodeEdgeCounts.get(tgt) ?? 0) + 1);
     }
+    const ISOLATED_FILTER_TYPES = new Set(["Document", "Tool", "Material", "Process", "Constraint"]);
     let hiddenCount = 0;
     const displayNodes = hideIsolated
       ? filteredNodes.filter((n) => {
-          if ((n.type || n.label) !== "Document") return true;
+          const ntype = n.type || n.label || "";
+          if (!ISOLATED_FILTER_TYPES.has(ntype)) return true;
           if ((nodeEdgeCounts.get(n.id) ?? 0) > 0) return true;
           hiddenCount++;
           return false;

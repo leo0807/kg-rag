@@ -71,8 +71,8 @@ export const MAX_SCALE = 4;
 
 export const GRAPH_NODE_LIMITS = {
   doc: { max: 558, default: 100 },
-  sec: { max: 37000, default: 200 },
-  entity: { max: 5000, default: 100 },
+  sec: { max: 37000, default: 1000 },
+  entity: { max: 5000, default: 500 },
   tbl: { max: 5000, default: 50 },
   image: { max: 11000, default: 100 },
   constraint: { max: 5000, default: 50 },
