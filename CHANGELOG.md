@@ -1,3 +1,16 @@
+# [1.8.0](https://github.com/leo0807/kg-rag/compare/v1.7.1...v1.8.0) (2026-07-01)
+
+
+### Bug Fixes
+
+* **backend:** 图谱查询优化与文档路由修复 ([613e12c](https://github.com/leo0807/kg-rag/commit/613e12cb170abd63a82e932f2ce356d78d750646))
+
+
+### Features
+
+* **spo:** SPO 三元组提取与知识图谱构建 ([4d4af4f](https://github.com/leo0807/kg-rag/commit/4d4af4fc42cc05e603157de59aa8345b032f733c))
+* **spo:** SPO 图谱前端页面与导航 ([8e2e6c7](https://github.com/leo0807/kg-rag/commit/8e2e6c7cdcb27d6cfe7a02d3e42ad3e6b4aa3b1e))
+
 ## [1.7.1](https://github.com/leo0807/kg-rag/compare/v1.7.0...v1.7.1) (2026-06-29)
 
 
