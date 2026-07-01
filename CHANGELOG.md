@@ -1,3 +1,10 @@
+## [1.10.1](https://github.com/leo0807/kg-rag/compare/v1.10.0...v1.10.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **hydration:** suppress version string mismatch in SidebarFooter ([6ce27b3](https://github.com/leo0807/kg-rag/commit/6ce27b31c8d3ec65aad760783f896e4bae12cc37))
+
 # [1.10.0](https://github.com/leo0807/kg-rag/compare/v1.9.1...v1.10.0) (2026-07-01)
 
 
