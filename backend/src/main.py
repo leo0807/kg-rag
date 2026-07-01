@@ -157,6 +157,7 @@ from .routers.graph_api.adv_retrieval  import router as adv_retrieval_router
 from .routers.admin_api.schema_mgmt    import router as admin_schema_mgmt_router
 from .routers.graph_api.aviation_domain import router as graph_aviation_router
 from .routers.admin_api.triton_admin   import router as admin_triton_router
+from .routers.graph_api.spo_graph      import router as spo_graph_router
 
 from .services.infra.health import health_monitor
 from .services.ops.presence_service import track_request_activity
@@ -444,6 +445,7 @@ app.include_router(adv_retrieval_router)
 app.include_router(admin_schema_mgmt_router)
 app.include_router(graph_aviation_router)
 app.include_router(admin_triton_router)
+app.include_router(spo_graph_router)
 
 # G 模块：多租户支持
 app.include_router(platform_tenants_router)
