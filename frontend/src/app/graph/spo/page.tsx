@@ -137,25 +137,39 @@ export default function SPOGraphPage() {
 
         {/* Graph canvas */}
         <div className="flex-1 relative">
+          {/* Empty / no-selection state */}
           {!active && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-600">
               <GitBranch size={40} strokeWidth={1} />
               <p className="text-sm">从左侧选择一张知识图谱</p>
             </div>
           )}
-          {active && loading && (
-            <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm gap-2">
-              <RefreshCw size={16} className="animate-spin" /> 加载图谱数据…
+
+          {/* Graph — stays mounted during loading so old graph is visible underneath */}
+          {gdata && gdata.nodes.length > 0 && (
+            <div className={`absolute inset-0 transition-opacity duration-300 ${loading ? "opacity-25 pointer-events-none" : "opacity-100"}`}>
+              <SPOForceGraph nodes={gdata.nodes} edges={gdata.edges} />
             </div>
           )}
+
+          {/* Empty graph state */}
           {active && !loading && gdata && gdata.nodes.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-600">
               <GitBranch size={32} strokeWidth={1} />
               <p className="text-sm">该图谱暂无节点数据</p>
             </div>
           )}
-          {active && !loading && gdata && gdata.nodes.length > 0 && (
-            <SPOForceGraph nodes={gdata.nodes} edges={gdata.edges} />
+
+          {/* Loading overlay — shown on top of (dimmed) previous graph */}
+          {active && loading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-gray-950/50 backdrop-blur-sm">
+              <div className="relative flex h-16 w-16 items-center justify-center">
+                <span className="absolute h-16 w-16 animate-ping rounded-full bg-indigo-500/20" />
+                <span className="absolute h-10 w-10 animate-ping rounded-full bg-indigo-500/25" style={{ animationDelay: "250ms" }} />
+                <span className="h-6 w-6 rounded-full border-2 border-indigo-500/40 border-t-indigo-400 animate-spin" />
+              </div>
+              <p className="text-sm text-gray-400">加载图谱数据…</p>
+            </div>
           )}
         </div>
       </main>

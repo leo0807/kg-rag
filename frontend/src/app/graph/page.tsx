@@ -154,6 +154,7 @@ export default function GraphPage() {
         canvasRef={canvasRef}
         webglRef={webglRef}
         tooltipRef={tooltipRef}
+        loading={graphStats === null}
         renderMode={renderMode}
         filteredNodesCount={filteredNodesRef.current.length}
         graphTheme={graphTheme}

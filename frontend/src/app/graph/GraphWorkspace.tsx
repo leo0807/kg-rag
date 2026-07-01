@@ -19,6 +19,7 @@ interface Props {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   webglRef: RefObject<HTMLCanvasElement | null>;
   tooltipRef: RefObject<HTMLDivElement | null>;
+  loading?: boolean;
   renderMode: RenderMode;
   filteredNodesCount: number;
   graphTheme: GraphTheme;
@@ -61,6 +62,7 @@ export function GraphWorkspace({
   canvasRef,
   webglRef,
   tooltipRef,
+  loading,
   renderMode,
   filteredNodesCount,
   graphTheme,
@@ -93,6 +95,20 @@ export function GraphWorkspace({
           ref={containerRef}
           className="relative flex-1 min-w-0 overflow-hidden"
         >
+          {/* Loading overlay — fades out once graph data is ready */}
+          <div
+            className={`absolute inset-0 z-20 flex flex-col items-center justify-center transition-opacity duration-700 ${loading ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+            style={{ background: "#030712" }}
+          >
+            <div className="relative flex h-20 w-20 items-center justify-center">
+              <span className="absolute h-20 w-20 animate-ping rounded-full bg-indigo-500/15" />
+              <span className="absolute h-12 w-12 animate-ping rounded-full bg-indigo-500/20" style={{ animationDelay: "300ms" }} />
+              <span className="h-7 w-7 rounded-full border-2 border-indigo-500/40 border-t-indigo-400 animate-spin" />
+            </div>
+            <p className="mt-6 text-sm text-gray-500">正在加载知识图谱…</p>
+            <p className="mt-1 text-xs text-gray-700">首次加载约需 3–5 秒</p>
+          </div>
+
           <svg
             ref={svgRef}
             className={`absolute inset-0 w-full h-full${renderMode === "svg" ? "" : " pointer-events-none opacity-0"}`}
