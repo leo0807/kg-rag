@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/leo0807/kg-rag/compare/v1.8.1...v1.9.0) (2026-07-01)
+
+
+### Features
+
+* **ui:** 全站入场动画、悬停效果与骨架屏加载动画 ([599f215](https://github.com/leo0807/kg-rag/commit/599f215ce2826781b0b1ab777fdbe52597082570))
+
 ## [1.8.1](https://github.com/leo0807/kg-rag/compare/v1.8.0...v1.8.1) (2026-07-01)
 
 
