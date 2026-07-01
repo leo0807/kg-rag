@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Download, RefreshCw, Users, MessageSquare, BarChart2, TrendingUp, Zap } from "lucide-react";
+import { Download, RefreshCw, Users, MessageSquare, BarChart2, TrendingUp } from "lucide-react";
 import { fetchApi } from "../../../lib/api";
 import { Report, StrategyStats, CacheHitStats, Tab } from "./types";
 import { SummaryCard } from "./components";
@@ -9,8 +9,7 @@ import { StrategyTab } from "./StrategyTab";
 import { UserTable } from "./UserTable";
 import { DeptTable } from "./DeptTable";
 import { DauView } from "./DauView";
-
-const API = "http://localhost:8000";
+import { CacheStatsPanel } from "./CacheStatsPanel";
 
 export default function AnalyticsPage() {
     const [report,        setReport]        = useState<Report | null>(null);
@@ -28,9 +27,9 @@ export default function AnalyticsPage() {
         setError(null);
         try {
             const [activity, strategy, cache] = await Promise.all([
-                fetchApi<Report>(`${API}/api/admin/analytics/user-activity?days=${d}`),
-                fetchApi<StrategyStats>(`${API}/api/admin/analytics/strategy-stats?days=${d}`),
-                fetchApi<CacheHitStats>(`${API}/api/admin/semantic-cache/stats?days=${d}`),
+                fetchApi<Report>(`/api/admin/analytics/user-activity?days=${d}`),
+                fetchApi<StrategyStats>(`/api/admin/analytics/strategy-stats?days=${d}`),
+                fetchApi<CacheHitStats>(`/api/admin/semantic-cache/stats?days=${d}`),
             ]);
             setReport(activity);
             setStrategyStats(strategy);
@@ -61,7 +60,7 @@ export default function AnalyticsPage() {
 
     function exportCsv() {
         const token = localStorage.getItem("token");
-        const url   = `${API}/api/admin/analytics/user-activity/csv?days=${days}`;
+        const url   = `/api/admin/analytics/user-activity/csv?days=${days}`;
         const a     = document.createElement("a");
         fetch(url, { headers: { Authorization: `Bearer ${token}` } })
             .then(r => r.blob())
@@ -195,63 +194,7 @@ export default function AnalyticsPage() {
             )}
 
             {tab === "cache" && !loading && cacheStats && (
-                <div className="space-y-4">
-                    {/* Config strip */}
-                    <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4 flex flex-wrap gap-6 text-sm">
-                        <div>
-                            <span className="text-gray-500 text-xs uppercase tracking-wider block mb-0.5">状态</span>
-                            <span className={cacheStats.store.config.enabled ? "text-emerald-400" : "text-red-400"}>
-                                {cacheStats.store.config.enabled ? "已启用" : "已禁用"}
-                            </span>
-                        </div>
-                        <div>
-                            <span className="text-gray-500 text-xs uppercase tracking-wider block mb-0.5">相似度阈值</span>
-                            <span className="text-white font-mono">{cacheStats.store.config.threshold}</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-500 text-xs uppercase tracking-wider block mb-0.5">TTL</span>
-                            <span className="text-white font-mono">{cacheStats.store.config.ttl / 3600}h</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-500 text-xs uppercase tracking-wider block mb-0.5">活跃条目</span>
-                            <span className="text-white font-mono">{cacheStats.store.active_entries}</span>
-                        </div>
-                    </div>
-                    {/* Stats cards */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        <SummaryCard icon={Zap}         label="缓存命中次数"   value={cacheStats.hits.hit_count} />
-                        <SummaryCard icon={BarChart2}   label="节省 Token 数"  value={cacheStats.hits.tokens_saved.toLocaleString()} />
-                        <SummaryCard icon={TrendingUp}  label="节省费用 (¥)"   value={`¥${cacheStats.hits.cost_saved_cny.toFixed(4)}`} />
-                        <SummaryCard icon={MessageSquare} label="平均相似度"   value={cacheStats.hits.avg_similarity ? cacheStats.hits.avg_similarity.toFixed(4) : "—"} />
-                    </div>
-                    {/* By-strategy table */}
-                    {cacheStats.by_strategy.length > 0 && (
-                        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-                            <div className="px-5 py-3 border-b border-gray-800 text-xs text-gray-500 uppercase tracking-wider">按策略分布</div>
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-gray-800 text-gray-400 text-left">
-                                        <th className="px-5 py-2.5">策略</th>
-                                        <th className="px-5 py-2.5">命中次数</th>
-                                        <th className="px-5 py-2.5">平均相似度</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {cacheStats.by_strategy.map(r => (
-                                        <tr key={r.strategy} className="border-b border-gray-800/50">
-                                            <td className="px-5 py-2.5 font-mono text-indigo-400">{r.strategy}</td>
-                                            <td className="px-5 py-2.5 text-white">{r.hit_count}</td>
-                                            <td className="px-5 py-2.5 text-gray-300">{r.avg_similarity.toFixed(4)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                    {cacheStats.hits.hit_count === 0 && (
-                        <div className="text-center py-12 text-gray-500 text-sm">暂无缓存命中记录</div>
-                    )}
-                </div>
+                <CacheStatsPanel stats={cacheStats} />
             )}
         </div>
     );

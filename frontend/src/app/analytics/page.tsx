@@ -53,28 +53,29 @@ export default function AnalyticsPage() {
   useEffect(() => { load(tab); }, [tab, period]);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-5">
+    <div className="flex-1 overflow-auto bg-gray-950 p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-white">数据洞察中心</h1>
-          <p className="text-gray-400 text-sm mt-1">全面了解系统运行状态与业务价值</p>
+          <p className="text-gray-400 text-sm mt-0.5">全面了解系统运行状态与业务价值</p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Period selector */}
+        <div className="flex items-center gap-2">
           <div className="flex rounded-lg overflow-hidden border border-gray-700">
             {PERIODS.map(p => (
               <button
                 key={p}
                 onClick={() => { setPeriod(p); setData(prev => ({ ...prev, [tab]: null })); }}
-                className={`px-3 py-1.5 text-xs ${period === p ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+                className={`px-3 h-8 text-xs font-medium transition-colors ${
+                  period === p ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+                }`}
               >
                 {p}
               </button>
             ))}
           </div>
           <button onClick={reload} disabled={loading}
-            className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs px-3 py-1.5 rounded border border-gray-700">
+            className="h-8 px-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded border border-gray-700 disabled:opacity-50 transition-colors">
             {loading ? "加载中…" : "刷新"}
           </button>
         </div>
@@ -86,10 +87,10 @@ export default function AnalyticsPage() {
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-5 py-2.5 text-sm border-b-2 transition-colors ${
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               tab === t
-                ? "border-blue-500 text-white"
-                : "border-transparent text-gray-400 hover:text-white"
+                ? "border-indigo-500 text-white"
+                : "border-transparent text-gray-500 hover:text-gray-300"
             }`}
           >
             {t}
@@ -97,8 +98,8 @@ export default function AnalyticsPage() {
         ))}
       </div>
 
-      {/* Tab content — min-h prevents layout collapse when charts are empty */}
-      <div className="min-h-[320px]">
+      {/* Tab content */}
+      <div>
         {tab === "使用情况" && (
           <UsageInsightsTab data={data["使用情况"] as Parameters<typeof UsageInsightsTab>[0]["data"]} loading={loading} />
         )}
@@ -113,7 +114,6 @@ export default function AnalyticsPage() {
         )}
       </div>
 
-      {/* Data story — always visible, fills remaining space meaningfully */}
       <DataStory period={period} />
     </div>
   );
