@@ -24,8 +24,9 @@ const TYPE_COLOR: Record<string, string> = {
 
 export function SPOForceGraph({ nodes, edges }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const svgRef      = useRef<SVGSVGElement>(null);
-  const simRef      = useRef<d3.Simulation<SimNode, SimEdge> | null>(null);
+  const svgRef       = useRef<SVGSVGElement>(null);
+  const tooltipRef   = useRef<HTMLDivElement>(null);
+  const simRef       = useRef<d3.Simulation<SimNode, SimEdge> | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -34,14 +35,22 @@ export function SPOForceGraph({ nodes, edges }: Props) {
 
     simRef.current?.stop();
 
+    function positionTip(ev: MouseEvent, tip: HTMLDivElement) {
+      const rect = container!.getBoundingClientRect();
+      let x = ev.clientX - rect.left + 14;
+      let y = ev.clientY - rect.top - 12;
+      if (x + 210 > rect.width) x = ev.clientX - rect.left - 224;
+      if (y + 90  > rect.height) y = ev.clientY - rect.top - 90;
+      tip.style.left = `${x}px`;
+      tip.style.top  = `${y}px`;
+    }
+
     function build(W: number, H: number) {
       const sel = d3.select(svgEl!);
       sel.selectAll("*").remove();
-      // Set explicit pixel attributes so the coordinate space matches DOM pixels
       sel.attr("width", W).attr("height", H);
 
       const g = sel.append("g");
-
       sel.call(
         d3.zoom<SVGSVGElement, unknown>()
           .scaleExtent([0.1, 8])
@@ -55,20 +64,17 @@ export function SPOForceGraph({ nodes, edges }: Props) {
         .attr("orient", "auto")
         .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#4b5563");
 
-      // Spread nodes randomly so simulation converges faster
       const simNodes: SimNode[] = nodes.map(n => ({
         ...n,
         x: W / 2 + (Math.random() - 0.5) * Math.min(W, H) * 0.6,
         y: H / 2 + (Math.random() - 0.5) * Math.min(W, H) * 0.6,
       }));
 
-      // Use string node_id as D3 link ID — no index-mapping needed
       const nodeSet = new Set(simNodes.map(n => n.node_id));
       const simEdges: SimEdge[] = edges
         .filter(e => nodeSet.has(e.source) && nodeSet.has(e.target))
         .map(e => ({ source: e.source, target: e.target, predicate: e.predicate, predicate_type: e.predicate_type }));
 
-      // Skip edge labels for large graphs — the #1 performance killer
       const showLabels = simEdges.length <= 60;
 
       const sim = d3.forceSimulation<SimNode>(simNodes)
@@ -77,8 +83,12 @@ export function SPOForceGraph({ nodes, edges }: Props) {
         .force("charge",  d3.forceManyBody().strength(-240).distanceMax(350))
         .force("center",  d3.forceCenter(W / 2, H / 2).strength(0.08))
         .force("collide", d3.forceCollide(22))
-        .alphaDecay(0.05)    // converge in ~60 ticks instead of 300
-        .velocityDecay(0.4);
+        .alphaDecay(0.05)
+        .velocityDecay(0.4)
+        .stop();
+
+      // Pre-compute 150 ticks so the graph appears settled immediately
+      for (let i = 0; i < 150; i++) sim.tick();
 
       simRef.current = sim;
 
@@ -120,50 +130,74 @@ export function SPOForceGraph({ nodes, edges }: Props) {
         .attr("fill", "#d1d5db").attr("font-size", 10)
         .attr("pointer-events", "none");
 
-      nodeG.append("title").text(d => `[${d.type}] ${d.name}`);
+      // Rich HTML tooltip
+      nodeG
+        .on("mouseenter", (ev, d) => {
+          const tip = tooltipRef.current;
+          if (!tip) return;
+          const color = TYPE_COLOR[d.type] ?? "#6b7280";
+          tip.innerHTML =
+            `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">` +
+              `<span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></span>` +
+              `<span style="font-size:11px;font-weight:600;color:#e5e7eb;word-break:break-all">${d.name}</span>` +
+            `</div>` +
+            `<div style="font-size:10px;color:#9ca3af">类型：<span style="color:${color}">${d.type}</span></div>` +
+            `<div style="font-size:9px;color:#4b5563;margin-top:3px;font-family:monospace;word-break:break-all">${d.node_id}</div>`;
+          tip.style.display = "block";
+          positionTip(ev.sourceEvent ?? ev, tip);
+        })
+        .on("mousemove", (ev) => {
+          const tip = tooltipRef.current;
+          if (tip) positionTip(ev.sourceEvent ?? ev, tip);
+        })
+        .on("mouseleave", () => {
+          const tip = tooltipRef.current;
+          if (tip) tip.style.display = "none";
+        });
 
-      sim.on("tick", () => {
+      function tick() {
         link
           .attr("x1", d => (d.source as SimNode).x ?? 0)
           .attr("y1", d => (d.source as SimNode).y ?? 0)
           .attr("x2", d => (d.target as SimNode).x ?? 0)
           .attr("y2", d => (d.target as SimNode).y ?? 0);
-
         edgeLabel
           ?.attr("x", d => (((d.source as SimNode).x ?? 0) + ((d.target as SimNode).x ?? 0)) / 2)
            .attr("y", d => (((d.source as SimNode).y ?? 0) + ((d.target as SimNode).y ?? 0)) / 2 - 4);
-
         nodeG.attr("transform", d => `translate(${d.x ?? 0},${d.y ?? 0})`);
-      });
+      }
+
+      // Render initial pre-computed positions immediately
+      tick();
+
+      // Resume at low alpha for fine-tuning (drag responsiveness)
+      sim.on("tick", tick).alpha(0.05).restart();
     }
 
-    // ResizeObserver: wait for the container to have actual layout dimensions.
-    // SVG clientWidth is unreliable across browsers; div clientWidth is stable.
     const ro = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect;
-      if (width > 0 && height > 0) {
-        ro.disconnect();
-        build(width, height);
-      }
+      if (width > 0 && height > 0) { ro.disconnect(); build(width, height); }
     });
     ro.observe(container);
 
-    // Also try immediately in case the element is already sized
     const rect = container.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      ro.disconnect();
-      build(rect.width, rect.height);
-    }
+    if (rect.width > 0 && rect.height > 0) { ro.disconnect(); build(rect.width, rect.height); }
 
-    return () => {
-      ro.disconnect();
-      simRef.current?.stop();
-    };
+    return () => { ro.disconnect(); simRef.current?.stop(); };
   }, [nodes, edges]);
 
   return (
-    <div ref={containerRef} className="w-full h-full">
+    <div ref={containerRef} className="w-full h-full relative">
       <svg ref={svgRef} style={{ display: "block", background: "#030712" }} />
+      <div
+        ref={tooltipRef}
+        style={{
+          position: "absolute", display: "none", pointerEvents: "none",
+          background: "#111827", border: "1px solid #374151", borderRadius: "8px",
+          padding: "8px 10px", zIndex: 10, maxWidth: "210px",
+          boxShadow: "0 4px 16px rgba(0,0,0,.5)",
+        }}
+      />
     </div>
   );
 }
