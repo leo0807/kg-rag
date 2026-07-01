@@ -214,8 +214,8 @@ async def get_graph(
     }
     _result = {"nodes": nodes, "edges": edges, "stats": stats}
     try:
-        if _rc:
-            _rc.setex(_cache_key, 300, _json.dumps(_result, default=str))
+        if _rc and len(nodes) > 0:  # never cache empty results
+            _rc.setex(_cache_key, 120, _json.dumps(_result, default=str))
     except Exception:
         pass
     return _result

@@ -72,14 +72,13 @@ def _filter_zero_degree_document_nodes(
     edges: list[dict],
     *,
     keep_doc_ids: set[str] | None = None,
-    filter_all_isolated: bool = True,
+    filter_all_isolated: bool = False,
 ) -> list[dict]:
     """Filter isolated nodes from the result set.
 
-    By default (filter_all_isolated=True) removes any Document / entity node
-    that has no edge in the current result. Sections, Images, Tables are kept
-    regardless, since they are structurally meaningful even when isolated in a
-    partial view.
+    Default (filter_all_isolated=False) only removes Document nodes with no
+    visible edges (original behavior). Set filter_all_isolated=True to also
+    remove isolated Tool/Material/Process/Constraint nodes.
     """
     keep_doc_ids = keep_doc_ids or set()
     degree: dict[str, int] = {}
