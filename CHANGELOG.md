@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/leo0807/kg-rag/compare/v1.10.1...v1.11.0) (2026-07-01)
+
+
+### Features
+
+* **spo:** performance warmup + rich node tooltip ([79f9529](https://github.com/leo0807/kg-rag/commit/79f9529df626adf6e30fa24f11a5a9282c57a06a))
+
 ## [1.10.1](https://github.com/leo0807/kg-rag/compare/v1.10.0...v1.10.1) (2026-07-01)
 
 
