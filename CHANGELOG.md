@@ -1,3 +1,10 @@
+## [1.11.1](https://github.com/leo0807/kg-rag/compare/v1.11.0...v1.11.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **spo:** make relationship lines more visible ([f62f47f](https://github.com/leo0807/kg-rag/commit/f62f47fce832f2f954674963e24960c2c63f1455)), closes [#6b7280](https://github.com/leo0807/kg-rag/issues/6b7280) [#6b7280](https://github.com/leo0807/kg-rag/issues/6b7280)
+
 # [1.11.0](https://github.com/leo0807/kg-rag/compare/v1.10.1...v1.11.0) (2026-07-01)
 
 
