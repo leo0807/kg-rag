@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/leo0807/kg-rag/compare/v1.9.1...v1.10.0) (2026-07-01)
+
+
+### Features
+
+* **responsive:** mobile-first layout fixes across core pages ([9f6ee67](https://github.com/leo0807/kg-rag/commit/9f6ee67a7b8a14046be0495713fa299304513d72))
+
 ## [1.9.1](https://github.com/leo0807/kg-rag/compare/v1.9.0...v1.9.1) (2026-07-01)
 
 
