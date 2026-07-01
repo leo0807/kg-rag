@@ -61,7 +61,7 @@ export function SidebarFooter({ collapsed, user, onLogout }: Props) {
         className={`py-3 flex items-center gap-2 ${collapsed ? "flex-col justify-center px-0" : "px-4 justify-between"}`}
       >
         {!collapsed && (
-          <div className="text-xs" style={{ color: "var(--nav-text-muted)" }}>
+          <div className="text-xs" style={{ color: "var(--nav-text-muted)" }} suppressHydrationWarning>
             v1.10.0
           </div>
         )}
