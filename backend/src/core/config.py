@@ -142,7 +142,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     ES_URL:       str = "http://localhost:9200"
     VLM_MODEL:    str = "Qwen/Qwen2.5-VL-32B-Instruct"
-    APP_VERSION:  str = "1.12.0"
+    APP_VERSION:  str = "1.12.1"
 
     # 安全限制
     MAX_REQUEST_BODY_BYTES: int = 50 * 1024 * 1024   # 50 MB  — L1 全局兜底

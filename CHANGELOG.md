@@ -1,3 +1,10 @@
+## [1.12.1](https://github.com/leo0807/kg-rag/compare/v1.12.0...v1.12.1) (2026-07-02)
+
+
+### Bug Fixes
+
+* **spo:** spread nodes further apart to reduce density ([ebf85cb](https://github.com/leo0807/kg-rag/commit/ebf85cb3356906797eec59594b3a460e0893c26f))
+
 # [1.12.0](https://github.com/leo0807/kg-rag/compare/v1.11.1...v1.12.0) (2026-07-01)
 
 
