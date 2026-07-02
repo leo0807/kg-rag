@@ -79,10 +79,10 @@ export function SPOForceGraph({ nodes, edges }: Props) {
 
       const sim = d3.forceSimulation<SimNode>(simNodes)
         .force("link",    d3.forceLink<SimNode, SimEdge>(simEdges)
-          .id(d => d.node_id).distance(110).strength(0.6))
-        .force("charge",  d3.forceManyBody().strength(-240).distanceMax(350))
-        .force("center",  d3.forceCenter(W / 2, H / 2).strength(0.08))
-        .force("collide", d3.forceCollide(22))
+          .id(d => d.node_id).distance(180).strength(0.4))
+        .force("charge",  d3.forceManyBody().strength(-500).distanceMax(600))
+        .force("center",  d3.forceCenter(W / 2, H / 2).strength(0.05))
+        .force("collide", d3.forceCollide(40))
         .alphaDecay(0.05)
         .velocityDecay(0.4)
         .stop();
