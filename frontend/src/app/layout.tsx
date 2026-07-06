@@ -42,7 +42,21 @@ export default function RootLayout({
         <Toaster position="top-center" richColors closeButton />
         <script dangerouslySetInnerHTML={{ __html: `
           if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+            if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+              // Dev: unregister any lingering SW so stale chunks never block the page
+              navigator.serviceWorker.getRegistrations().then(regs => {
+                regs.forEach(r => r.unregister());
+              });
+            } else {
+              window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(() => {
+                  let refreshing = false;
+                  navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (!refreshing) { refreshing = true; window.location.reload(); }
+                  });
+                });
+              });
+            }
           }
         `}} />
       </body>

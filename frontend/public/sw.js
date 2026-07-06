@@ -1,34 +1,45 @@
-const CACHE = "cps-v1";
-const PRECACHE = ["/", "/query", "/wiki"];
+// v5: fix navigate-on-localhost error + fix clone-after-consumed error
+const CACHE = "cps-v5";
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting())
-  );
+  e.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+    // Removed c.navigate(c.url) — fails on localhost; layout.tsx handles
+    // controllerchange → window.location.reload() for production instead.
   );
 });
 
 self.addEventListener("fetch", (e) => {
-  // Only cache GET, skip API calls
-  if (e.request.method !== "GET" || e.request.url.includes("/api/")) return;
+  const url = new URL(e.request.url);
+
+  // Never intercept: non-GET, API calls, Next.js chunks, SW itself, HTML navigations
+  if (
+    e.request.method !== "GET" ||
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/_next/") ||
+    url.pathname === "/sw.js" ||
+    (e.request.headers.get("Accept") ?? "").includes("text/html")
+  ) return;
 
   e.respondWith(
     caches.match(e.request).then((cached) => {
-      const network = fetch(e.request).then((res) => {
+      if (cached) return cached;
+      return fetch(e.request).then((res) => {
         if (res.ok) {
+          // Clone synchronously BEFORE returning res to the browser.
+          // Cloning inside caches.open().then() is too late — res.body
+          // is already consumed by the time that async callback runs.
           const clone = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, clone));
         }
         return res;
       });
-      return cached || network;
     })
   );
 });
