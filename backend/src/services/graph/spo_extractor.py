@@ -84,7 +84,7 @@ def _extract_spo_batch(sections: list[dict]) -> list[dict]:
             continue
         section_texts.append(
             f"[{sec['chunk_id']}] {sec.get('number','')} {sec.get('title','')}\n"
-            f"{content[:400]}"   # 400 chars = sufficient context, less tokens → faster
+            f"{content[:800]}"
         )
 
     joined = "\n\n".join(section_texts)
@@ -98,13 +98,12 @@ def _extract_spo_batch(sections: list[dict]) -> list[dict]:
         '[{"s":"主体","s_type":"Tool","p":"谓词","p_type":"USES","o":"客体","o_type":"Process"}]\n\n'
         "实体类型: System Component Process Material Tool Parameter Standard Requirement Organization Concept\n"
         "关系类型: HAS_PROPERTY REQUIRES USES COMPOSED_OF CONSTRAINED_BY APPLIES_TO PART_OF RELATED_TO\n"
-        "规则: 每节最多 6 条三元组; 无实体则输出 []; 只输出 JSON，不加注释\n\n"
+        "规则: 每节最多 15 条三元组; 无实体则输出 []; 只输出 JSON，不加注释\n\n"
         f"章节内容:\n{joined}\n\n"
         "输出(每节 ===SECTION <chunk_id>=== 后跟 JSON 数组):"
     )
 
-    # 512 tokens per section is enough for 6 triples (~250 tokens) with headroom
-    max_tokens = 512 * len(sections)
+    max_tokens = 800 * len(sections)
     raw = _call_llm(prompt, max_tokens=max_tokens)
     if raw is None:
         return [{"chunk_id": s["chunk_id"], "triples": []} for s in sections]

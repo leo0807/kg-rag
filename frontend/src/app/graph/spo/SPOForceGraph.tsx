@@ -5,199 +5,216 @@ import * as d3 from "d3";
 
 interface SPONode { node_id: string; name: string; type: string; graph_id: string }
 interface SPOEdge { source: string; target: string; predicate: string; predicate_type: string }
-
-interface SimNode extends d3.SimulationNodeDatum {
-  node_id: string; name: string; type: string;
-}
-interface SimEdge extends d3.SimulationLinkDatum<SimNode> {
-  predicate: string; predicate_type: string;
-}
-
-interface Props { nodes: SPONode[]; edges: SPOEdge[] }
+interface Props { nodes: SPONode[]; edges: SPOEdge[]; maxEdgesPerNode?: number }
 
 const TYPE_COLOR: Record<string, string> = {
   System: "#6366f1", Component: "#8b5cf6", Process: "#10b981",
   Material: "#f59e0b", Tool: "#06b6d4", Parameter: "#ec4899",
-  Standard: "#3b82f6", Requirement: "#ef4444", Organization: "#84cc16",
-  Concept: "#9ca3af",
+  Standard: "#3b82f6", Requirement: "#ef4444", Organization: "#84cc16", Concept: "#9ca3af",
 };
+const PRED_COLOR: Record<string, string> = {
+  HAS_PROPERTY: "#6366f1", REQUIRES: "#ef4444", USES: "#10b981", COMPOSED_OF: "#f59e0b",
+  CONSTRAINED_BY: "#ec4899", APPLIES_TO: "#06b6d4", PART_OF: "#8b5cf6", RELATED_TO: "#6b7280",
+};
+const NODE_R = 6;
 
-export function SPOForceGraph({ nodes, edges }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const svgRef       = useRef<SVGSVGElement>(null);
-  const tooltipRef   = useRef<HTMLDivElement>(null);
-  const simRef       = useRef<d3.Simulation<SimNode, SimEdge> | null>(null);
+interface SimNode extends d3.SimulationNodeDatum { node_id: string; name: string; type: string }
+interface SimLink extends d3.SimulationLinkDatum<SimNode> {
+  predicate: string; predicate_type: string;
+}
+
+export function SPOForceGraph({ nodes, edges, maxEdgesPerNode = 10 }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const container = containerRef.current;
-    const svgEl     = svgRef.current;
-    if (!container || !svgEl || nodes.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas || nodes.length === 0) return;
+    const el: HTMLCanvasElement = canvas; // narrowed non-null for closures
 
-    simRef.current?.stop();
-
-    function positionTip(ev: MouseEvent, tip: HTMLDivElement) {
-      const rect = container!.getBoundingClientRect();
-      let x = ev.clientX - rect.left + 14;
-      let y = ev.clientY - rect.top - 12;
-      if (x + 210 > rect.width) x = ev.clientX - rect.left - 224;
-      if (y + 90  > rect.height) y = ev.clientY - rect.top - 90;
-      tip.style.left = `${x}px`;
-      tip.style.top  = `${y}px`;
+    // ── Per-node edge cap ──────────────────────────────────────────────────────
+    const nodeIds = new Set(nodes.map(n => n.node_id));
+    const nodeDeg = new Map<string, number>();
+    const keptEdges: SPOEdge[] = [];
+    for (const e of edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target))) {
+      const sc = nodeDeg.get(e.source) ?? 0, tc = nodeDeg.get(e.target) ?? 0;
+      if (sc >= maxEdgesPerNode && tc >= maxEdgesPerNode) continue;
+      keptEdges.push(e);
+      nodeDeg.set(e.source, sc + 1);
+      nodeDeg.set(e.target, tc + 1);
     }
 
-    function build(W: number, H: number) {
-      const sel = d3.select(svgEl!);
-      sel.selectAll("*").remove();
-      sel.attr("width", W).attr("height", H);
+    // ── Canvas setup (HiDPI) ──────────────────────────────────────────────────
+    const dpr = window.devicePixelRatio ?? 1;
+    const W = canvas.offsetWidth, H = canvas.offsetHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    const ctx = canvas.getContext("2d")!;
+    ctx.scale(dpr, dpr);
 
-      const g = sel.append("g");
-      sel.call(
-        d3.zoom<SVGSVGElement, unknown>()
-          .scaleExtent([0.1, 8])
-          .on("zoom", e => g.attr("transform", e.transform)),
-      );
+    // ── Simulation data ────────────────────────────────────────────────────────
+    const simNodes: SimNode[] = nodes.map(n => ({ ...n }));
+    const nodeById = new Map(simNodes.map(n => [n.node_id, n]));
+    const simLinks: SimLink[] = keptEdges.map(e => ({
+      source: nodeById.get(e.source) as SimNode,
+      target: nodeById.get(e.target) as SimNode,
+      predicate: e.predicate,
+      predicate_type: e.predicate_type,
+    }));
 
-      sel.append("defs").append("marker")
-        .attr("id", "spo-arr").attr("viewBox", "0 -5 10 10")
-        .attr("refX", 22).attr("refY", 0)
-        .attr("markerWidth", 5).attr("markerHeight", 5)
-        .attr("orient", "auto")
-        .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#6b7280");
+    // ── Zoom state ─────────────────────────────────────────────────────────────
+    let tx = 0, ty = 0, tk = 1;
 
-      const simNodes: SimNode[] = nodes.map(n => ({
-        ...n,
-        x: W / 2 + (Math.random() - 0.5) * Math.min(W, H) * 0.6,
-        y: H / 2 + (Math.random() - 0.5) * Math.min(W, H) * 0.6,
-      }));
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.scale(tk, tk);
 
-      const nodeSet = new Set(simNodes.map(n => n.node_id));
-      const simEdges: SimEdge[] = edges
-        .filter(e => nodeSet.has(e.source) && nodeSet.has(e.target))
-        .map(e => ({ source: e.source, target: e.target, predicate: e.predicate, predicate_type: e.predicate_type }));
-
-      const showLabels = simEdges.length <= 60;
-
-      const sim = d3.forceSimulation<SimNode>(simNodes)
-        .force("link",    d3.forceLink<SimNode, SimEdge>(simEdges)
-          .id(d => d.node_id).distance(180).strength(0.4))
-        .force("charge",  d3.forceManyBody().strength(-500).distanceMax(600))
-        .force("center",  d3.forceCenter(W / 2, H / 2).strength(0.05))
-        .force("collide", d3.forceCollide(40))
-        .alphaDecay(0.05)
-        .velocityDecay(0.4)
-        .stop();
-
-      // Pre-compute 150 ticks so the graph appears settled immediately
-      for (let i = 0; i < 150; i++) sim.tick();
-
-      simRef.current = sim;
-
-      const link = g.append("g")
-        .selectAll<SVGLineElement, SimEdge>("line")
-        .data(simEdges).join("line")
-        .attr("stroke", "#6b7280").attr("stroke-width", 2).attr("stroke-opacity", 0.7)
-        .attr("marker-end", "url(#spo-arr)");
-
-      const edgeLabel = showLabels
-        ? g.append("g")
-            .selectAll<SVGTextElement, SimEdge>("text")
-            .data(simEdges).join("text")
-            .text(d => d.predicate.length > 10 ? d.predicate.slice(0, 10) + "…" : d.predicate)
-            .attr("fill", "#6b7280").attr("font-size", 9).attr("text-anchor", "middle")
-            .attr("pointer-events", "none")
-        : null;
-
-      const nodeG = g.append("g")
-        .selectAll<SVGGElement, SimNode>("g")
-        .data(simNodes).join("g")
-        .attr("cursor", "pointer")
-        .call(
-          d3.drag<SVGGElement, SimNode>()
-            .on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(0.2).restart(); d.fx = d.x; d.fy = d.y; })
-            .on("drag",  (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
-            .on("end",   (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }),
-        );
-
-      nodeG.append("circle")
-        .attr("r", 14)
-        .attr("fill", d => TYPE_COLOR[d.type] ?? "#6b7280")
-        .attr("fill-opacity", 0.9)
-        .attr("stroke", "#111827").attr("stroke-width", 1.5);
-
-      nodeG.append("text")
-        .text(d => d.name.length > 8 ? d.name.slice(0, 8) + "…" : d.name)
-        .attr("dy", 28).attr("text-anchor", "middle")
-        .attr("fill", "#d1d5db").attr("font-size", 10)
-        .attr("pointer-events", "none");
-
-      // Rich HTML tooltip
-      nodeG
-        .on("mouseenter", (ev, d) => {
-          const tip = tooltipRef.current;
-          if (!tip) return;
-          const color = TYPE_COLOR[d.type] ?? "#6b7280";
-          tip.innerHTML =
-            `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">` +
-              `<span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></span>` +
-              `<span style="font-size:11px;font-weight:600;color:#e5e7eb;word-break:break-all">${d.name}</span>` +
-            `</div>` +
-            `<div style="font-size:10px;color:#9ca3af">类型：<span style="color:${color}">${d.type}</span></div>` +
-            `<div style="font-size:9px;color:#4b5563;margin-top:3px;font-family:monospace;word-break:break-all">${d.node_id}</div>`;
-          tip.style.display = "block";
-          positionTip(ev.sourceEvent ?? ev, tip);
-        })
-        .on("mousemove", (ev) => {
-          const tip = tooltipRef.current;
-          if (tip) positionTip(ev.sourceEvent ?? ev, tip);
-        })
-        .on("mouseleave", () => {
-          const tip = tooltipRef.current;
-          if (tip) tip.style.display = "none";
-        });
-
-      function tick() {
-        link
-          .attr("x1", d => (d.source as SimNode).x ?? 0)
-          .attr("y1", d => (d.source as SimNode).y ?? 0)
-          .attr("x2", d => (d.target as SimNode).x ?? 0)
-          .attr("y2", d => (d.target as SimNode).y ?? 0);
-        edgeLabel
-          ?.attr("x", d => (((d.source as SimNode).x ?? 0) + ((d.target as SimNode).x ?? 0)) / 2)
-           .attr("y", d => (((d.source as SimNode).y ?? 0) + ((d.target as SimNode).y ?? 0)) / 2 - 4);
-        nodeG.attr("transform", d => `translate(${d.x ?? 0},${d.y ?? 0})`);
+      // Edges
+      ctx.lineWidth = 1 / tk;
+      for (const lk of simLinks) {
+        const s = lk.source as SimNode, t = lk.target as SimNode;
+        if (s.x == null || t.x == null) continue;
+        const color = PRED_COLOR[lk.predicate_type] ?? "#6b7280";
+        ctx.strokeStyle = color + "88";
+        ctx.beginPath();
+        ctx.moveTo(s.x!, s.y!);
+        ctx.lineTo(t.x!, t.y!);
+        ctx.stroke();
       }
 
-      // Render initial pre-computed positions immediately
-      tick();
+      // Nodes
+      for (const n of simNodes) {
+        if (n.x == null) continue;
+        const color = TYPE_COLOR[n.type] ?? "#6b7280";
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(n.x!, n.y!, NODE_R / tk, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-      // Resume at low alpha for fine-tuning (drag responsiveness)
-      sim.on("tick", tick).alpha(0.05).restart();
+      // Labels (only when zoomed in enough)
+      if (tk > 0.6) {
+        ctx.textBaseline = "middle";
+        ctx.font = `${Math.round(10 / tk)}px Inter,sans-serif`;
+        for (const n of simNodes) {
+          if (n.x == null) continue;
+          const color = TYPE_COLOR[n.type] ?? "#6b7280";
+          ctx.fillStyle = color + "dd";
+          ctx.fillText(n.name, n.x! + NODE_R / tk + 2, n.y!);
+        }
+      }
+
+      ctx.restore();
     }
 
-    const ro = new ResizeObserver(entries => {
-      const { width, height } = entries[0].contentRect;
-      if (width > 0 && height > 0) { ro.disconnect(); build(width, height); }
-    });
-    ro.observe(container);
+    // ── D3 force simulation ────────────────────────────────────────────────────
+    // For large graphs (>500 nodes) skip forceManyBody (O(n log n)) and use
+    // forceX/Y cluster-by-type (O(n)) so the simulation stays responsive.
+    const TYPES = Object.keys(TYPE_COLOR);
+    const typeIndex = (t: string) => { const i = TYPES.indexOf(t); return i < 0 ? TYPES.length : i; };
+    const typeCount = TYPES.length + 1;
+    const large = simNodes.length > 500;
 
-    const rect = container.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) { ro.disconnect(); build(rect.width, rect.height); }
+    const sim = d3.forceSimulation<SimNode>(simNodes)
+      .force("link", d3.forceLink<SimNode, SimLink>(simLinks)
+        .id(d => d.node_id).distance(large ? 120 : 140).strength(0.3))
+      .force("charge", large
+        ? null
+        : d3.forceManyBody<SimNode>().strength(-600).distanceMax(500))
+      .force("clusterX", large
+        ? d3.forceX<SimNode>(n => {
+            const col = typeIndex(n.type) % Math.ceil(Math.sqrt(typeCount));
+            return W * 0.1 + col * (W * 0.8 / Math.ceil(Math.sqrt(typeCount)));
+          }).strength(0.03)
+        : null)
+      .force("clusterY", large
+        ? d3.forceY<SimNode>(n => {
+            const row = Math.floor(typeIndex(n.type) / Math.ceil(Math.sqrt(typeCount)));
+            return H * 0.1 + row * (H * 0.8 / Math.ceil(Math.sqrt(typeCount)));
+          }).strength(0.03)
+        : null)
+      .force("center", d3.forceCenter<SimNode>(W / 2, H / 2).strength(large ? 0.003 : 0.02))
+      .force("collide", d3.forceCollide<SimNode>(large ? 28 : 40))
+      .alphaDecay(large ? 0.03 : 0.02)
+      .on("tick", draw);
 
-    return () => { ro.disconnect(); simRef.current?.stop(); };
-  }, [nodes, edges]);
+    // ── Hit test: canvas px → nearest simNode ─────────────────────────────────
+    function nodeAt(sx: number, sy: number): SimNode | null {
+      const wx = (sx - tx) / tk, wy = (sy - ty) / tk;
+      const thr = Math.max(20, NODE_R * 3) / tk;
+      let best: SimNode | null = null, bestD = thr;
+      for (const n of simNodes) {
+        if (n.x == null) continue;
+        const d = Math.hypot(n.x - wx, (n.y ?? 0) - wy);
+        if (d < bestD) { bestD = d; best = n; }
+      }
+      return best;
+    }
+
+    // ── D3 drag ────────────────────────────────────────────────────────────────
+    let dragNode: SimNode | null = null;
+
+    const drag = d3.drag<HTMLCanvasElement, unknown>()
+      // Only activate when pointer is over a node; otherwise let zoom pan
+      .filter((ev: Event) => {
+        const me = ev as MouseEvent;
+        return !!nodeAt(me.offsetX, me.offsetY);
+      })
+      .on("start", (ev: d3.D3DragEvent<HTMLCanvasElement, unknown, unknown>) => {
+        const me = ev.sourceEvent as MouseEvent;
+        dragNode = nodeAt(me.offsetX, me.offsetY);
+        if (!dragNode) return;
+        if (!ev.active) sim.alphaTarget(0.3).restart();
+        dragNode.fx = dragNode.x;
+        dragNode.fy = dragNode.y;
+        el.style.cursor = "grabbing";
+      })
+      .on("drag", (ev: d3.D3DragEvent<HTMLCanvasElement, unknown, unknown>) => {
+        if (!dragNode) return;
+        const me = ev.sourceEvent as MouseEvent;
+        dragNode.fx = (me.offsetX - tx) / tk;
+        dragNode.fy = (me.offsetY - ty) / tk;
+      })
+      .on("end", (ev: d3.D3DragEvent<HTMLCanvasElement, unknown, unknown>) => {
+        if (!dragNode) return;
+        if (!ev.active) sim.alphaTarget(0);
+        dragNode.fx = null;
+        dragNode.fy = null;
+        dragNode = null;
+        el.style.cursor = "grab";
+      });
+
+    // ── D3 zoom ────────────────────────────────────────────────────────────────
+    const zoom = d3.zoom<HTMLCanvasElement, unknown>()
+      .scaleExtent([0.05, 8])
+      .on("zoom", (ev: d3.D3ZoomEvent<HTMLCanvasElement, unknown>) => {
+        tx = ev.transform.x; ty = ev.transform.y; tk = ev.transform.k;
+        draw();
+      });
+
+    // Attach drag first so its filter can stopPropagation before zoom sees the event
+    d3.select(canvas).call(drag).call(zoom);
+
+    // ── Tooltip on hover ───────────────────────────────────────────────────────
+    function onMouseMove(ev: MouseEvent) {
+      if (dragNode) return; // suppress tooltip while dragging
+      const n = nodeAt(ev.offsetX, ev.offsetY);
+      el.title = n ? `${n.name} [${n.type}]` : "";
+      el.style.cursor = n ? "grab" : "default";
+    }
+    el.addEventListener("mousemove", onMouseMove);
+
+    return () => {
+      sim.stop();
+      el.removeEventListener("mousemove", onMouseMove);
+      d3.select(el).on(".zoom", null).on(".drag", null);
+    };
+  }, [nodes, edges, maxEdgesPerNode]);
 
   return (
-    <div ref={containerRef} className="w-full h-full relative">
-      <svg ref={svgRef} style={{ display: "block", background: "#030712" }} />
-      <div
-        ref={tooltipRef}
-        style={{
-          position: "absolute", display: "none", pointerEvents: "none",
-          background: "#111827", border: "1px solid #374151", borderRadius: "8px",
-          padding: "8px 10px", zIndex: 10, maxWidth: "210px",
-          boxShadow: "0 4px 16px rgba(0,0,0,.5)",
-        }}
-      />
-    </div>
+    <canvas
+      ref={canvasRef}
+      style={{ width: "100%", height: "100%", display: "block", background: "#030712", cursor: "grab" }}
+    />
   );
 }

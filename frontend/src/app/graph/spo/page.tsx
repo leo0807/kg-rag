@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchApi } from "@/lib/api";
-import { Layers, RefreshCw, GitBranch } from "lucide-react";
+import { Layers, RefreshCw, GitBranch, Plus, ChevronDown } from "lucide-react";
 import { SPOForceGraph } from "./SPOForceGraph";
+import { GeneratePanel } from "./GeneratePanel";
 
 interface KGMeta {
   graph_id: string; doc_id: string; chapter: string;
@@ -20,6 +21,17 @@ const TYPE_COLOR: Record<string, string> = {
   Standard: "#3b82f6", Requirement: "#ef4444", Organization: "#84cc16", Concept: "#9ca3af",
 };
 
+const PRED_COLOR: Record<string, string> = {
+  HAS_PROPERTY:   "#6366f1",
+  REQUIRES:       "#ef4444",
+  USES:           "#10b981",
+  COMPOSED_OF:    "#f59e0b",
+  CONSTRAINED_BY: "#ec4899",
+  APPLIES_TO:     "#06b6d4",
+  PART_OF:        "#8b5cf6",
+  RELATED_TO:     "#6b7280",
+};
+
 function graphLabel(g: KGMeta) {
   if (g.chapter === "ALL" && g.doc_id === "ALL") return "全局知识图谱";
   if (g.chapter === "ALL") return `全文 · ${g.doc_id.slice(0, 16)}`;
@@ -27,10 +39,11 @@ function graphLabel(g: KGMeta) {
 }
 
 export default function SPOGraphPage() {
-  const [graphs,  setGraphs]  = useState<KGMeta[]>([]);
-  const [active,  setActive]  = useState<string | null>(null);
-  const [gdata,   setGdata]   = useState<GraphData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [graphs,      setGraphs]      = useState<KGMeta[]>([]);
+  const [active,      setActive]      = useState<string | null>(null);
+  const [gdata,       setGdata]       = useState<GraphData | null>(null);
+  const [loading,     setLoading]     = useState(false);
+  const [showGenerate, setShowGenerate] = useState(false);
 
   const initialized = useRef(false);
 
@@ -67,10 +80,28 @@ export default function SPOGraphPage() {
             <GitBranch size={16} className="text-indigo-400" />
             <span className="text-white text-sm font-semibold">SPO 知识图谱</span>
           </div>
-          <button onClick={loadList} title="刷新列表" className="text-gray-500 hover:text-white transition-colors">
-            <RefreshCw size={12} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setShowGenerate(v => !v)} title="生成图谱"
+              className={`p-1 rounded transition-colors ${showGenerate ? "text-indigo-400 bg-indigo-900/40" : "text-gray-500 hover:text-white"}`}>
+              {showGenerate ? <ChevronDown size={13} /> : <Plus size={13} />}
+            </button>
+            <button onClick={loadList} title="刷新列表" className="text-gray-500 hover:text-white transition-colors p-1">
+              <RefreshCw size={12} />
+            </button>
+          </div>
         </div>
+
+        {showGenerate && (
+          <GeneratePanel
+            defaultDocId={gdata?.graph?.doc_id !== "ALL" ? gdata?.graph?.doc_id : ""}
+            defaultChapter={gdata?.graph?.chapter !== "ALL" ? gdata?.graph?.chapter : ""}
+            onComplete={async (newGraphId) => {
+              await loadList();
+              void loadGraph(newGraphId);
+              setShowGenerate(false);
+            }}
+          />
+        )}
 
         <div className="space-y-1">
           <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">已生成图谱</p>
@@ -102,16 +133,29 @@ export default function SPOGraphPage() {
 
         {/* Legend */}
         {gdata && gdata.nodes.length > 0 && (
-          <div className="mt-auto space-y-1 pt-3 border-t border-gray-800">
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">节点类型</p>
-            {Object.entries(TYPE_COLOR).filter(([t]) =>
-              gdata.nodes.some(n => n.type === t)
-            ).map(([t, c]) => (
-              <div key={t} className="flex items-center gap-2 text-xs text-gray-400">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c }} />
-                {t}
-              </div>
-            ))}
+          <div className="mt-auto space-y-3 pt-3 border-t border-gray-800">
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">节点类型</p>
+              {Object.entries(TYPE_COLOR).filter(([t]) =>
+                gdata.nodes.some(n => n.type === t)
+              ).map(([t, c]) => (
+                <div key={t} className="flex items-center gap-2 text-xs text-gray-400 mb-0.5">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c }} />
+                  {t}
+                </div>
+              ))}
+            </div>
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">关系类型</p>
+              {Object.entries(PRED_COLOR).filter(([p]) =>
+                gdata.edges.some(e => e.predicate_type === p)
+              ).map(([p, c]) => (
+                <div key={p} className="flex items-center gap-2 text-xs text-gray-400 mb-0.5">
+                  <span className="w-5 h-0.5 shrink-0 rounded-full" style={{ backgroundColor: c }} />
+                  <span className="truncate">{p.replace(/_/g, " ")}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </aside>
@@ -129,9 +173,19 @@ export default function SPOGraphPage() {
             </span>
             <div className="flex items-center gap-1 text-indigo-400">
               <Layers size={12} />
-              <span className="text-xs font-medium">{gdata?.nodes.length ?? 0} 节点</span>
+              <span className="text-xs font-medium">
+                显示 {gdata?.nodes.length ?? 0} 节点
+                {meta.node_count && meta.node_count > (gdata?.nodes.length ?? 0)
+                  ? ` / 共 ${meta.node_count}`
+                  : ""}
+              </span>
             </div>
-            <span className="text-xs text-gray-500">{gdata?.edges.length ?? 0} 关系</span>
+            <span className="text-xs text-gray-500">
+              {gdata?.edges.length ?? 0} 关系
+              {meta.edge_count && meta.edge_count > (gdata?.edges.length ?? 0)
+                ? ` / 共 ${meta.edge_count}`
+                : ""}
+            </span>
           </div>
         )}
 

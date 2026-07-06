@@ -67,12 +67,11 @@ def create_spo_graph(
             chapter=chapter, created_at=created_at,
         )
 
-        # 2. Remove previously generated SPO nodes for this graph (rebuild)
+        # 2. Remove ALL previously generated SPO nodes for this graph (rebuild).
+        # Must match by graph_id property, NOT via CONTAINS_NODE, because object nodes
+        # were never linked via CONTAINS_NODE and would otherwise survive as orphans.
         session.run(
-            """
-            MATCH (kg:KnowledgeGraph {graph_id: $graph_id})-[:CONTAINS_NODE]->(n:SPONode)
-            DETACH DELETE n
-            """,
+            "MATCH (n:SPONode {graph_id: $graph_id}) DETACH DELETE n",
             graph_id=graph_id,
         )
 
@@ -161,8 +160,12 @@ def create_spo_graph(
     return {"graph_id": graph_id, "node_count": node_count, "edge_count": edge_count}
 
 
-def get_spo_graph_data(driver: Driver, graph_id: str) -> dict:
-    """Return all SPONode + SPO_REL for frontend visualization."""
+def get_spo_graph_data(driver: Driver, graph_id: str, limit: int = 0) -> dict:
+    """Return SPO subgraph for visualization.
+
+    Uses BFS from the highest-degree seed to return a well-connected subgraph
+    of at most `limit` nodes. Passing limit=0 returns all nodes (may be large).
+    """
     with driver.session() as session:
         kg_result = session.run(
             "MATCH (kg:KnowledgeGraph {graph_id: $graph_id}) RETURN kg",
@@ -173,12 +176,7 @@ def get_spo_graph_data(driver: Driver, graph_id: str) -> dict:
 
         kg = dict(kg_result["kg"])
 
-        nodes_result = session.run(
-            "MATCH (n:SPONode {graph_id: $graph_id}) RETURN n",
-            graph_id=graph_id,
-        )
-        nodes = [dict(r["n"]) for r in nodes_result]
-
+        # Fetch all edges first (7k edges ≈ 1 MB, acceptable)
         edges_result = session.run(
             """
             MATCH (s:SPONode {graph_id: $graph_id})-[r:SPO_REL {graph_id: $graph_id}]->(o:SPONode)
@@ -187,7 +185,50 @@ def get_spo_graph_data(driver: Driver, graph_id: str) -> dict:
             """,
             graph_id=graph_id,
         )
-        edges = [dict(r) for r in edges_result]
+        all_edges = [dict(r) for r in edges_result]
+
+        if not all_edges:
+            return {"nodes": [], "edges": [], "graph": kg}
+
+        # Build adjacency (undirected) for BFS
+        adj: dict[str, list[str]] = {}
+        degree: dict[str, int] = {}
+        for e in all_edges:
+            adj.setdefault(e["source"], []).append(e["target"])
+            adj.setdefault(e["target"], []).append(e["source"])
+            degree[e["source"]] = degree.get(e["source"], 0) + 1
+            degree[e["target"]] = degree.get(e["target"], 0) + 1
+
+        if limit > 0 and len(degree) > limit:
+            # BFS from highest-degree seed, preferring high-degree neighbors
+            seed = max(degree, key=lambda n: degree[n])
+            visited: set[str] = {seed}
+            queue = [seed]
+            head = 0
+            while head < len(queue) and len(visited) < limit:
+                curr = queue[head]; head += 1
+                neighbors = sorted(
+                    adj.get(curr, []),
+                    key=lambda n: degree.get(n, 0),
+                    reverse=True,
+                )
+                for nb in neighbors:
+                    if nb not in visited:
+                        visited.add(nb)
+                        queue.append(nb)
+                        if len(visited) >= limit:
+                            break
+            node_set = visited
+        else:
+            # Return all connected nodes
+            node_set = set(degree.keys())
+
+        edges = [e for e in all_edges if e["source"] in node_set and e["target"] in node_set]
+        nodes_result = session.run(
+            "MATCH (n:SPONode {graph_id: $graph_id}) WHERE n.node_id IN $ids RETURN n",
+            graph_id=graph_id, ids=list(node_set),
+        )
+        nodes = [dict(r["n"]) for r in nodes_result]
 
     return {"nodes": nodes, "edges": edges, "graph": kg}
 
