@@ -1,3 +1,17 @@
+# [1.13.0](https://github.com/leo0807/kg-rag/compare/v1.12.1...v1.13.0) (2026-07-06)
+
+
+### Bug Fixes
+
+* **login:** add remember-password, fix rendering performance, update default credentials ([56b4912](https://github.com/leo0807/kg-rag/commit/56b49121829fe04fc944dd3ede9facc9174f22ce))
+* **sw:** fix SW navigate error and clone-after-consumed on localhost ([e863b05](https://github.com/leo0807/kg-rag/commit/e863b0586d1e9d2ba38e93534cde168bb608b471))
+
+
+### Features
+
+* **query:** add KG graph selector to retrieval UI ([6fd3dda](https://github.com/leo0807/kg-rag/commit/6fd3ddad72d3c69cd0221c6eec891ca8ddc812d6))
+* **spo:** rewrite SPO graph with canvas renderer, drag, and full-node display ([2aef66e](https://github.com/leo0807/kg-rag/commit/2aef66ee2e6ecc2a0ca1d88dea82df2d6635a6b0))
+
 ## [1.12.1](https://github.com/leo0807/kg-rag/compare/v1.12.0...v1.12.1) (2026-07-02)
 
 
