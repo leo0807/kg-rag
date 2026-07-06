@@ -34,12 +34,13 @@ export default function ParticleCanvas() {
     const ro = new ResizeObserver(resize);
     ro.observe(C);
 
+    // Track mouse via window so the canvas can be pointer-events-none
+    // (a fullscreen pointer-events-auto canvas eats every click on the page)
     const onMove = (e: MouseEvent) => {
       const rect = C.getBoundingClientRect();
       mouse.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     };
-    C.addEventListener("mousemove", onMove);
-    C.addEventListener("mouseleave", () => { mouse.current = { x: -9999, y: -9999 }; });
+    window.addEventListener("mousemove", onMove);
 
     const mkParticle = (): Particle => ({
       x: Math.random() * C.width,
@@ -52,9 +53,9 @@ export default function ParticleCanvas() {
       pulse: Math.random() < 0.12 ? Math.random() * Math.PI * 2 : 0,
     });
 
-    const count = Math.min(130, Math.floor(C.width / 11));
+    const count = Math.min(55, Math.floor(C.width / 22));
     const particles: Particle[] = Array.from({ length: count }, mkParticle);
-    const MAX_DIST = 150;
+    const MAX_DIST = 120;
     const MOUSE_REPEL = 90;
     const pulses: Pulse[] = [];
     let animId: number;
@@ -184,14 +185,14 @@ export default function ParticleCanvas() {
     return () => {
       cancelAnimationFrame(animId);
       ro.disconnect();
-      C.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mousemove", onMove);
     };
   }, []);
 
   return (
     <canvas
       ref={ref}
-      className="absolute inset-0 w-full h-full pointer-events-auto opacity-75"
+      className="absolute inset-0 w-full h-full pointer-events-none opacity-75"
     />
   );
 }

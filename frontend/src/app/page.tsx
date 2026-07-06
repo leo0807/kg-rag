@@ -1,3 +1,5 @@
+"use client";
+
 import dynamic from "next/dynamic";
 import HeroTitle   from "@/components/home/HeroTitle";
 import StatsRow    from "@/components/home/StatsRow";

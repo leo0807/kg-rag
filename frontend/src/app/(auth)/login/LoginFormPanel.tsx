@@ -9,12 +9,14 @@ interface Props {
   showPw: boolean;
   showForgot: boolean;
   rememberMe: boolean;
+  rememberPw: boolean;
   form: { username: string; password: string };
   forgotState: ForgotState;
   forgotMsg: string;
   setShowPw: (v: boolean | ((p: boolean) => boolean)) => void;
   setShowForgot: (v: boolean | ((p: boolean) => boolean)) => void;
-  setRememberMe: (v: boolean | ((p: boolean) => boolean)) => void;
+  setRememberMe: (v: boolean) => void;
+  setRememberPw: (v: boolean) => void;
   setForm: (fn: (f: { username: string; password: string }) => { username: string; password: string }) => void;
   setForgotState: (s: ForgotState) => void;
   setForgotMsg: (m: string) => void;
@@ -24,27 +26,51 @@ interface Props {
 }
 
 const AUTH_STEPS = [
-  { label: "连接加密",  done: true  },
-  { label: "密钥交换",  done: true  },
-  { label: "身份核验",  done: false },
-  { label: "权限授予",  done: false },
+  { label: "连接加密", done: true  },
+  { label: "密钥交换", done: true  },
+  { label: "身份核验", done: false },
+  { label: "权限授予", done: false },
 ];
 
+function Checkbox({ id, checked, onChange, label }: {
+  id: string; checked: boolean; onChange: (v: boolean) => void; label: string;
+}) {
+  return (
+    <label htmlFor={id} className="flex items-center gap-2.5 cursor-pointer select-none group w-fit">
+      {/* Native checkbox — works before and after React hydration */}
+      <input
+        type="checkbox" id={id} checked={checked}
+        onChange={e => onChange(e.target.checked)}
+        className="sr-only"
+      />
+      <div className={`w-4 h-4 rounded border transition-all flex items-center justify-center flex-shrink-0
+        ${checked
+          ? "bg-cyan-600 border-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.35)]"
+          : "bg-gray-800 border-gray-700 group-hover:border-gray-500"}`}>
+        {checked && (
+          <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+            <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </div>
+      <span className="text-[10px] font-mono text-gray-600 group-hover:text-gray-400 transition-colors">{label}</span>
+    </label>
+  );
+}
+
 export default function LoginFormPanel({
-  loading, error, showPw, showForgot, rememberMe,
+  loading, error, showPw, showForgot, rememberMe, rememberPw,
   form, forgotState, forgotMsg,
-  setShowPw, setShowForgot, setRememberMe, setForm,
+  setShowPw, setShowForgot, setRememberMe, setRememberPw, setForm,
   setForgotState, setForgotMsg, handleForgot, handleLogin, sessionId,
 }: Props) {
   return (
     <div className="relative p-8 flex flex-col justify-center overflow-hidden">
-      {/* Subtle inner grid texture */}
       <div className="absolute inset-0 pointer-events-none opacity-[0.015]" style={{
         backgroundImage: "linear-gradient(rgba(34,211,238,0.8) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.8) 1px,transparent 1px)",
         backgroundSize: "32px 32px",
       }} />
 
-      {/* Mobile logo */}
       <div className="lg:hidden text-center mb-6">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gray-900 border border-cyan-500/40 mb-3"
              style={{ boxShadow: "0 0 24px rgba(34,211,238,0.18)" }}>
@@ -53,7 +79,6 @@ export default function LoginFormPanel({
         <h1 className="text-xl font-bold text-white">航空工艺知识库系统</h1>
       </div>
 
-      {/* Section header */}
       <div className="flex items-center gap-2 mb-4">
         <Shield size={12} className="text-cyan-400/60" />
         <span className="text-[10px] font-mono text-gray-600 tracking-[0.2em] uppercase">身份验证</span>
@@ -61,7 +86,6 @@ export default function LoginFormPanel({
         <span className="text-[9px] font-mono text-gray-700">访问控制</span>
       </div>
 
-      {/* Auth sequence steps */}
       <div className="flex items-center gap-1.5 mb-4">
         {AUTH_STEPS.map((step, i) => (
           <div key={i} className="flex items-center gap-1">
@@ -75,7 +99,6 @@ export default function LoginFormPanel({
         ))}
       </div>
 
-      {/* Connection status row */}
       <div className="flex items-center gap-3 mb-5 px-2 py-1.5 rounded-lg border"
            style={{ background: "rgba(2,8,20,0.5)", borderColor: "rgba(34,211,238,0.08)" }}>
         {[
@@ -91,7 +114,6 @@ export default function LoginFormPanel({
         ))}
       </div>
 
-      {/* Forgot / Error panels */}
       {showForgot && (
         <ForgotPanel
           state={forgotState} msg={forgotMsg} username={form.username}
@@ -107,7 +129,6 @@ export default function LoginFormPanel({
       )}
 
       <div className="space-y-4">
-        {/* Username */}
         <div>
           <label className="text-[10px] font-mono text-gray-600 mb-1.5 block tracking-widest">工号</label>
           <input
@@ -121,7 +142,6 @@ export default function LoginFormPanel({
           )}
         </div>
 
-        {/* Password */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-[10px] font-mono text-gray-600 tracking-widest">密码</label>
@@ -146,18 +166,11 @@ export default function LoginFormPanel({
           </div>
         </div>
 
-        {/* Remember */}
-        <label className="flex items-center gap-2.5 cursor-pointer select-none group">
-          <div onClick={() => setRememberMe(v => !v)}>
-            <div className={`w-4 h-4 rounded border transition-all flex items-center justify-center
-              ${rememberMe ? "bg-cyan-600 border-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.35)]" : "bg-gray-800 border-gray-700 group-hover:border-gray-500"}`}>
-              {rememberMe && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-            </div>
-          </div>
-          <span className="text-[10px] font-mono text-gray-600 group-hover:text-gray-400 transition-colors">记住工号</span>
-        </label>
+        <div className="flex items-center gap-5">
+          <Checkbox id="remember-username" checked={rememberMe} onChange={setRememberMe} label="记住工号" />
+          <Checkbox id="remember-password" checked={rememberPw} onChange={setRememberPw} label="记住密码" />
+        </div>
 
-        {/* Submit */}
         <button onClick={handleLogin} disabled={loading || !form.username || !form.password}
           className="relative w-full py-3 text-white text-sm rounded-xl font-bold transition-all mt-2 overflow-hidden disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 active:scale-[0.98] tracking-widest font-mono"
           style={{
@@ -171,19 +184,16 @@ export default function LoginFormPanel({
             style={{ background: "linear-gradient(90deg,transparent,rgba(255,255,255,0.5),transparent)", animation: "scan-down 4s linear infinite" }} />
           {loading ? (
             <span className="flex items-center justify-center gap-2">
-              <Fingerprint size={15} className="animate-pulse" />
-              AUTHENTICATING...
+              <Fingerprint size={15} className="animate-pulse" /> AUTHENTICATING...
             </span>
           ) : (
             <span className="flex items-center justify-center gap-2">
-              <Lock size={12} className="opacity-70" />
-              [ 进入系统 ] <ChevronRight size={14} />
+              <Lock size={12} className="opacity-70" /> [ 进入系统 ] <ChevronRight size={14} />
             </span>
           )}
         </button>
       </div>
 
-      {/* Footer */}
       <div className="mt-5 border-t pt-4 space-y-1.5" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
         <div className="flex items-center justify-between">
           <span className="text-[8px] font-mono text-gray-800">SES-ID: {sessionId}</span>

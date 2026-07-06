@@ -7,7 +7,7 @@ const STREAM_COLS = [
 ];
 
 function DataStream({ lines, dur, delay, color }: { lines: string[]; dur: number; delay: number; color: string }) {
-  const q = [...lines, ...lines, ...lines, ...lines];
+  const q = [...lines, ...lines];
   return (
     <div className="overflow-hidden flex-1 h-full">
       <div className="font-mono text-[8px] leading-[18px] select-none"
