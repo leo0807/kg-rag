@@ -26,6 +26,8 @@ export default function QueryPage() {
     setStrategy,
     useHyde,
     setUseHyde,
+    kgDocHints,
+    setKgDocHints,
     pendingImages,
     setPendingImages,
     quoteSource,
@@ -214,6 +216,8 @@ export default function QueryPage() {
           useHyde={useHyde}
           onHydeToggle={setUseHyde}
           historyLen={historyLen}
+          kgDocHints={kgDocHints}
+          onKGSelect={setKgDocHints}
           queuedQuestion={queuedQuestion}
           onQueueQuestion={handleQueueQuestion}
           onCancelQueue={handleCancelQueue}

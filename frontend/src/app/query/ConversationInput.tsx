@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFavorites } from "@/app/favorites/useFavorites";
 import { ConversationInputComposer } from "./ConversationInputComposer";
 import { ConversationInputStatusBars } from "./ConversationInputStatusBars";
+import { KGSelector } from "./KGSelector";
 import { StrategySelector } from "./StrategySelector";
 import type { SourceSection, Strategy } from "./types";
 
@@ -26,6 +27,8 @@ interface Props {
   useHyde: boolean;
   onHydeToggle: (v: boolean) => void;
   historyLen: number;
+  kgDocHints: string[];
+  onKGSelect: (hints: string[]) => void;
   queuedQuestion?: string | null;
   onQueueQuestion?: (text: string) => void;
   onCancelQueue?: () => void;
@@ -49,6 +52,8 @@ export default function ConversationInput({
   useHyde,
   onHydeToggle,
   historyLen,
+  kgDocHints,
+  onKGSelect,
   queuedQuestion,
   onQueueQuestion,
   onCancelQueue,
@@ -152,7 +157,7 @@ export default function ConversationInput({
         onClearQuote={onClearQuote}
         onRemoveImage={onRemoveImage}
       />
-      <div className="mb-3">
+      <div className="mb-3 flex items-center gap-3 flex-wrap">
         <StrategySelector
           strategy={strategy}
           useHyde={useHyde}
@@ -161,6 +166,7 @@ export default function ConversationInput({
           onHydeToggle={onHydeToggle}
           onClear={onClear}
         />
+        <KGSelector value={kgDocHints} onChange={onKGSelect} />
       </div>
       <ConversationInputComposer
         value={value}

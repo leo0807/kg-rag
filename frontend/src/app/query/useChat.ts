@@ -35,6 +35,7 @@ export function useChat() {
   >([]);
   const [strategy, setStrategy] = useState<Strategy>("parallel");
   const [useHyde, setUseHyde] = useState(false);
+  const [kgDocHints, setKgDocHints] = useState<string[]>([]);
   const hydeAlpha = 0.5;
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [quoteSource, setQuoteSource] = useState<SourceSection | null>(null);
@@ -220,7 +221,7 @@ export function useChat() {
     setPendingImages([]);
     setQuoteSource(null);
     await submitQuestion(question, images, {
-      docHints: pendingFollowUpDocHints,
+      docHints: [...pendingFollowUpDocHints, ...kgDocHints],
     });
     setPendingFollowUpDocHints([]);
   }
@@ -388,6 +389,8 @@ export function useChat() {
     setStrategy,
     useHyde,
     setUseHyde,
+    kgDocHints,
+    setKgDocHints,
     pendingImages,
     setPendingImages,
     quoteSource,
